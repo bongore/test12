@@ -36,6 +36,48 @@ function getSignalServerUrl() {
     return `${protocol}//${hostname}:3001`;
 }
 
+function getSignalHealthUrl() {
+    const wsUrl = getSignalServerUrl();
+    if (wsUrl.startsWith("wss://")) {
+        return wsUrl.replace("wss://", "https://");
+    }
+    if (wsUrl.startsWith("ws://")) {
+        return wsUrl.replace("ws://", "http://");
+    }
+    return wsUrl;
+}
+
+function wait(ms) {
+    return new Promise((resolve) => {
+        window.setTimeout(resolve, ms);
+    });
+}
+
+async function wakeSignalServer() {
+    const healthUrl = getSignalHealthUrl();
+    let lastError = null;
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+        try {
+            const response = await fetch(healthUrl, {
+                method: "GET",
+                cache: "no-store",
+                mode: "cors",
+            });
+            if (response.ok) {
+                return true;
+            }
+            lastError = new Error(`healthcheck_failed_${response.status}`);
+        } catch (error) {
+            lastError = error;
+        }
+
+        await wait(4000);
+    }
+
+    throw lastError || new Error("signal_server_unavailable");
+}
+
 function toStoredLiveState(snapshot) {
     if (!snapshot) return null;
     return {
@@ -481,46 +523,55 @@ function Live_page(props) {
     useEffect(() => {
         logPageView("live", { action: ACTION_TYPES.LIVE_PAGE_VIEWED });
         appendActivityLog(ACTION_TYPES.LIVE_PAGE_VIEWED, { page: "live" });
-
-        const socket = new WebSocket(getSignalServerUrl());
+        let socket = null;
         let heartbeatTimer = null;
-        wsRef.current = socket;
+        let cancelled = false;
 
-        socket.onopen = () => {
-            setSignalStatus("connected");
-            setLiveNotice("ライブ配信サーバーに接続しました。");
-            if (!access.isLoading) {
-                socket.send(JSON.stringify({
-                    type: "register",
-                    address: access.address,
-                    role: isAdmin ? "staff" : "viewer",
-                    canBroadcast: isAdmin,
-                }));
-            }
-            heartbeatTimer = window.setInterval(() => {
-                if (socket.readyState === WebSocket.OPEN) {
-                    socket.send(JSON.stringify({ type: "heartbeat" }));
-                }
-            }, 20000);
-        };
+        const initializeSocket = async () => {
+            try {
+                setSignalStatus("connecting");
+                setLiveNotice("ライブ配信サーバーを起動しています。少しお待ちください。");
+                await wakeSignalServer();
+                if (cancelled) return;
 
-        socket.onclose = () => {
-            setSignalStatus("disconnected");
-            setLiveNotice("ライブ配信サーバーとの接続が切れました。");
-            syncBroadcastSnapshot(null);
-            closeViewerPeer();
-            if (currentSessionRef.current) stopBroadcast("signal_disconnected");
-        };
+                socket = new WebSocket(getSignalServerUrl());
+                wsRef.current = socket;
 
-        socket.onerror = () => {
-            setSignalStatus("error");
-            setLiveNotice("ライブ配信サーバーに接続できません。");
-        };
+                socket.onopen = () => {
+                    setSignalStatus("connected");
+                    setLiveNotice("ライブ配信サーバーに接続しました。");
+                    if (!access.isLoading) {
+                        socket.send(JSON.stringify({
+                            type: "register",
+                            address: access.address,
+                            role: isAdmin ? "staff" : "viewer",
+                            canBroadcast: isAdmin,
+                        }));
+                    }
+                    heartbeatTimer = window.setInterval(() => {
+                        if (socket.readyState === WebSocket.OPEN) {
+                            socket.send(JSON.stringify({ type: "heartbeat" }));
+                        }
+                    }, 20000);
+                };
 
-        socket.onmessage = async (event) => {
-            const message = JSON.parse(event.data);
+                socket.onclose = () => {
+                    setSignalStatus("disconnected");
+                    setLiveNotice("ライブ配信サーバーとの接続が切れました。");
+                    syncBroadcastSnapshot(null);
+                    closeViewerPeer();
+                    if (currentSessionRef.current) stopBroadcast("signal_disconnected");
+                };
 
-            switch (message.type) {
+                socket.onerror = () => {
+                    setSignalStatus("error");
+                    setLiveNotice("ライブ配信サーバーに接続できていません。少し待ってから再度お試しください。");
+                };
+
+                socket.onmessage = async (event) => {
+                    const message = JSON.parse(event.data);
+
+                    switch (message.type) {
             case "welcome":
             case "presence":
                 clientIdRef.current = message.clientId;
@@ -594,15 +645,25 @@ function Live_page(props) {
             default:
                 break;
             }
+                };
+            } catch (error) {
+                console.error("Failed to wake live signal server", error);
+                if (cancelled) return;
+                setSignalStatus("error");
+                setLiveNotice("ライブ配信サーバーに接続できていません。少し待ってから再度お試しください。");
+            }
         };
 
+        initializeSocket();
+
         return () => {
+            cancelled = true;
             if (heartbeatTimer) window.clearInterval(heartbeatTimer);
             if (pinTimeoutRef.current) clearTimeout(pinTimeoutRef.current);
             stopBroadcast("page_unmount");
             closeBroadcasterPeers();
             closeViewerPeer();
-            socket.close();
+            socket?.close();
             wsRef.current = null;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
