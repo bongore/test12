@@ -29,7 +29,7 @@ npm run deploy
 
 ## 3. 確認する
 
-1. `https://bongore.github.io/test2/` を開く
+1. `https://bongore.github.io/test11/` を開く
 2. 先生 / TA 側でライブ配信を開始する
 3. 別ブラウザで視聴者として同じページを開く
 4. 映像とコメントが共有されることを確認する
