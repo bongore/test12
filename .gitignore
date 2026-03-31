@@ -8,3 +8,4 @@ serve.err.log
 serve.out.log
 dist
 .DS_Store
+docs/
