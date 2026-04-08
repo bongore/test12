@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { CSVLink } from "react-csv";
 import { Contracts_MetaMask } from "../../../contract/contracts";
+import { ACTION_TYPES, appendActivityLog, getActivityLogs } from "../../../utils/activityLog";
+import { buildExtendedCsvData, getCourseEnhancementSnapshot } from "../../../utils/courseEnhancements";
 
 function getCurrentDateTime() {
     const now = new Date();
@@ -23,6 +25,12 @@ function Create_csvlink(props) {
             <CSVLink filename={`quizs_data_${getCurrentDateTime()}.csv`} data={props.cont[1]}>
                 📥 小テストの統計データをダウンロード
             </CSVLink>
+            <CSVLink filename={`lecture_summary_${getCurrentDateTime()}.csv`} data={props.cont[2]}>
+                📥 出席・反応を含む集計CSVをダウンロード
+            </CSVLink>
+            <CSVLink filename={`reaction_history_${getCurrentDateTime()}.csv`} data={props.cont[3]}>
+                📥 理解度リアクションCSVをダウンロード
+            </CSVLink>
         </div>
     );
 }
@@ -34,6 +42,8 @@ function View_result(props) {
     const [data_for_survey_quizs, setData_for_survey_quizs] = useState(null);
     const [usersData, setUsersData] = useState(null);
     const [quizsData, setQuizsData] = useState(null);
+    const [extendedGradeData, setExtendedGradeData] = useState(null);
+    const [reactionCsvData, setReactionCsvData] = useState(null);
     const [csvdownloader, setCsvdownloader] = useState(false);
 
     const handle_export_csv = () => {
@@ -59,9 +69,24 @@ function View_result(props) {
             ]);
         }
 
+        const snapshot = getCourseEnhancementSnapshot();
+        const extended = buildExtendedCsvData({
+            results,
+            logs: getActivityLogs(),
+            boardLogs: snapshot.boardLogs,
+            reactionHistory: snapshot.reactionHistory,
+        });
+
         setUsersData(users_data);
         setQuizsData(quizs_data);
+        setExtendedGradeData(extended.gradeRows);
+        setReactionCsvData(extended.reactionRows);
         setCsvdownloader(true);
+        appendActivityLog(ACTION_TYPES.EXPORT_GRADES, {
+            page: "admin",
+            studentRows: users_data.length - 1,
+            quizRows: quizs_data.length - 1,
+        });
     };
 
     async function get_data_for_survey() {
@@ -86,7 +111,7 @@ function View_result(props) {
                 <button className="btn-action" onClick={() => handle_export_csv()}>
                     📤 成績データのCSVファイルを出力
                 </button>
-                {csvdownloader === true && <Create_csvlink cont={[usersData, quizsData]} />}
+                {csvdownloader === true && <Create_csvlink cont={[usersData, quizsData, extendedGradeData, reactionCsvData]} />}
             </div>
 
             <div className="results-table-wrap">

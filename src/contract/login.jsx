@@ -5,11 +5,10 @@ import { ACTION_TYPES, appendActivityLog, logPageView, setActor } from "../utils
 import { useTokenSymbol } from "../utils/tokenMeta";
 import "./login.css";
 
-const { ethereum } = window;
-
 function Login() {
     const [connecting, setConnecting] = useState(false);
     const [error, setError] = useState("");
+    const [rewardMessage, setRewardMessage] = useState("");
     const contract = useMemo(() => new Contracts_MetaMask(), []);
     const tokenSymbol = useTokenSymbol(contract);
 
@@ -22,14 +21,16 @@ function Login() {
         const startedAt = performance.now();
         setConnecting(true);
         setError("");
+        setRewardMessage("");
         appendActivityLog(ACTION_TYPES.LOGIN_ATTEMPT, {
             page: "login",
             wallet: "MetaMask",
-            hasEthereumProvider: Boolean(ethereum),
+            hasEthereumProvider: Boolean(contract.getEthereumProvider()),
             clickTarget: "metamask_button",
         });
 
-        if (!ethereum) {
+        const provider = contract.getEthereumProvider();
+        if (!provider) {
             setError("MetaMask が見つかりません。ブラウザ拡張を有効にしてください。");
             appendActivityLog(ACTION_TYPES.WALLET_PROVIDER_MISSING, {
                 page: "login",
@@ -45,12 +46,15 @@ function Login() {
         }
 
         try {
-            const accounts = await ethereum.request({ method: "eth_requestAccounts" });
+            const accounts = await provider.request({ method: "eth_requestAccounts" });
             const address = accounts?.[0] || "";
             setActor(address || "guest_wallet");
 
             await contract.ensure_amoy_network();
             await contract.add_token_wallet();
+            await contract.add_ttt_token_wallet().catch(() => false);
+            const tttBalance = await contract.get_ttt_balance(address);
+            setRewardMessage(`現在の TTT 残高: ${tttBalance} TTT`);
 
             appendActivityLog(ACTION_TYPES.LOGIN_SUCCESS, {
                 page: "login",
@@ -114,9 +118,10 @@ function Login() {
                     </div>
 
                     {error && <div className="login-error animate-slideUp">{error}</div>}
+                    {rewardMessage && <div className="login-error animate-slideUp" style={{ borderColor: "rgba(56, 189, 248, 0.5)", color: "#bfe9ff" }}>{rewardMessage}</div>}
 
                     <div className="login-footer">
-                        <p className="login-footer-text">接続後に Amoy ネットワーク切替と {tokenSymbol} トークン追加を自動で実行します。</p>
+                        <p className="login-footer-text">接続後に Amoy ネットワーク切替と {tokenSymbol} / TTT の追加を自動で実行し、現在の TTT 残高を確認できます。</p>
                     </div>
                 </div>
             </div>

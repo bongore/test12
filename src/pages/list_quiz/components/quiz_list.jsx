@@ -1,24 +1,51 @@
 import { useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
+
+function getInitialBatchSize() {
+    if (typeof window === "undefined") return 8;
+    return Math.max(8, Math.floor(window.innerHeight / 100) + 2);
+}
+
 function Quiz_list(props) {
     const location = useLocation();
-    const add_num = useRef(Math.floor(window.innerHeight / 100) + 2);
+    const add_num = useRef(getInitialBatchSize());
+    const isLoadingRef = useRef(false);
 
     const get_quiz_list = async (now) => {
+        if (isLoadingRef.current || now <= 0) return;
+        isLoadingRef.current = true;
         let add_quiz_list = [];
 
-        if (now - add_num.current < 0) {
-            add_quiz_list = await props.cont.get_quiz_list(now, 0);
-            props.now_numRef.current = 0;
-        } else {
-            add_quiz_list = await props.cont.get_quiz_list(now, now - add_num.current);
-            props.now_numRef.current = now - add_num.current;
-        }
+        try {
+            if (now - add_num.current < 0) {
+                add_quiz_list = await props.cont.get_quiz_list(now, 0);
+                props.now_numRef.current = 0;
+            } else {
+                add_quiz_list = await props.cont.get_quiz_list(now, now - add_num.current);
+                props.now_numRef.current = now - add_num.current;
+            }
 
-        props.Set_quiz_list((quiz_list) => [...quiz_list, ...add_quiz_list]);
+            props.Set_quiz_list((quiz_list) => {
+                const existingIds = new Set(quiz_list.map((item) => Number(item?.[0])));
+                const nextItems = add_quiz_list.filter((item) => !existingIds.has(Number(item?.[0])));
+                return [...quiz_list, ...nextItems];
+            });
+            props.setLoadError?.("");
+        } catch (error) {
+            console.error("Failed to load quiz list batch", error);
+            props.setLoadError?.("問題一覧の一部読み込みに失敗しました。再読み込みしてください。");
+        } finally {
+            isLoadingRef.current = false;
+        }
     };
 
     useEffect(() => {
+        get_quiz_list(props.now_numRef.current);
+
+        if (typeof window === "undefined" || typeof IntersectionObserver === "undefined") {
+            return undefined;
+        }
+
         const observer = new IntersectionObserver((entries) => {
             for (const entry of entries) {
                 if (entry.isIntersecting) {
@@ -27,7 +54,7 @@ function Quiz_list(props) {
             }
         }, {
             root: null,
-            rootMargin: "-10px",
+            rootMargin: "240px",
             threshold: 0,
         });
 

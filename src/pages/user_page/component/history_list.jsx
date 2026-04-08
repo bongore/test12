@@ -4,10 +4,16 @@ import MDEditor, {selectWord} from "@uiw/react-md-editor";
 import {resolvePath, useParams} from "react-router-dom";
 import Simple_history from "./history_simple";
 import {Link} from "react-router-dom";
+
+function getInitialBatchSize() {
+    if (typeof window === "undefined") return 8;
+    return Math.max(8, Math.floor(window.innerHeight / 100) + 2);
+}
+
 function History_list(props) {
     //1回の更新で追加で表示する個数
     //画面を満たす個数を計算して、add_numに代入
-    const add_num = useRef(Math.floor(window.innerHeight / 100) + 2);
+    const add_num = useRef(getInitialBatchSize());
 
     const history_list = props.history_list;
     const Set_history_list = props.Set_history_list;
@@ -50,31 +56,29 @@ function History_list(props) {
         threshold: 0, // ターゲット要素が完全にビューポートに入った時にコールバックを実行
     };
 
-    const observer = new IntersectionObserver((entries) => {
-        for (const entry of entries) {
-            if (entry.isIntersecting) {
-                // ターゲット要素がビューポートに入った時の処理
-                //console.log("ターゲット要素がビューポートに入りました。");
-                get_history_list(props.now_numRef.current);
-            } else {
-                // ターゲット要素がビューポートから出た時の処理
-                //console.log("ターゲット要素がビューポートから出ました。");
-            }
-        }
-    }, options);
-
     useEffect(() => {
+        if (typeof window === "undefined" || typeof IntersectionObserver === "undefined") {
+            get_history_list(props.now_numRef.current);
+            return undefined;
+        }
+
+        const observer = new IntersectionObserver((entries) => {
+            for (const entry of entries) {
+                if (entry.isIntersecting) {
+                    get_history_list(props.now_numRef.current);
+                }
+            }
+        }, options);
+
         const targetElement = props.targetRef.current; // ターゲット要素を取得
         if (targetElement) {
             observer.observe(targetElement); // ターゲット要素をobserve
-            // 初期状態でターゲット要素がビューポート内にある場合にもコールバックを実行
-            if (targetElement.isIntersecting) {
-                console.log("ターゲット要素がビューポートに入っていました。");
-                get_history_list(props.now_numRef.current);
-            }
         }
         return () => {
-            observer.unobserve(targetElement); // コンポーネントがアンマウントされる際にunobserve
+            if (targetElement) {
+                observer.unobserve(targetElement);
+            }
+            observer.disconnect();
         };
     }, []); // []を指定して初期状態のみで実行されるようにする
 }

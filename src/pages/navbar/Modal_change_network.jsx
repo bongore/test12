@@ -11,7 +11,7 @@ const NETWORK_CONFIG = {
 
 function Modal_change_network(props) {
     const [currentChainId, setCurrentChainId] = useState(props.chain_id);
-    const hasEthereumProvider = Boolean(window.ethereum);
+    const [hasEthereumProvider, setHasEthereumProvider] = useState(Boolean(props.cont?.getEthereumProvider?.()));
     const isVisible = currentChainId !== 80002;
 
     useEffect(() => {
@@ -19,7 +19,24 @@ function Modal_change_network(props) {
     }, [props.chain_id]);
 
     useEffect(() => {
+        const syncProviderState = () => {
+            setHasEthereumProvider(Boolean(props.cont?.getEthereumProvider?.()));
+        };
+
+        syncProviderState();
+        window.addEventListener("ethereum#initialized", syncProviderState);
+        window.addEventListener("focus", syncProviderState);
+
+        return () => {
+            window.removeEventListener("ethereum#initialized", syncProviderState);
+            window.removeEventListener("focus", syncProviderState);
+        };
+    }, [props.cont]);
+
+    useEffect(() => {
         if (!hasEthereumProvider) return undefined;
+        const provider = props.cont?.getEthereumProvider?.();
+        if (!provider) return undefined;
 
         const syncChainId = async () => {
             const nextChainId = await props.cont?.get_chain_id?.();
@@ -40,12 +57,12 @@ function Modal_change_network(props) {
             console.error("Failed to sync chain id", error);
         });
 
-        window.ethereum.on?.("chainChanged", handleChainChanged);
-        window.ethereum.on?.("accountsChanged", handleAccountsChanged);
+        provider.on?.("chainChanged", handleChainChanged);
+        provider.on?.("accountsChanged", handleAccountsChanged);
 
         return () => {
-            window.ethereum.removeListener?.("chainChanged", handleChainChanged);
-            window.ethereum.removeListener?.("accountsChanged", handleAccountsChanged);
+            provider.removeListener?.("chainChanged", handleChainChanged);
+            provider.removeListener?.("accountsChanged", handleAccountsChanged);
         };
     }, [hasEthereumProvider, props.cont]);
 
@@ -60,10 +77,14 @@ function Modal_change_network(props) {
         }
 
         try {
-            await props.cont.ensure_amoy_network();
+            await props.cont.add_or_switch_amoy_network();
             setCurrentChainId(await props.cont.get_chain_id());
         } catch (error) {
             console.error("Failed to add or switch Polygon Amoy", error);
+            if (error?.code === 4001) {
+                alert("MetaMask 側で操作がキャンセルされました。");
+                return;
+            }
             alert("Polygon Amoy への追加または切り替えに失敗しました。MetaMask のポップアップを確認してください。");
         }
     };

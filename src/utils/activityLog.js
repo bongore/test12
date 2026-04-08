@@ -34,6 +34,9 @@ const ACTION_TYPES = {
     ANSWER_SUBMITTED: "answer_submitted",
     ANSWER_SUBMIT_FAILED: "answer_submit_failed",
     ANSWER_BLOCKED_BEFORE_START: "answer_blocked_before_start",
+    ANSWER_PRACTICE_SUBMITTED: "answer_practice_submitted",
+    ANSWER_PRACTICE_CORRECT: "answer_practice_correct",
+    ANSWER_PRACTICE_INCORRECT: "answer_practice_incorrect",
 
     LIVE_PAGE_VIEWED: "live_page_viewed",
     LIVE_AUTH_CHECK_STARTED: "live_auth_check_started",
@@ -55,9 +58,19 @@ const ACTION_TYPES = {
     LIVE_MESSAGE_BLOCKED: "live_message_blocked",
     LIVE_MESSAGE_SENT: "live_message_sent",
     LIVE_SUPERCHAT_SENT: "live_superchat_sent",
+    LIVE_ANNOUNCEMENT_PUBLISHED: "live_announcement_published",
+    LIVE_QUESTION_LIKED: "live_question_liked",
+    LIVE_REACTION_SESSION_STARTED: "live_reaction_session_started",
+    LIVE_REACTION_RESET: "live_reaction_reset",
 
     PERFORMANCE_SAMPLE: "performance_sample",
     EXPORT_ANALYTICS: "export_analytics",
+    EXPORT_GRADES: "export_grades",
+    ADMIN_ADD_STUDENT: "admin_add_student",
+    ADMIN_ADD_TEACHER: "admin_add_teacher",
+    ADMIN_CREATE_QUIZ: "admin_create_quiz",
+    ADMIN_EDIT_QUIZ: "admin_edit_quiz",
+    ADMIN_TA_HELPER_VIEWED: "admin_ta_helper_viewed",
 };
 
 function createId() {
@@ -210,6 +223,9 @@ function formatActionLabel(action) {
         case ACTION_TYPES.ANSWER_SUBMITTED: return "解答送信成功";
         case ACTION_TYPES.ANSWER_SUBMIT_FAILED: return "解答送信失敗";
         case ACTION_TYPES.ANSWER_BLOCKED_BEFORE_START: return "解答開始前ブロック";
+        case ACTION_TYPES.ANSWER_PRACTICE_SUBMITTED: return "練習モード回答";
+        case ACTION_TYPES.ANSWER_PRACTICE_CORRECT: return "練習モード正解";
+        case ACTION_TYPES.ANSWER_PRACTICE_INCORRECT: return "練習モード不正解";
         case ACTION_TYPES.LIVE_PAGE_VIEWED: return "ライブ画面表示";
         case ACTION_TYPES.LIVE_AUTH_CHECK_STARTED: return "ライブ認証開始";
         case ACTION_TYPES.LIVE_AUTH_CHECK: return "ライブ認証結果";
@@ -229,8 +245,18 @@ function formatActionLabel(action) {
         case ACTION_TYPES.LIVE_MESSAGE_BLOCKED: return "コメント送信ブロック";
         case ACTION_TYPES.LIVE_MESSAGE_SENT: return "ライブコメント送信";
         case ACTION_TYPES.LIVE_SUPERCHAT_SENT: return "スーパーチャット送信";
+        case ACTION_TYPES.LIVE_ANNOUNCEMENT_PUBLISHED: return "授業内お知らせ送信";
+        case ACTION_TYPES.LIVE_QUESTION_LIKED: return "質問支持";
+        case ACTION_TYPES.LIVE_REACTION_SESSION_STARTED: return "授業リアクション開始";
+        case ACTION_TYPES.LIVE_REACTION_RESET: return "授業リアクション初期化";
         case ACTION_TYPES.PERFORMANCE_SAMPLE: return "性能サンプル";
         case ACTION_TYPES.EXPORT_ANALYTICS: return "ログ出力";
+        case ACTION_TYPES.EXPORT_GRADES: return "成績CSV出力";
+        case ACTION_TYPES.ADMIN_ADD_STUDENT: return "学生追加";
+        case ACTION_TYPES.ADMIN_ADD_TEACHER: return "教員追加";
+        case ACTION_TYPES.ADMIN_CREATE_QUIZ: return "クイズ作成";
+        case ACTION_TYPES.ADMIN_EDIT_QUIZ: return "クイズ編集";
+        case ACTION_TYPES.ADMIN_TA_HELPER_VIEWED: return "TA補助画面表示";
         default: return action || "-";
     }
 }

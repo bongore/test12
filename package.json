@@ -1,5 +1,5 @@
 {
-  "homepage": "https://bongore.github.io/test11",
+  "homepage": "https://bongore.github.io/test12",
   "name": "test2",
   "version": "0.1.0",
   "private": true,
@@ -58,12 +58,16 @@
   },
   "browserslist": {
     "production": [
-      "defaults",
+      ">0.2%",
+      "not dead",
+      "not op_mini all",
       "chrome >= 67",
       "edge >= 79",
       "firefox >= 68",
       "opera >= 54",
-      "safari >= 14"
+      "safari >= 12",
+      "ios_saf >= 12",
+      "android >= 81"
     ],
     "development": [
       "last 1 chrome version",

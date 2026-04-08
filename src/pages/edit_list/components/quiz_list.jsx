@@ -1,90 +1,80 @@
-import Form from "react-bootstrap/Form";
-import { useState, useEffect, useRef } from "react";
-import MDEditor, { selectWord } from "@uiw/react-md-editor";
-import { resolvePath, useLocation } from "react-router-dom";
-import Simple_quiz from "./quiz_simple";
+import { useEffect, useRef } from "react";
+import { useLocation } from "react-router-dom";
 
-import { Link } from "react-router-dom";
+function getInitialBatchSize() {
+    if (typeof window === "undefined") return 8;
+    return Math.max(8, Math.floor(window.innerHeight / 100) + 2);
+}
+
 function Quiz_list(props) {
     const location = useLocation();
-    //画面を満たす個数を計算して、add_numに代入
-    const add_num = useRef(Math.floor(window.innerHeight / 100) + 2);
+    const add_num = useRef(getInitialBatchSize());
+    const isLoadingRef = useRef(false);
 
-    //表示するクイズのリスト
-    // const [quiz_list,Set_quiz_list] =useState([]);
-
-    const quiz_list = props.quiz_list;
-    const Set_quiz_list = props.Set_quiz_list;
-
-    //クイズのリストを取得
     const get_quiz_list = async (now) => {
-        //追加分のクイズ用のリスト
-        let add_quiz_list = [];
+        if (isLoadingRef.current || now <= 0) return;
+        isLoadingRef.current = true;
 
-        //クイズの総数を超えていたら
-        if (now - add_num.current < 0) {
-            //now_numからquiz_numまでのクイズを取得
-            add_quiz_list = await props.cont.get_quiz_all_data_list(now, 0);
-            //now_numを0にする
-            props.now_numRef.current = 0;
-        } else {
-            //クイズの総数を超えていなかったら
-            //now_numからnow_num+add_numまでのクイズを取得
-            add_quiz_list = await props.cont.get_quiz_all_data_list(now, now - add_num.current);
-            console.log(add_quiz_list);
-            //now_numをnow_num+add_numにする
-            props.now_numRef.current = now - add_num.current;
-        }
-        //new_quiz_listをmapで展開して、quiz_listに追加
-        let now_quiz_list = [];
+        try {
+            let add_quiz_list = [];
 
-        //add_quiz_listをmapで展開して、now_quiz_listに追加
-        add_quiz_list.map((quiz) => {
-            console.log(quiz)
-            now_quiz_list.push(<Simple_quiz quiz={quiz} />); //DOMとして追加
-        });
-
-        //quiz_listにnow_quiz_listを追加
-        //console.log([...quiz_list, ...now_quiz_list]);
-        Set_quiz_list((quiz_list) => [...quiz_list, ...now_quiz_list]);
-    };
-
-    const options = {
-        root: null, // ビューポートをルートとする
-        rootMargin: "-10px", // ビューポートに対するマージン
-        threshold: 0, // ターゲット要素が完全にビューポートに入った時にコールバックを実行
-    };
-
-    const observer = new IntersectionObserver((entries) => {
-        for (const entry of entries) {
-            if (entry.isIntersecting) {
-                // ターゲット要素がビューポートに入った時の処理
-                console.log("ターゲット要素がビューポートに入りました。");
-                get_quiz_list(props.now_numRef.current);
+            if (now - add_num.current < 0) {
+                add_quiz_list = await props.cont.get_quiz_list(now, 0);
+                props.now_numRef.current = 0;
             } else {
-                // ターゲット要素がビューポートから出た時の処理
-                console.log("ターゲット要素がビューポートから出ました。");
+                add_quiz_list = await props.cont.get_quiz_list(now, now - add_num.current);
+                props.now_numRef.current = now - add_num.current;
             }
+
+            props.Set_quiz_list((quiz_list) => {
+                const existingIds = new Set(quiz_list.map((item) => Number(item?.[0])));
+                const nextItems = add_quiz_list.filter((item) => !existingIds.has(Number(item?.[0])));
+                return [...quiz_list, ...nextItems];
+            });
+            props.setLoadError?.("");
+        } catch (error) {
+            console.error("Failed to load edit quiz list batch", error);
+            props.setLoadError?.("管理用クイズ一覧の読み込みに失敗しました。再読み込みしてください。");
+        } finally {
+            isLoadingRef.current = false;
         }
-    }, options);
+    };
 
     useEffect(() => {
-        console.log(location.search);
+        get_quiz_list(props.now_numRef.current);
 
-        const targetElement = props.targetRef.current; // ターゲット要素を取得
-        if (targetElement) {
-            observer.observe(targetElement); // ターゲット要素をobserve
-            // 初期状態でターゲット要素がビューポート内にある場合にもコールバックを実行
-            if (targetElement.isIntersecting) {
-                console.log("ターゲット要素がビューポートに入っていました。");
-                get_quiz_list(props.now_numRef.current);
-            }
+        if (typeof window === "undefined" || typeof IntersectionObserver === "undefined") {
+            return undefined;
         }
-        return () => {
-            observer.unobserve(targetElement); // コンポーネントがアンマウントされる際にunobserve
-        };
 
-        //パラメータを取得
-    }, []); // []を指定して初期状態のみで実行されるようにする
+        const observer = new IntersectionObserver((entries) => {
+            for (const entry of entries) {
+                if (entry.isIntersecting) {
+                    get_quiz_list(props.now_numRef.current);
+                }
+            }
+        }, {
+            root: null,
+            rootMargin: "240px",
+            threshold: 0,
+        });
+
+        const targetElement = props.targetRef.current;
+        if (targetElement) {
+            observer.observe(targetElement);
+        }
+
+        return () => {
+            if (targetElement) {
+                observer.unobserve(targetElement);
+            }
+            observer.disconnect();
+        };
+        // location is intentionally referenced so list resets on route change.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [location.key]);
+
+    return null;
 }
+
 export default Quiz_list;

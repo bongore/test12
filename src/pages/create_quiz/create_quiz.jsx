@@ -1,14 +1,16 @@
 import { Contracts_MetaMask } from "../../contract/contracts";
 import Form from "react-bootstrap/Form";
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import MDEditor from "@uiw/react-md-editor";
 import Answer_select from "./components/answer_select";
 import Wait_Modal from "../../contract/wait_Modal";
+import { ACTION_TYPES, appendActivityLog } from "../../utils/activityLog";
+import { setRegisteredCorrectAnswer } from "../../utils/quizCorrectAnswerStore";
 import "./create_quiz.css";
 
-const { ethereum } = window;
-
 function Create_quiz() {
+    const navigate = useNavigate();
     const [useing_address, Set_useing_address] = useState(null);
     const [title, setTitle] = useState("");
     const [explanation, setExplanation] = useState("");
@@ -44,7 +46,21 @@ function Create_quiz() {
     const create_quiz = async () => {
         if (correct !== "") {
             console.log(new Date(reply_startline).getTime(), new Date(reply_deadline).getTime());
-            Contract.create_quiz(title, explanation, thumbnail_url, content, answer_type, answer_data, convertFullWidthNumbersToHalf(correct), reply_startline, reply_deadline, reward, correct_limit, setShow);
+            const receipt = await Contract.create_quiz(title, explanation, thumbnail_url, content, answer_type, answer_data, convertFullWidthNumbersToHalf(correct), reply_startline, reply_deadline, reward, correct_limit, setShow);
+            appendActivityLog(ACTION_TYPES.ADMIN_CREATE_QUIZ, {
+                page: "create_quiz",
+                title,
+                answerType: answer_type,
+                reward,
+            });
+            const createdQuizId = receipt?.logs?.[2]?.topics?.[2];
+            if (createdQuizId) {
+                const normalizedQuizId = BigInt(createdQuizId).toString();
+                setRegisteredCorrectAnswer(normalizedQuizId, convertFullWidthNumbersToHalf(correct));
+                navigate(`/answer_quiz/${normalizedQuizId}`);
+                return;
+            }
+            navigate("/list_quiz");
         } else {
             alert("正解を入力してください");
         }

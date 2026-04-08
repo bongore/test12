@@ -4,24 +4,30 @@ import { AiOutlineUnorderedList, AiOutlineUser } from "react-icons/ai";
 import { FaTrophy } from "react-icons/fa";
 import { IoNotificationsOutline } from "react-icons/io5";
 import { MdDashboard, MdOutlineQuiz } from "react-icons/md";
-import { RiFileSettingsLine, RiLiveLine } from "react-icons/ri";
+import { RiFileSettingsLine, RiMessage2Line } from "react-icons/ri";
 import Modal_change_network from "./Modal_change_network";
 import { useAccessControl } from "../../utils/accessControl";
+import { WALLET_PROVIDER_CHANGED_EVENT } from "../../contract/contractClients";
 import "./navbar.css";
 
 function Nav_menu(props) {
     const [useing_address, Set_useing_address] = useState(null);
     const [chain_id, setChain_id] = useState(null);
-    const [isTeacher, setIsTeacher] = useState(false);
     const access = useAccessControl(props.cont);
 
     useEffect(() => {
         const get_variable = async () => {
             setChain_id(await props.cont.get_chain_id());
             Set_useing_address(await props.cont.get_address());
-            setIsTeacher(await props.cont.isTeacher());
         };
         get_variable();
+
+        window.addEventListener(WALLET_PROVIDER_CHANGED_EVENT, get_variable);
+        window.addEventListener("focus", get_variable);
+        return () => {
+            window.removeEventListener(WALLET_PROVIDER_CHANGED_EVENT, get_variable);
+            window.removeEventListener("focus", get_variable);
+        };
     }, [props.cont]);
 
     return (
@@ -58,8 +64,8 @@ function Nav_menu(props) {
                             to="/live"
                             className={({ isActive }) => `nav-item ${isActive ? "nav-item--active" : ""}`}
                         >
-                            <RiLiveLine className="nav-icon" />
-                            <span className="nav-label">ライブ</span>
+                            <RiMessage2Line className="nav-icon" />
+                            <span className="nav-label">掲示板</span>
                         </NavLink>
                     )}
 
@@ -71,7 +77,7 @@ function Nav_menu(props) {
                         <span className="nav-label">通知</span>
                     </NavLink>
 
-                    {isTeacher && (
+                    {access.isTeacher && (
                         <NavLink
                             to="/create_quiz"
                             className={({ isActive }) => `nav-item ${isActive ? "nav-item--active" : ""}`}
@@ -89,7 +95,7 @@ function Nav_menu(props) {
                         <span className="nav-label">マイページ</span>
                     </NavLink>
 
-                    {isTeacher && (
+                    {access.isTeacher && (
                         <NavLink
                             to="/edit_list"
                             className={({ isActive }) => `nav-item ${isActive ? "nav-item--active" : ""}`}

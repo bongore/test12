@@ -1,15 +1,16 @@
 import { Contracts_MetaMask } from "../../contract/contracts";
 import Form from "react-bootstrap/Form";
-import { useState, useEffect } from "react";
-import { useParams, useLocation } from 'react-router-dom';
+import { useState, useEffect, useMemo } from "react";
+import { useParams, useNavigate } from 'react-router-dom';
 import MDEditor from "@uiw/react-md-editor";
 import Wait_Modal from "../../contract/wait_Modal";
+import { ACTION_TYPES, appendActivityLog } from "../../utils/activityLog";
+import { useAccessControl } from "../../utils/accessControl";
 import "../create_quiz/create_quiz.css";
 
-const { ethereum } = window;
-
 function Edit_quiz() {
-    const [id, setId] = useState(useParams()["id"]);
+    const navigate = useNavigate();
+    const id = useParams()["id"];
     const [owner, setOwner] = useState(null);
 
     const [title, setTitle] = useState("");
@@ -23,19 +24,23 @@ function Edit_quiz() {
             .replace(/\s(\d):/, " 0$1:"),
     );
     const [reply_deadline, setReply_deadline] = useState(getLocalizedDateTimeString(addDays(new Date(), 0)));
-    let Contract = new Contracts_MetaMask();
+    const Contract = useMemo(() => new Contracts_MetaMask(), []);
+    const access = useAccessControl(Contract);
 
     const [now, setnow] = useState(null);
     const [show, setShow] = useState(false);
-    const [isteacher, setisteacher] = useState(null);
-
-    const location = useLocation();
-    const quiz = location.state.args;
+    const [isReady, setIsReady] = useState(false);
 
     const edit_quiz = async () => {
         console.log(id, owner, title, explanation, thumbnail_url, content, reply_startline, reply_deadline);
         if (new Date(reply_startline).getTime() < new Date(reply_deadline).getTime()) {
-            Contract.edit_quiz(id, owner, title, explanation, thumbnail_url, content, reply_startline, reply_deadline, setShow);
+            await Contract.edit_quiz(id, owner, title, explanation, thumbnail_url, content, reply_startline, reply_deadline, setShow);
+            appendActivityLog(ACTION_TYPES.ADMIN_EDIT_QUIZ, {
+                page: "edit_quiz",
+                quizId: id,
+                title,
+            });
+            navigate("/edit_list");
         } else {
             alert("回答開始日時を回答締切日時より前に設定してください");
         }
@@ -66,24 +71,40 @@ function Edit_quiz() {
         return date;
     }
 
-    async function is_teacher() {
-        setisteacher(await Contract.isTeacher());
+    useEffect(() => {
+        let active = true;
+
+        async function loadQuiz() {
+            try {
+                const quiz = await Contract.get_quiz(id);
+                if (!active || !quiz) return;
+                setOwner(quiz[1]);
+                setTitle(quiz[2] || "");
+                setExplanation(quiz[3] || "");
+                setThumbnail_url(quiz[4] || "");
+                setContent(quiz[5] || "");
+                setReply_startline(getLocalizedDateTimeString(new Date(Number(quiz[8]) * 1000)));
+                setReply_deadline(getLocalizedDateTimeString(new Date(Number(quiz[9]) * 1000)));
+                setnow(getLocalizedDateTimeString());
+                setIsReady(true);
+            } catch (error) {
+                console.error("Failed to load quiz for edit", error);
+                setIsReady(false);
+            }
+        }
+
+        loadQuiz();
+
+        return () => {
+            active = false;
+        };
+    }, [Contract, id]);
+
+    if (access.isLoading || !isReady) {
+        return <div className="quiz-form-page">読み込み中です...</div>;
     }
 
-    useEffect(() => {
-        console.log(id);
-        setOwner(quiz[1]);
-        setTitle(quiz[2]);
-        setExplanation(quiz[3]);
-        setThumbnail_url(quiz[4]);
-        setContent(quiz[5]);
-        setReply_startline(getLocalizedDateTimeString(new Date(quiz[8] * 1000)));
-        setReply_deadline(getLocalizedDateTimeString(new Date(quiz[9] * 1000)));
-        setnow(getLocalizedDateTimeString());
-        is_teacher();
-    }, []);
-
-    if (isteacher) {
+    if (access.isTeacher) {
         return (
             <div className="quiz-form-page">
                 <div className="page-header">
@@ -178,7 +199,7 @@ function Edit_quiz() {
             </div>
         );
     } else {
-        return (<></>);
+        return (<div className="quiz-form-page">この画面は教員・TAのみ利用できます。</div>);
     }
 }
 

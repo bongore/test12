@@ -1,10 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { WALLET_PROVIDER_CHANGED_EVENT } from "../contract/contractClients";
 
 function createDefaultAccessState() {
     return {
         isLoading: true,
         address: "",
+        role: "guest",
+        roleLabel: "未登録",
+        registeredBy: "",
+        registeredAt: 0,
         isConnected: false,
+        isStudent: false,
         canViewLive: false,
         isTeacher: false,
         hasProfile: false,
@@ -15,61 +21,197 @@ function createDefaultAccessState() {
     };
 }
 
-async function resolveAccessState(cont) {
-    const nextState = createDefaultAccessState();
+let lastResolvedAccessState = null;
+let lastResolvedAt = 0;
+let resolveAccessPromise = null;
+const ACCESS_CACHE_TTL_MS = 12000;
 
-    try {
-        const address = await cont?.get_address?.();
-        if (!address) {
-            return {
-                ...nextState,
-                isLoading: false,
-            };
-        }
+function resetAccessStateCache() {
+    lastResolvedAccessState = null;
+    lastResolvedAt = 0;
+    resolveAccessPromise = null;
+}
 
-        nextState.address = address;
-        nextState.isConnected = true;
+function safeCall(method, ...args) {
+    if (typeof method !== "function") {
+        return Promise.resolve(null);
+    }
+    return Promise.resolve(method(...args)).catch(() => null);
+}
 
-        const [isTeacherResult, userData] = await Promise.all([
-            cont?.isTeacher?.().catch(() => false),
-            cont?.get_user_data?.(address).catch(() => null),
-        ]);
+function isSameAccessState(current, next) {
+    return current.isLoading === next.isLoading
+        && current.address === next.address
+        && current.role === next.role
+        && current.roleLabel === next.roleLabel
+        && current.registeredBy === next.registeredBy
+        && current.registeredAt === next.registeredAt
+        && current.isConnected === next.isConnected
+        && current.isStudent === next.isStudent
+        && current.canViewLive === next.canViewLive
+        && current.isTeacher === next.isTeacher
+        && current.hasProfile === next.hasProfile
+        && current.canBroadcastLive === next.canBroadcastLive
+        && current.isAuthorizedUser === next.isAuthorizedUser
+        && current.canAnswerQuiz === next.canAnswerQuiz
+        && current.canJoinLive === next.canJoinLive;
+}
 
-        nextState.isTeacher = Boolean(isTeacherResult);
-        nextState.hasProfile = Boolean(userData?.[3]);
-        nextState.canBroadcastLive = nextState.isTeacher;
-        nextState.canViewLive = nextState.isConnected;
-        nextState.isAuthorizedUser = nextState.isConnected;
-        nextState.canAnswerQuiz = nextState.isConnected;
-        nextState.canJoinLive = nextState.isConnected;
-    } catch (error) {
-        console.error("Failed to resolve access state", error);
+function mergeAccessState(current, next, options = {}) {
+    const allowSoftDisconnect = options.allowSoftDisconnect !== false;
+
+    if (
+        allowSoftDisconnect
+        && current?.isConnected
+        && current?.address
+        && !next?.isConnected
+        && !next?.address
+    ) {
+        return {
+            ...current,
+            isLoading: false,
+        };
     }
 
-    return {
-        ...nextState,
-        isLoading: false,
-    };
+    return next;
+}
+
+async function resolveAccessState(cont) {
+    const now = Date.now();
+    if (lastResolvedAccessState && now - lastResolvedAt < ACCESS_CACHE_TTL_MS) {
+        return lastResolvedAccessState;
+    }
+
+    if (resolveAccessPromise) {
+        return resolveAccessPromise;
+    }
+
+    const nextState = createDefaultAccessState();
+    resolveAccessPromise = (async () => {
+        try {
+            const address = await cont?.get_address?.();
+            if (!address) {
+                const disconnectedState = {
+                    ...nextState,
+                    isLoading: false,
+                };
+                lastResolvedAccessState = disconnectedState;
+                lastResolvedAt = Date.now();
+                return disconnectedState;
+            }
+
+            nextState.address = address;
+            nextState.isConnected = true;
+
+            const [registrationSnapshot, roleSummaryResult, roleResult, isRegisteredResult, isTeacherResult, isStudentResult, userData] = await Promise.all([
+                safeCall(cont?.getRegistrationDetails, address),
+                safeCall(cont?.getRoleSummary, address),
+                safeCall(cont?.getUserRole, address),
+                safeCall(cont?.isRegistered, address),
+                safeCall(cont?.isTeacher).then((value) => Boolean(value)),
+                safeCall(cont?.isStudent, address),
+                safeCall(cont?.get_user_data, address),
+            ]);
+
+            const normalizedRole = registrationSnapshot && typeof registrationSnapshot === "object" && registrationSnapshot.roleKey
+                ? { key: registrationSnapshot.roleKey, label: registrationSnapshot.roleLabel || "未登録" }
+                : roleSummaryResult && typeof roleSummaryResult === "object" && roleSummaryResult.roleKey
+                ? { key: roleSummaryResult.roleKey, label: roleSummaryResult.roleLabel || "未登録" }
+                : roleResult && typeof roleResult === "object"
+                ? roleResult
+                : Boolean(isTeacherResult)
+                    ? { key: "teacher", label: "教員" }
+                    : Boolean(isStudentResult)
+                        ? { key: "student", label: "学生" }
+                        : { key: "guest", label: "未登録" };
+
+            nextState.role = normalizedRole.key;
+            nextState.roleLabel = normalizedRole.label;
+            nextState.registeredBy = String(registrationSnapshot?.addedBy || "");
+            nextState.registeredAt = Number(registrationSnapshot?.addedAt || 0);
+            nextState.isTeacher = Boolean(registrationSnapshot?.isTeacher) || Boolean(roleSummaryResult?.isTeacher) || normalizedRole.key === "teacher" || Boolean(isTeacherResult);
+            nextState.isStudent = Boolean(registrationSnapshot?.isStudent) || Boolean(roleSummaryResult?.isStudent) || normalizedRole.key === "student" || Boolean(isStudentResult);
+            nextState.hasProfile = Boolean(userData?.[3]);
+            nextState.isAuthorizedUser = nextState.isTeacher
+                || nextState.isStudent
+                || Boolean(registrationSnapshot?.registered)
+                || Boolean(roleSummaryResult?.registered)
+                || Boolean(isRegisteredResult)
+                || (isStudentResult == null && isRegisteredResult == null && normalizedRole.key === "guest" ? nextState.isConnected : false);
+            nextState.canBroadcastLive = nextState.isTeacher;
+            nextState.canViewLive = nextState.isAuthorizedUser;
+            nextState.canAnswerQuiz = nextState.isAuthorizedUser;
+            nextState.canJoinLive = nextState.isAuthorizedUser;
+        } catch (error) {
+            console.error("Failed to resolve access state", error);
+        }
+
+        const resolvedState = {
+            ...nextState,
+            isLoading: false,
+        };
+        lastResolvedAccessState = resolvedState;
+        lastResolvedAt = Date.now();
+        return resolvedState;
+    })();
+
+    try {
+        return await resolveAccessPromise;
+    } finally {
+        resolveAccessPromise = null;
+    }
 }
 
 function useAccessControl(cont) {
     const [accessState, setAccessState] = useState(() => createDefaultAccessState());
+    const loadInFlightRef = useRef(false);
 
     useEffect(() => {
         let active = true;
 
-        const load = async () => {
-            setAccessState((current) => ({ ...current, isLoading: true }));
-            const nextState = await resolveAccessState(cont);
-            if (active) {
-                setAccessState(nextState);
+        const load = async ({ showLoading = false, allowSoftDisconnect = true } = {}) => {
+            if (loadInFlightRef.current) return;
+            loadInFlightRef.current = true;
+            if (showLoading) {
+                setAccessState((current) => ({ ...current, isLoading: true }));
+            }
+            try {
+                const nextState = await resolveAccessState(cont);
+                if (active) {
+                    setAccessState((current) => {
+                        const mergedState = mergeAccessState(current, nextState, { allowSoftDisconnect });
+                        return isSameAccessState(current, mergedState) ? current : mergedState;
+                    });
+                }
+            } finally {
+                loadInFlightRef.current = false;
             }
         };
 
-        load();
+        load({ showLoading: true, allowSoftDisconnect: false });
+
+        const handleRefresh = () => {
+            if (document.visibilityState === "hidden") return;
+            load({ showLoading: false, allowSoftDisconnect: true });
+        };
+        const handleWalletProviderChanged = () => {
+            resetAccessStateCache();
+            load({ showLoading: false, allowSoftDisconnect: false });
+        };
+        const interval = window.setInterval(() => {
+            resetAccessStateCache();
+            load({ showLoading: false, allowSoftDisconnect: true });
+        }, 30000);
+        window.addEventListener("focus", handleRefresh);
+        document.addEventListener("visibilitychange", handleRefresh);
+        window.addEventListener(WALLET_PROVIDER_CHANGED_EVENT, handleWalletProviderChanged);
 
         return () => {
             active = false;
+            window.clearInterval(interval);
+            window.removeEventListener("focus", handleRefresh);
+            document.removeEventListener("visibilitychange", handleRefresh);
+            window.removeEventListener(WALLET_PROVIDER_CHANGED_EVENT, handleWalletProviderChanged);
         };
     }, [cont]);
 
@@ -77,6 +219,8 @@ function useAccessControl(cont) {
 }
 
 export {
+    mergeAccessState,
+    resetAccessStateCache,
     resolveAccessState,
     useAccessControl,
 };

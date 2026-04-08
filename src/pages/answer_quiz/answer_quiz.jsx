@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import MDEditor from "@uiw/react-md-editor";
 import { useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import Wait_Modal from "../../contract/wait_Modal";
 import { Contracts_MetaMask } from "../../contract/contracts";
 import { useAccessControl } from "../../utils/accessControl";
@@ -12,6 +14,7 @@ import {
     logPageView,
     saveDraft,
 } from "../../utils/activityLog";
+import { recordPracticeAttempt } from "../../utils/courseEnhancements";
 import {
     QUIZ_INPUT_MODE_PLAIN,
     QUIZ_INPUT_MODE_REGEX,
@@ -127,6 +130,8 @@ function Answer_type2(props) {
 }
 
 function Answer_quiz() {
+    const navigate = useNavigate();
+    const location = useLocation();
     const [answer, setAnswer] = useState("");
     const [now, setNow] = useState(null);
     const [show, setShow] = useState(false);
@@ -139,9 +144,12 @@ function Answer_quiz() {
     const [draftSavedAt, setDraftSavedAt] = useState("");
     const [loadDurationMs, setLoadDurationMs] = useState(null);
     const [loadError, setLoadError] = useState("");
+    const [practiceFeedback, setPracticeFeedback] = useState(null);
+    const [currentEpoch, setCurrentEpoch] = useState(() => Math.floor(Date.now() / 1000));
     const contract = useMemo(() => new Contracts_MetaMask(), []);
     const access = useAccessControl(contract);
     const id = useParams().id;
+    const isPracticeMode = new URLSearchParams(location.search).get("practice") === "1";
     const draftKey = `quiz_answer_${id}`;
     const pageOpenedAtRef = useRef(Date.now());
     const answerStartedAtRef = useRef(null);
@@ -211,15 +219,14 @@ function Answer_quiz() {
             setSimpleQuiz(simpleQuizData);
 
             if (Number(simpleQuizData[10]) !== 0) {
-                try {
-                    const confirmedAnswer = await contract.get_confirm_answer(id);
-                    const normalized = Array.isArray(confirmedAnswer) ? confirmedAnswer.join(",") : confirmedAnswer;
-                    setSavedAnswerStr(normalized || "");
-                    setAnswer(normalized || "");
-                } catch (error) {
-                    console.error("Failed to fetch confirm answer", error);
+                const cachedAnswer = localStorage.getItem(`quiz_${id}_answer`) || "";
+                setSavedAnswerStr(cachedAnswer);
+                if (cachedAnswer) {
+                    setAnswer(cachedAnswer);
                 }
             } else {
+                localStorage.removeItem(`quiz_${id}_answer`);
+                setSavedAnswerStr("");
                 const draft = getDraft(draftKey);
                 if (draft) {
                     setAnswer(draft);
@@ -259,6 +266,41 @@ function Answer_quiz() {
     const create_answer = async () => {
         if (!quiz) return;
 
+        if (isPracticeMode) {
+            const finalAnswer = convertFullWidthNumbersToHalf(answer).trim();
+            const correctAnswer = String(quiz[14] || "").trim();
+            const isCorrect = finalAnswer !== "" && finalAnswer === correctAnswer;
+
+            recordPracticeAttempt({
+                quizId: id,
+                address: access.address,
+                answer: finalAnswer,
+                isCorrect,
+                title: quiz[2],
+            });
+
+            appendActivityLog(ACTION_TYPES.ANSWER_PRACTICE_SUBMITTED, {
+                page: "answer_quiz",
+                quizId: id,
+                answerLength: finalAnswer.length,
+                isCorrect,
+            });
+            appendActivityLog(
+                isCorrect ? ACTION_TYPES.ANSWER_PRACTICE_CORRECT : ACTION_TYPES.ANSWER_PRACTICE_INCORRECT,
+                {
+                    page: "answer_quiz",
+                    quizId: id,
+                    answerLength: finalAnswer.length,
+                }
+            );
+
+            setPracticeFeedback({
+                isCorrect,
+                message: isCorrect ? "練習モード: 正解です。" : "練習モード: まだ復習が必要です。",
+            });
+            return;
+        }
+
         if (quiz[15] === true) {
             setIsCorrectShow(true);
             appendActivityLog(ACTION_TYPES.QUIZ_CORRECT_REVEALED, {
@@ -292,6 +334,8 @@ function Answer_quiz() {
 
         try {
             await contract.create_answer(id, finalAnswer, setShow, setContent);
+            setSavedAnswerStr(finalAnswer);
+            setAnswer(finalAnswer);
             clearDraft(draftKey);
             appendActivityLog(ACTION_TYPES.ANSWER_DRAFT_CLEARED, {
                 page: "answer_quiz",
@@ -309,6 +353,9 @@ function Answer_quiz() {
                 solvingDurationSeconds: answerStartedAtRef.current ? Math.round((Date.now() - answerStartedAtRef.current) / 1000) : null,
                 submitDurationMs: Math.round(performance.now() - startedAt),
             });
+            await get_quiz();
+            setShow(false);
+            navigate("/list_quiz");
         } catch (error) {
             console.error(error);
             appendActivityLog(ACTION_TYPES.ANSWER_SUBMIT_FAILED, {
@@ -362,18 +409,23 @@ function Answer_quiz() {
 
     useEffect(() => {
         if (!simpleQuiz) return;
-        const localCachedAnswer = localStorage.getItem(`quiz_${id}_answer`);
-        const isLocallyAnswered = Boolean(localCachedAnswer);
         const rawStatus = Number(simpleQuiz[10]);
-        const derivedStatus = rawStatus === 0 && isLocallyAnswered ? 3 : rawStatus;
         appendActivityLog(ACTION_TYPES.QUIZ_STATUS_DETECTED, {
             page: "answer_quiz",
             quizId: id,
             rawStatus,
-            derivedStatus,
-            hasLocalCachedAnswer: isLocallyAnswered,
+            derivedStatus: rawStatus,
+            hasLocalCachedAnswer: Boolean(localStorage.getItem(`quiz_${id}_answer`)),
         });
     }, [id, simpleQuiz]);
+
+    useEffect(() => {
+        const timer = window.setInterval(() => {
+            setCurrentEpoch(Math.floor(Date.now() / 1000));
+        }, 30000);
+
+        return () => window.clearInterval(timer);
+    }, []);
 
     if (access.isLoading) {
         return (
@@ -391,7 +443,7 @@ function Answer_quiz() {
                 <div className="glass-card" style={{ padding: "var(--space-6)" }}>
                     <h3 className="heading-md">解答権限がありません</h3>
                     <p style={{ color: "var(--text-secondary)", marginBottom: 0 }}>
-                        問題解答は登録済みユーザー、または先生 / TA のみ利用できます。
+                        問題解答を利用するには MetaMask を接続してください。
                     </p>
                 </div>
             </div>
@@ -426,16 +478,17 @@ function Answer_quiz() {
     }
 
     const localCachedAnswer = localStorage.getItem(`quiz_${id}_answer`);
-    const isLocallyAnswered = Boolean(localCachedAnswer);
     const rawStatus = Number(simpleQuiz[10]);
-    const status = rawStatus === 0 && isLocallyAnswered ? 3 : rawStatus;
+    const status = rawStatus;
+    const deadlineEpoch = Number(quiz?.[9] || 0);
+    const canShowCorrectAnswer = Boolean(quiz?.[14]) && (isCorrectShow || (deadlineEpoch > 0 && currentEpoch > deadlineEpoch));
     const savedAnswerDisplay = savedAnswerStr || localCachedAnswer || "";
     const visibleDraft = status === 0 ? answer : "";
     const statusMessages = {
         0: { text: "未回答です。回答後に結果を確認してください。", className: "status-first" },
-        1: { text: "回答済みです。必要なら正解を確認してください。", className: "status-wrong" },
-        2: { text: "正解済みです。", className: "status-correct" },
-        3: { text: "このブラウザでは回答済みの記録があります。", className: "status-first" },
+        1: { text: "支払い処理後に回答結果が確定しました。必要なら正解を確認してください。", className: "status-wrong" },
+        2: { text: "支払い処理後に正解として確定しました。", className: "status-correct" },
+        3: { text: "回答は送信済みです。支払い処理完了まで再回答はできません。", className: "status-first" },
     };
     const statusInfo = statusMessages[status] || { text: "", className: "" };
 
@@ -451,6 +504,7 @@ function Answer_quiz() {
                 <div style={{ display: "flex", justifyContent: "space-between", gap: "var(--space-4)", flexWrap: "wrap", marginBottom: "var(--space-4)" }}>
                     <h2 className="heading-lg" style={{ marginBottom: 0 }}>{quiz[2]}</h2>
                     <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap", color: "var(--text-secondary)", fontSize: "14px" }}>
+                        {isPracticeMode ? <span style={{ color: "#9be7ff" }}>練習モード</span> : null}
                         <span>読込時間: {loadDurationMs == null ? "-" : `${loadDurationMs}ms`}</span>
                         <span>下書き保存: {draftSavedAt || "未保存"}</span>
                     </div>
@@ -476,7 +530,7 @@ function Answer_quiz() {
                         quiz={quiz}
                         answer={answer}
                         onSelect={handleSelectOption}
-                        disabled={status !== 0 || isSubmitting}
+                        disabled={(!isPracticeMode && status !== 0) || isSubmitting}
                     />
                 )}
                 {Number(quiz[13]) === 1 && (
@@ -485,14 +539,14 @@ function Answer_quiz() {
                         answer={answer}
                         onTextChange={handleTextChange}
                         onValidation={handleValidation}
-                        disabled={status !== 0 || isSubmitting}
+                        disabled={(!isPracticeMode && status !== 0) || isSubmitting}
                     />
                 )}
 
-                {status === 0 ? (
+                {(status === 0 || isPracticeMode) ? (
                     <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginTop: "var(--space-6)", gap: "var(--space-4)", flexWrap: "wrap" }}>
                         <button className="btn-primary-custom" onClick={create_answer} disabled={isSubmitting || !answer}>
-                            {isSubmitting ? "送信中..." : "回答を送信"}
+                            {isPracticeMode ? "練習として判定" : (isSubmitting ? "送信中..." : "回答を送信")}
                         </button>
                     </div>
                 ) : (
@@ -514,6 +568,14 @@ function Answer_quiz() {
                     </div>
                 )}
 
+                {isPracticeMode && practiceFeedback && (
+                    <div className="glass-card" style={{ marginTop: "var(--space-4)", padding: "var(--space-4)", border: `1px solid ${practiceFeedback.isCorrect ? "rgba(76, 175, 80, 0.5)" : "rgba(255, 152, 0, 0.5)"}` }}>
+                        <div style={{ color: practiceFeedback.isCorrect ? "#9cffb3" : "#ffd27d", fontWeight: 700 }}>
+                            {practiceFeedback.message}
+                        </div>
+                    </div>
+                )}
+
                 {status !== 0 && savedAnswerDisplay && (
                     <div className="glass-card" style={{ marginTop: "var(--space-4)", padding: "var(--space-4)" }}>
                         <span style={{ color: "rgba(255,255,255,0.7)", fontSize: "14px" }}>あなたの回答: </span>
@@ -521,7 +583,7 @@ function Answer_quiz() {
                     </div>
                 )}
 
-                <Show_correct cont={isCorrectShow} answer={quiz[14]} />
+                <Show_correct cont={canShowCorrectAnswer} answer={quiz[14]} />
             </div>
 
             <Wait_Modal showFlag={show} content={content} />

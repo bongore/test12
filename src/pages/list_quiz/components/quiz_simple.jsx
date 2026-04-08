@@ -110,6 +110,9 @@ function Simple_quiz(props) {
     const limit = Number(props.quiz[9]);
     const status = Number(props.quiz[10]);
     const isPaid = props.quiz[11];
+    const currentEpoch = props.currentEpoch ?? Math.floor(Date.now() / 1000);
+    const correctAnswer = props.correctAnswer || "";
+    const scheduleLabel = currentEpoch < startTime ? "公開予約" : (currentEpoch > deadline ? "締切済み" : "公開中");
 
     useEffect(() => {
         if (reward === 0) setIsreward(false);
@@ -118,6 +121,12 @@ function Simple_quiz(props) {
             setIsreward(false);
         }
     }, [isPaid, reward]);
+
+    useEffect(() => {
+        if (status === QUIZ_STATUS.UNANSWERED) {
+            localStorage.removeItem(`quiz_${quizId}_answer`);
+        }
+    }, [quizId, status]);
 
     const statusClass = getStatusClass(status);
     const statusLabel = getStatusLabel(status);
@@ -149,6 +158,9 @@ function Simple_quiz(props) {
                             )}
                             <span className={`badge-status ${badgeClass}`}>
                                 {statusLabel}
+                            </span>
+                            <span className="quiz-indicator" style={{ background: "rgba(255,255,255,0.1)", color: "#fff" }}>
+                                {scheduleLabel}
                             </span>
                         </div>
                     </div>
@@ -183,9 +195,35 @@ function Simple_quiz(props) {
                         </div>
                     )}
 
+                    {currentEpoch > deadline && correctAnswer && (
+                        <div className="quiz-user-answer" style={{ marginTop: "var(--space-3)", fontSize: "var(--font-size-sm)", padding: "var(--space-2)", background: "rgba(76, 175, 80, 0.12)", borderRadius: "var(--radius-sm)" }}>
+                            <span style={{ fontSize: "12px", color: "#ffffff", opacity: 0.9 }}>締切後の正解 </span>
+                            <strong style={{ color: "#ffffff" }}>{correctAnswer}</strong>
+                        </div>
+                    )}
+
                     {!props.canAnswerQuiz && (
                         <div className="quiz-user-answer" style={{ marginTop: "var(--space-3)", padding: "var(--space-2)", background: "rgba(255, 120, 120, 0.12)", borderRadius: "var(--radius-sm)", color: "#ffd0d0" }}>
-                            登録済みユーザー、または先生 / TA のみ解答できます。
+                            MetaMask を接続すると解答できます。
+                        </div>
+                    )}
+
+                    {props.canAnswerQuiz && (
+                        <div style={{ display: "flex", gap: "8px", marginTop: "var(--space-3)", flexWrap: "wrap" }}>
+                            <Link
+                                to={`/answer_quiz/${quizId}`}
+                                className="btn-primary-custom"
+                                style={{ textDecoration: "none", flex: 1, minWidth: "140px", textAlign: "center", padding: "10px 14px" }}
+                            >
+                                本番で回答
+                            </Link>
+                            <Link
+                                to={`/answer_quiz/${quizId}?practice=1`}
+                                className="btn-secondary-custom"
+                                style={{ textDecoration: "none", flex: 1, minWidth: "140px", textAlign: "center", padding: "10px 14px" }}
+                            >
+                                練習モード
+                            </Link>
                         </div>
                     )}
                 </div>
@@ -197,14 +235,7 @@ function Simple_quiz(props) {
         return <div className="quiz-card-link" style={{ cursor: "not-allowed" }}>{card}</div>;
     }
 
-    return (
-        <Link
-            to={`/answer_quiz/${quizId}`}
-            className="quiz-card-link"
-        >
-            {card}
-        </Link>
-    );
+    return <div className="quiz-card-link">{card}</div>;
 }
 
 export default Simple_quiz;

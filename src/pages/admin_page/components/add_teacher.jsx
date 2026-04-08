@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Form } from "react-bootstrap";
+import { ACTION_TYPES, appendActivityLog } from "../../../utils/activityLog";
 
 function formatInternalId(prefix, index) {
     return `${prefix}-${String(index + 1).padStart(3, "0")}`;
@@ -22,6 +23,10 @@ function Add_teacher(props) {
     async function add_teacher() {
         if (!addTeacher.trim()) return;
         await props.cont.add_teacher(addTeacher.trim());
+        appendActivityLog(ACTION_TYPES.ADMIN_ADD_TEACHER, {
+            page: "admin",
+            address: addTeacher.trim(),
+        });
         setAddTeacher("");
         await loadTeachers();
     }
@@ -34,7 +39,7 @@ function Add_teacher(props) {
         <div>
             <h3 className="section-title">先生 / TA を追加</h3>
             <p className="section-desc">
-                追加する先生または TA のウォレットアドレスを入力してください。登録済み一覧では `STAFF-*` の識別番号も確認できます。
+                追加する教員側アカウントのウォレットアドレスを入力してください。現在のコントラクトでは TA・先生・教授はまとめて `教員` として扱います。
             </p>
 
             <Form>

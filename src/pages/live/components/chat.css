@@ -12,9 +12,28 @@
     font-size: var(--font-size-sm);
     line-height: var(--line-height-tight);
     word-break: break-word;
-    padding: 2px 4px; /* オーバーレイではPadding少なめでスッキリと */
+    padding: 10px 12px;
     color: #fff;
-    text-shadow: 1px 1px 2px rgba(0,0,0,0.8); /* 動画の上でも文字が読めるようにシャドウを追加 */
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    position: relative;
+}
+
+.chat-message-tools {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 6px;
+}
+
+.chat-message-delete {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(244, 67, 54, 0.14);
+    color: #ffe6e3;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 700;
 }
 
 .chat-user {
@@ -27,6 +46,53 @@
 .chat-text {
     font-size: 14px;
     font-weight: 500;
+}
+
+.chat-question {
+    border-color: rgba(0, 212, 255, 0.25);
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.08), rgba(255, 255, 255, 0.03));
+}
+
+.chat-question-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.chat-question-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(0, 212, 255, 0.16);
+    border: 1px solid rgba(0, 212, 255, 0.28);
+    color: var(--accent-cyan);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.chat-question-like {
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-primary);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 12px;
+    transition: all 0.2s ease;
+}
+
+.chat-question-like.is-liked,
+.chat-question-like:hover:not(:disabled) {
+    background: rgba(255, 196, 0, 0.14);
+    border-color: rgba(255, 196, 0, 0.35);
+    color: var(--accent-yellow);
+}
+
+.chat-question-like:disabled {
+    opacity: 0.72;
+    cursor: default;
 }
 
 /* Superchat Base Styling */
@@ -86,9 +152,47 @@
 
 .chat-form {
     display: flex;
-    flex-direction: row; /* 横並びのスマートなデザインに */
-    align-items: center;
+    flex-direction: column;
+    align-items: stretch;
     gap: var(--space-2);
+}
+
+.chat-mode-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.chat-mode-btn {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-secondary);
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    transition: all 0.2s ease;
+}
+
+.chat-mode-btn.is-active {
+    background: rgba(0, 212, 255, 0.16);
+    border-color: rgba(0, 212, 255, 0.32);
+    color: var(--accent-cyan);
+}
+
+.chat-anonymous-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.chat-input-main {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
 }
 
 .chat-input-field {
@@ -161,4 +265,20 @@
 .btn-send:hover {
     transform: translateY(-2px);
     box-shadow: 0 6px 16px rgba(0, 212, 255, 0.4);
+}
+
+@media screen and (max-width: 640px) {
+    .chat-input-main {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .chat-form-actions {
+        justify-content: space-between;
+    }
+
+    .chat-draft-hint {
+        min-width: auto;
+        text-align: left;
+    }
 }

@@ -1,6 +1,4 @@
-import { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
-import Modal from "./Modal";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import "./quiz_simple.css";
 import { Contracts_MetaMask } from "../../../contract/contracts";
@@ -12,15 +10,13 @@ const QUIZ_INDEX = {
     TITLE: 2,
     EXPLANATION: 3,
     THUMBNAIL: 4,
-    CONTENT: 5,
-    ANSWER_TYPE: 6,
-    ANSWER_DATA: 7,
-    START_TIME: 8,
-    DEADLINE: 9,
-    REWARD: 10,
-    ANSWER_COUNT: 11,
-    CORRECT_LIMIT: 12,
-    STATUS: 13,
+    START_TIME: 5,
+    DEADLINE: 6,
+    REWARD: 7,
+    ANSWER_COUNT: 8,
+    CORRECT_LIMIT: 9,
+    STATUS: 10,
+    IS_PAYMENT: 11,
 };
 
 const STATUS_MAP = {
@@ -90,8 +86,7 @@ function Time_diff(props) {
 }
 
 function Simple_quiz(props) {
-    let contract = new Contracts_MetaMask();
-    const [show, setShow] = useState(false);
+    const contract = useMemo(() => new Contracts_MetaMask(), []);
     const [is_payment, setIs_payment] = useState(false);
 
     const quiz = props.quiz;
@@ -108,12 +103,17 @@ function Simple_quiz(props) {
     const statusInfo = STATUS_MAP[status] || { label: "", className: "", glow: "" };
 
     async function get_is_payment(id) {
+        const localPaymentState = quiz[QUIZ_INDEX.IS_PAYMENT];
+        if (typeof localPaymentState === "boolean") {
+            setIs_payment(localPaymentState);
+            return;
+        }
         setIs_payment(await contract.get_is_payment(id));
     }
 
     useEffect(() => {
         get_is_payment(quizId);
-    }, []);
+    }, [quizId]);
 
     return (
         <div className={`edit-quiz-card glass-card ${statusInfo.glow} ${is_payment ? 'payment-warning' : ''}`}>
@@ -159,14 +159,12 @@ function Simple_quiz(props) {
             <div className="quiz-card-actions">
                 <Link 
                     to={`/edit_quiz/${quizId}`} 
-                    state={{ args: [quizId, quiz[1], quiz[2], quiz[3], quiz[4], quiz[5], Number(quiz[6]), quiz[7], startTime, deadline, Number(quiz[10]), answerCount, correctLimit, status] }}
                     className="btn-edit"
                 >
                     ✏️ 編集
                 </Link>
                 <Link 
                     to={`/investment_page/${quizId}`} 
-                    state={{ args: [quizId] }}
                     className="btn-reward"
                 >
                     💰 報酬の追加

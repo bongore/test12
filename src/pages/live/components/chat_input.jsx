@@ -3,14 +3,17 @@ import Superchat_modal from "./superchat_modal";
 import { AiOutlineSend } from "react-icons/ai";
 import { FaMoneyBillWave } from "react-icons/fa";
 import { ACTION_TYPES, appendActivityLog, getDraft, saveDraft, clearDraft } from "../../../utils/activityLog";
+import { appendBoardLog } from "../../../utils/boardModerationLog";
+import { moderateLiveComment } from "../../../utils/liveCommentModeration";
 import "./chat.css";
 
 const CHAT_DRAFT_KEY = "live_chat_message";
-const BAD_WORDS = ["ばか", "あほ", "死ね", "くそ", "fuck", "shit", "bitch", "spam"];
 
-function Chat_input({ onSendMessage, cont, isRegistered, isLoadingAuth }) {
+function Chat_input({ onSendMessage, cont, isRegistered, isLoadingAuth, readOnlyReason = "" }) {
     const [text, setText] = useState(() => getDraft(CHAT_DRAFT_KEY));
     const [showModal, setShowModal] = useState(false);
+    const [messageKind, setMessageKind] = useState("comment");
+    const [isAnonymousQuestion, setIsAnonymousQuestion] = useState(false);
     const changeCountRef = useRef(0);
 
     useEffect(() => {
@@ -32,8 +35,6 @@ function Chat_input({ onSendMessage, cont, isRegistered, isLoadingAuth }) {
         return () => clearTimeout(timer);
     }, [text]);
 
-    const containsBadWords = (inputText) => BAD_WORDS.some((word) => inputText.toLowerCase().includes(word.toLowerCase()));
-
     const handleInputChange = (value) => {
         setText(value);
         changeCountRef.current += 1;
@@ -49,48 +50,78 @@ function Chat_input({ onSendMessage, cont, isRegistered, isLoadingAuth }) {
         const trimmed = text.trim();
         if (!trimmed) return;
 
-        if (containsBadWords(trimmed)) {
+        const moderation = moderateLiveComment(trimmed);
+        if (moderation.blocked) {
+            appendBoardLog({
+                type: "normal",
+                messageKind,
+                user: "local_user",
+                text: trimmed,
+                isAnonymous: messageKind === "question" && isAnonymousQuestion,
+                status: "blocked",
+                reason: moderation.reason || "moderated",
+                categories: moderation.categories || [],
+            });
             appendActivityLog(ACTION_TYPES.LIVE_MESSAGE_BLOCKED, {
                 page: "live",
                 channel: "live",
-                reason: "bad_words",
+                reason: moderation.categories.join(",") || "moderated",
                 contentLength: trimmed.length,
                 type: "normal",
             });
-            alert("不適切な表現が含まれているため送信できません。");
+            alert(moderation.reason || "このコメントは送信できません。");
             return;
         }
 
-        onSendMessage(trimmed, "normal");
+        onSendMessage(trimmed, "normal", 0, {
+            messageKind,
+            isQuestion: messageKind === "question",
+            isAnonymous: messageKind === "question" && isAnonymousQuestion,
+        });
         appendActivityLog(ACTION_TYPES.LIVE_MESSAGE_SENT, {
             page: "live",
             contentLength: trimmed.length,
             channel: "live",
             draftUsed: Boolean(getDraft(CHAT_DRAFT_KEY)),
+            messageKind,
+            isAnonymousQuestion,
         });
         setText("");
         clearDraft(CHAT_DRAFT_KEY);
     };
 
-    const handleSuperchat = (amount, message) => {
+    const handleSuperchat = async (amount, message, options = {}) => {
         const trimmed = (message || "").trim();
-        if (trimmed && containsBadWords(trimmed)) {
+        const moderation = trimmed ? moderateLiveComment(trimmed) : { blocked: false, categories: [] };
+        if (trimmed && moderation.blocked) {
+            appendBoardLog({
+                type: "superchat",
+                messageKind: "superchat",
+                user: "local_user",
+                text: trimmed,
+                amount,
+                status: "blocked",
+                reason: moderation.reason || "moderated",
+                categories: moderation.categories || [],
+            });
             appendActivityLog(ACTION_TYPES.LIVE_MESSAGE_BLOCKED, {
                 page: "live",
-                reason: "bad_words",
+                reason: moderation.categories.join(",") || "moderated",
                 contentLength: trimmed.length,
                 type: "superchat",
                 amount,
             });
-            alert("スーパーチャットのメッセージに不適切な表現が含まれています。");
+            alert(moderation.reason || "スーパーチャットのメッセージを見直してください。");
             return;
         }
-        onSendMessage(trimmed, "superchat", amount);
+        await onSendMessage(trimmed, "superchat", amount, options);
         appendActivityLog(ACTION_TYPES.LIVE_SUPERCHAT_SENT, {
             page: "live",
             contentLength: trimmed.length,
             amount,
             channel: "live",
+            messageKind: "superchat",
+            recipientSpecified: Boolean(options.recipientAddress),
         });
     };
 
@@ -106,32 +137,66 @@ function Chat_input({ onSendMessage, cont, isRegistered, isLoadingAuth }) {
                         コメントするには MetaMask を接続してください。
                     </p>
                 </div>
-            ) : (
+        ) : readOnlyReason ? (
+            <div className="auth-warning glass-card text-center" style={{ padding: "12px", borderRadius: "var(--radius-md)", border: "1px solid rgba(255,255,255,0.18)", background: "rgba(255, 255, 255, 0.06)" }}>
+                <p style={{ margin: 0, fontSize: "14px", color: "#d8f3ff" }}>
+                    {readOnlyReason}
+                </p>
+            </div>
+        ) : (
                 <form onSubmit={handleSubmit} className="chat-form">
-                    <input
-                        type="text"
-                        className="form-control-custom chat-input-field"
-                        placeholder="コメントを入力..."
-                        value={text}
-                        maxLength={200}
-                        onChange={(e) => handleInputChange(e.target.value)}
-                    />
-                    <div className="chat-form-actions">
-                        <div className="chat-draft-hint">{text ? `${text.length}/200` : "下書き自動保存"}</div>
+                    <div className="chat-mode-row">
                         <button
                             type="button"
-                            className="btn-superchat"
-                            onClick={() => {
-                                setShowModal(true);
-                                appendActivityLog(ACTION_TYPES.LIVE_MODAL_OPENED, { page: "live", modal: "superchat" });
-                            }}
-                            title="スーパーチャットを送る"
+                            className={`chat-mode-btn ${messageKind === "comment" ? "is-active" : ""}`}
+                            onClick={() => setMessageKind("comment")}
                         >
-                            <FaMoneyBillWave />
+                            コメント
                         </button>
-                        <button type="submit" className="btn-primary btn-send">
-                            <AiOutlineSend />
+                        <button
+                            type="button"
+                            className={`chat-mode-btn ${messageKind === "question" ? "is-active" : ""}`}
+                            onClick={() => setMessageKind("question")}
+                        >
+                            質問
                         </button>
+                        {messageKind === "question" ? (
+                            <label className="chat-anonymous-toggle">
+                                <input
+                                    type="checkbox"
+                                    checked={isAnonymousQuestion}
+                                    onChange={(event) => setIsAnonymousQuestion(event.target.checked)}
+                                />
+                                匿名で送る
+                            </label>
+                        ) : null}
+                    </div>
+                    <div className="chat-input-main">
+                        <input
+                            type="text"
+                            className="form-control-custom chat-input-field"
+                            placeholder={messageKind === "question" ? "質問を入力..." : "コメントを入力..."}
+                            value={text}
+                            maxLength={200}
+                            onChange={(e) => handleInputChange(e.target.value)}
+                        />
+                        <div className="chat-form-actions">
+                            <div className="chat-draft-hint">{text ? `${text.length}/200` : "下書き自動保存"}</div>
+                            <button
+                                type="button"
+                                className="btn-superchat"
+                                onClick={() => {
+                                    setShowModal(true);
+                                    appendActivityLog(ACTION_TYPES.LIVE_MODAL_OPENED, { page: "live", modal: "superchat" });
+                                }}
+                                title="スーパーチャットを送る"
+                            >
+                                <FaMoneyBillWave />
+                            </button>
+                            <button type="submit" className="btn-primary btn-send">
+                                <AiOutlineSend />
+                            </button>
+                        </div>
                     </div>
                 </form>
             )}

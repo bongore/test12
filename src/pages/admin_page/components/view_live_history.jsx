@@ -1,62 +1,165 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { formatDateTime } from "../../../utils/activityLog";
-import { getLiveBroadcastHistory, subscribeToLiveBroadcast } from "../../../utils/liveBroadcast";
+import { getBoardLogs, subscribeToBoardLogs } from "../../../utils/boardModerationLog";
 import "./activity_logs.css";
 
-function formatDurationMs(durationMs) {
-    if (!durationMs || durationMs < 0) return "-";
-    const totalSeconds = Math.round(durationMs / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}分 ${seconds}秒`;
+const REACTION_HISTORY_KEY = "board_reaction_history_snapshot_v1";
+
+function getReactionHistorySnapshot() {
+    try {
+        const raw = localStorage.getItem(REACTION_HISTORY_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+        return [];
+    }
 }
 
 function View_live_history() {
-    const [history, setHistory] = useState(() => getLiveBroadcastHistory());
+    const [logs, setLogs] = useState(() => getBoardLogs());
+    const [reactionHistory, setReactionHistory] = useState(() => getReactionHistorySnapshot());
+    const [search, setSearch] = useState("");
+    const [statusFilter, setStatusFilter] = useState("all");
 
     useEffect(() => {
-        const sync = () => setHistory(getLiveBroadcastHistory());
-        const unsubscribe = subscribeToLiveBroadcast(sync);
+        const sync = () => setLogs(getBoardLogs());
+        const unsubscribe = subscribeToBoardLogs(sync);
         sync();
         return unsubscribe;
     }, []);
 
+    useEffect(() => {
+        const sync = () => setReactionHistory(getReactionHistorySnapshot());
+        window.addEventListener("storage", sync);
+        window.addEventListener("board-reaction-history-updated", sync);
+        sync();
+        return () => {
+            window.removeEventListener("storage", sync);
+            window.removeEventListener("board-reaction-history-updated", sync);
+        };
+    }, []);
+
+    const filteredLogs = useMemo(() => {
+        const query = search.trim().toLowerCase();
+        return logs.filter((item) => {
+            if (statusFilter !== "all" && item.status !== statusFilter) return false;
+            if (!query) return true;
+
+            const haystack = [
+                item.user,
+                item.text,
+                item.reason,
+                ...(item.categories || []),
+            ].join(" ").toLowerCase();
+
+            return haystack.includes(query);
+        });
+    }, [logs, search, statusFilter]);
+
+    const visibleCount = logs.filter((item) => item.status === "visible").length;
+    const blockedCount = logs.filter((item) => item.status === "blocked").length;
+    const superchatCount = logs.filter((item) => item.type === "superchat" && item.status === "visible").length;
+    const questionCount = logs.filter((item) => item.messageKind === "question" && item.status === "visible").length;
+
     return (
         <div className="log-section">
-            <h3 className="section-title">配信履歴</h3>
+            <h3 className="section-title">掲示板監視</h3>
             <p className="section-desc">
-                先生 / TA が開始したライブ出力セッションの履歴です。必要なときだけ管理画面から確認できます。
+                掲示板で共有されたコメント、質問、支持数、不適切コメント候補を確認できます。
             </p>
 
             <div className="log-summary-grid">
-                <div className="log-summary-card"><div className="log-summary-label">配信回数</div><div className="log-summary-value">{history.length}</div></div>
-                <div className="log-summary-card"><div className="log-summary-label">最新開始</div><div className="log-summary-value">{history[0] ? formatDateTime(history[0].startedAt) : "-"}</div></div>
+                <div className="log-summary-card"><div className="log-summary-label">総記録数</div><div className="log-summary-value">{logs.length}</div></div>
+                <div className="log-summary-card"><div className="log-summary-label">表示済み</div><div className="log-summary-value">{visibleCount}</div></div>
+                <div className="log-summary-card"><div className="log-summary-label">ブロック</div><div className="log-summary-value">{blockedCount}</div></div>
+                <div className="log-summary-card"><div className="log-summary-label">スーパーチャット</div><div className="log-summary-value">{superchatCount}</div></div>
+                <div className="log-summary-card"><div className="log-summary-label">質問</div><div className="log-summary-value">{questionCount}</div></div>
             </div>
 
-            {history.length === 0 ? (
-                <div className="log-empty">まだ配信履歴はありません。</div>
+            <div className="glass-card" style={{ padding: "16px", marginBottom: "16px" }}>
+                <h4 className="section-title" style={{ marginBottom: "12px" }}>授業別リアクション履歴</h4>
+                {reactionHistory.length === 0 ? (
+                    <div className="log-empty">まだ授業別リアクション履歴はありません。</div>
+                ) : (
+                    <div className="results-table-wrap">
+                        <table className="results-table">
+                            <thead>
+                                <tr>
+                                    <th>授業名</th>
+                                    <th>開始</th>
+                                    <th>終了</th>
+                                    <th>わかった</th>
+                                    <th>もう一度</th>
+                                    <th>ゆっくり</th>
+                                    <th>速い</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {reactionHistory.map((session) => (
+                                    <tr key={session.id}>
+                                        <td>{session.label || "-"}</td>
+                                        <td>{formatDateTime(session.startedAt)}</td>
+                                        <td>{formatDateTime(session.endedAt)}</td>
+                                        <td>{session.reactions?.understood || 0}</td>
+                                        <td>{session.reactions?.repeat || 0}</td>
+                                        <td>{session.reactions?.slow || 0}</td>
+                                        <td>{session.reactions?.fast || 0}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            <div className="glass-card" style={{ padding: "16px", marginBottom: "16px", display: "grid", gap: "12px" }}>
+                <input
+                    className="form-control-custom"
+                    type="text"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="ユーザー名、本文、理由で検索"
+                />
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                    <button className={`admin-tab-btn ${statusFilter === "all" ? "active" : ""}`} onClick={() => setStatusFilter("all")}>すべて</button>
+                    <button className={`admin-tab-btn ${statusFilter === "visible" ? "active" : ""}`} onClick={() => setStatusFilter("visible")}>表示済み</button>
+                    <button className={`admin-tab-btn ${statusFilter === "blocked" ? "active" : ""}`} onClick={() => setStatusFilter("blocked")}>ブロック</button>
+                </div>
+            </div>
+
+            {filteredLogs.length === 0 ? (
+                <div className="log-empty">該当する掲示板ログはありません。</div>
             ) : (
                 <div className="results-table-wrap">
                     <table className="results-table">
                         <thead>
                             <tr>
-                                <th>開始</th>
-                                <th>終了</th>
-                                <th>配信者</th>
-                                <th>ロール</th>
-                                <th>時間</th>
-                                <th>モード</th>
+                                <th>時刻</th>
+                                <th>状態</th>
+                                <th>種類</th>
+                                <th>投稿形式</th>
+                                <th>ユーザー</th>
+                                <th>金額</th>
+                                <th>支持</th>
+                                <th>本文</th>
+                                <th>理由 / カテゴリ</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {history.map((item) => (
+                            {filteredLogs.map((item) => (
                                 <tr key={item.id}>
-                                    <td>{formatDateTime(item.startedAt)}</td>
-                                    <td>{formatDateTime(item.endedAt)}</td>
-                                    <td className="address-cell">{item.broadcasterAddress || "-"}</td>
-                                    <td>{item.broadcasterRole || "-"}</td>
-                                    <td>{formatDurationMs(item.durationMs)}</td>
-                                    <td>{item.outputType || "camera"}</td>
+                                    <td>{formatDateTime(item.createdAt)}</td>
+                                    <td>{item.status === "blocked" ? "ブロック" : "表示済み"}</td>
+                                    <td>{item.type === "superchat" ? "スーパーチャット" : "コメント"}</td>
+                                    <td>{item.messageKind === "question" ? "質問" : "通常"}</td>
+                                    <td>{item.isAnonymous ? "匿名質問" : (item.user || "-")}</td>
+                                    <td>{item.type === "superchat" ? `${item.amount || 0} TTT` : "-"}</td>
+                                    <td>{item.likeCount || 0}</td>
+                                    <td className="log-message">{item.text || "-"}</td>
+                                    <td className="log-message">
+                                        {item.reason || "-"}
+                                        {item.categories?.length ? ` / ${item.categories.join(", ")}` : ""}
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>

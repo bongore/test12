@@ -1,21 +1,22 @@
-import { useState, useEffect } from "react";
-import { useLocation } from "react-router-dom";
+import { useState, useEffect, useMemo } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { Contracts_MetaMask } from "../../contract/contracts";
+import { useAccessControl } from "../../utils/accessControl";
 import "./investment_page.css";
 
 function Investment_to_quiz() {
-    const location = useLocation();
+    const navigate = useNavigate();
+    const { id } = useParams();
 
-    const [id, setId] = useState(location.state.args[0]);
     const [amount, setAmount] = useState(0);
     const [isNotPayingOut, setIsNotPayingOut] = useState("true");
     const [numOfStudent, setNumOfStudent] = useState(0);
     const [answer, setAnswer] = useState("");
-    const [isteacher, setisteacher] = useState(null);
     const [isNotAddingReward, setIsNotAddingReward] = useState("true");
     const [students, setStudents] = useState(null);
 
-    let Contract = new Contracts_MetaMask();
+    const Contract = useMemo(() => new Contracts_MetaMask(), []);
+    const access = useAccessControl(Contract);
 
     const handleOptionChange = (event) => {
         setIsNotPayingOut(event.target.value);
@@ -35,7 +36,8 @@ function Investment_to_quiz() {
 
     const investment_to_quiz = async () => {
         if ((answer === "" && isNotPayingOut === "false") === false) {
-            Contract.investment_to_quiz(id, amount, convertFullWidthNumbersToHalf(answer), isNotPayingOut, numOfStudent, isNotAddingReward, students);
+            await Contract.investment_to_quiz(id, amount, convertFullWidthNumbersToHalf(answer), isNotPayingOut, numOfStudent, isNotAddingReward, students);
+            navigate("/edit_list");
         } else {
             alert("答えを入力してください");
         }
@@ -44,13 +46,16 @@ function Investment_to_quiz() {
     useEffect(() => {
         async function init() {
             setNumOfStudent((await Contract.get_num_of_students()) + 30);
-            setisteacher(await Contract.isTeacher());
             setStudents(await Contract.get_student_list());
         }
         init();
-    }, []);
+    }, [Contract]);
 
-    if (isteacher) {
+    if (access.isLoading) {
+        return <div className="investment-page">権限を確認中です...</div>;
+    }
+
+    if (access.isTeacher) {
         return (
             <div className="investment-page">
                 <div className="page-header">
@@ -161,7 +166,7 @@ function Investment_to_quiz() {
             </div>
         );
     } else {
-        return (<></>);
+        return (<div className="investment-page">この画面は教員・TAのみ利用できます。</div>);
     }
 }
 

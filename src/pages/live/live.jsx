@@ -1,24 +1,21 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { FaComment, FaCommentSlash } from "react-icons/fa";
+import { FaBolt, FaComment, FaCommentSlash, FaCoins, FaThumbtack } from "react-icons/fa";
 import Chat_feed from "./components/chat_feed";
 import Chat_input from "./components/chat_input";
 import "./live.css";
 import { ACTION_TYPES, appendActivityLog, logPageView } from "../../utils/activityLog";
 import { useAccessControl } from "../../utils/accessControl";
-import {
-    appendLiveBroadcastHistory,
-    clearLiveBroadcastState,
-    setLiveBroadcastState,
-} from "../../utils/liveBroadcast";
 import { Contracts_MetaMask } from "../../contract/contracts";
+import { appendBoardLog, upsertBoardLog } from "../../utils/boardModerationLog";
+import { getAnnouncements, publishAnnouncement, removeAnnouncement, subscribeAnnouncements } from "../../utils/courseEnhancements";
 
 const DUMMY_COMMENTS = [
-    "この説明、かなり分かりやすいです。",
-    "もう一度その手順を見せてください。",
-    "配信が見えています。",
-    "接続できました。",
-    "ありがとうございます。",
-    "音声も確認できています。",
+    "この内容はあとで復習できますか？",
+    "今の説明で理解できました。",
+    "もう少しゆっくり進めてもらえると助かります。",
+    "資料のこの部分が特に重要そうです。",
+    "演習問題にも挑戦してみます。",
+    "ありがとうございます。見えています。",
 ];
 
 const DUMMY_VIEWER_NAMES = [
@@ -30,12 +27,57 @@ const DUMMY_VIEWER_NAMES = [
     "受講者B",
 ];
 
-const ICE_SERVERS = {
-    iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" },
-    ],
-};
+const REACTION_OPTIONS = [
+    { key: "understood", label: "わかった" },
+    { key: "repeat", label: "もう一度" },
+    { key: "slow", label: "ゆっくり" },
+    { key: "fast", label: "速い" },
+];
+const REACTION_HISTORY_KEY = "board_reaction_history_snapshot_v1";
+const REACTION_HISTORY_DELETED_IDS_KEY = "board_reaction_history_deleted_ids_v1";
+
+function createDefaultReactions() {
+    return {
+        understood: 0,
+        repeat: 0,
+        slow: 0,
+        fast: 0,
+    };
+}
+
+function getDeletedReactionHistoryIds() {
+    try {
+        const raw = localStorage.getItem(REACTION_HISTORY_DELETED_IDS_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.map((item) => String(item)) : [];
+    } catch (error) {
+        return [];
+    }
+}
+
+function persistDeletedReactionHistoryIds(ids) {
+    localStorage.setItem(REACTION_HISTORY_DELETED_IDS_KEY, JSON.stringify(ids));
+}
+
+function filterDeletedReactionHistory(history, deletedIds) {
+    const deletedIdSet = new Set((deletedIds || []).map((id) => String(id)));
+    return (Array.isArray(history) ? history : []).filter((session) => !deletedIdSet.has(String(session?.id || "")));
+}
+
+function formatSessionLabel(session) {
+    if (!session) return "授業リアクション";
+    return session.label || "授業リアクション";
+}
+
+function formatSessionTime(isoString) {
+    if (!isoString) return "-";
+    return new Date(isoString).toLocaleString("ja-JP", {
+        month: "numeric",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
 
 function getSignalServerUrl() {
     if (process.env.REACT_APP_LIVE_SIGNAL_URL) {
@@ -48,12 +90,8 @@ function getSignalServerUrl() {
 
 function getSignalHealthUrl() {
     const wsUrl = getSignalServerUrl();
-    if (wsUrl.startsWith("wss://")) {
-        return wsUrl.replace("wss://", "https://");
-    }
-    if (wsUrl.startsWith("ws://")) {
-        return wsUrl.replace("ws://", "http://");
-    }
+    if (wsUrl.startsWith("wss://")) return wsUrl.replace("wss://", "https://");
+    if (wsUrl.startsWith("ws://")) return wsUrl.replace("ws://", "http://");
     return wsUrl;
 }
 
@@ -78,9 +116,7 @@ async function wakeSignalServer() {
                 cache: "no-store",
                 mode: "cors",
             });
-            if (response.ok) {
-                return true;
-            }
+            if (response.ok) return true;
             lastError = new Error(`healthcheck_failed_${response.status}`);
         } catch (error) {
             lastError = error;
@@ -92,93 +128,124 @@ async function wakeSignalServer() {
     throw lastError || new Error("signal_server_unavailable");
 }
 
-function toStoredLiveState(snapshot) {
-    if (!snapshot) return null;
+function normalizeBoardMessage(message) {
     return {
-        sessionId: snapshot.broadcasterId,
-        isActive: true,
-        startedAt: snapshot.startedAt,
-        heartbeatAt: new Date().toISOString(),
-        broadcasterAddress: snapshot.broadcasterAddress,
-        broadcasterName: snapshot.broadcasterName,
-        broadcasterRole: snapshot.broadcasterRole,
-        outputType: snapshot.outputType,
-        viewerCount: snapshot.viewerCount || 0,
+        id: message.id || `msg_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+        text: message.text || "",
+        type: message.chatType || message.type || "normal",
+        amount: Number(message.amount || 0),
+        timestamp: message.timestamp || "",
+        user: message.user || "USER",
+        messageKind: message.messageKind || (message.isQuestion ? "question" : "comment"),
+        isQuestion: Boolean(message.isQuestion || message.messageKind === "question"),
+        isAnonymous: Boolean(message.isAnonymous),
+        likeCount: Number(message.likeCount || 0),
+        recipientLabel: message.recipientLabel || "",
+        recipientAddress: message.recipientAddress || "",
     };
+}
+
+function upsertMessage(messages, nextMessage) {
+    const normalized = normalizeBoardMessage(nextMessage);
+    const index = messages.findIndex((item) => item.id === normalized.id);
+    if (index === -1) {
+        return [...messages, normalized].slice(-180);
+    }
+
+    const clone = [...messages];
+    clone[index] = {
+        ...clone[index],
+        ...normalized,
+    };
+    return clone;
 }
 
 function Live_page(props) {
     const contract = useMemo(() => props.cont || new Contracts_MetaMask(), [props.cont]);
+    const access = useAccessControl(contract);
     const [messages, setMessages] = useState([]);
+    const [sessionMessages, setSessionMessages] = useState({});
     const [dummyCommentsEnabled, setDummyCommentsEnabled] = useState(false);
     const [isChatVisible, setIsChatVisible] = useState(true);
     const [pinnedSuperchat, setPinnedSuperchat] = useState(null);
-    const [liveState, setLiveState] = useState(null);
-    const [isBroadcasting, setIsBroadcasting] = useState(false);
     const [signalStatus, setSignalStatus] = useState("connecting");
-    const [liveNotice, setLiveNotice] = useState("");
-    const [cameraFacingMode, setCameraFacingMode] = useState("user");
-    const [cameraDevices, setCameraDevices] = useState([]);
-    const [activeCameraId, setActiveCameraId] = useState("");
-    const [remoteConnected, setRemoteConnected] = useState(false);
+    const [boardNotice, setBoardNotice] = useState("講義用の掲示板に接続しています。");
     const [chatDisplayName, setChatDisplayName] = useState("");
-    const [outputMode] = useState("camera");
-    const videoRef = useRef(null);
-    const localStreamRef = useRef(null);
-    const remoteStreamRef = useRef(null);
+    const [pinnedNotice, setPinnedNotice] = useState(null);
+    const [boardReactions, setBoardReactions] = useState(() => createDefaultReactions());
+    const [selectedReaction, setSelectedReaction] = useState("");
+    const [reactionSession, setReactionSession] = useState(null);
+    const [reactionHistory, setReactionHistory] = useState([]);
+    const [boardSession, setBoardSession] = useState(null);
+    const [boardSessionHistory, setBoardSessionHistory] = useState([]);
+    const [selectedBoardHistoryIds, setSelectedBoardHistoryIds] = useState([]);
+    const [selectedReactionHistoryIds, setSelectedReactionHistoryIds] = useState([]);
+    const [deletedReactionHistoryIds, setDeletedReactionHistoryIds] = useState(() => getDeletedReactionHistoryIds());
+    const [selectedBoardSessionId, setSelectedBoardSessionId] = useState("");
+    const [isBoardCommentSectionOpen, setIsBoardCommentSectionOpen] = useState(true);
+    const [isBoardCommentPanelOpen, setIsBoardCommentPanelOpen] = useState(false);
+    const [boardSessionLabel, setBoardSessionLabel] = useState("");
+    const [reactionSessionLabel, setReactionSessionLabel] = useState("");
+    const [teacherNoticeDraft, setTeacherNoticeDraft] = useState("");
+    const [likedQuestionIds, setLikedQuestionIds] = useState([]);
+    const [announcements, setAnnouncements] = useState(() => getAnnouncements().slice(0, 5));
     const wsRef = useRef(null);
-    const peersRef = useRef({});
-    const viewerPeerRef = useRef(null);
     const pinTimeoutRef = useRef(null);
-    const currentSessionRef = useRef(null);
-    const isBroadcastingRef = useRef(false);
-    const clientIdRef = useRef("");
-    const subscribedBroadcastIdRef = useRef("");
-    const access = useAccessControl(contract);
 
-    const activeBroadcaster = liveState && liveState.isActive ? liveState : null;
-    const canViewLive = access.canViewLive;
+    const canViewBoard = access.canViewLive;
     const canPostChat = access.canJoinLive;
-    const isAdmin = access.isTeacher;
-    const isLockedByOtherStaff = Boolean(
-        activeBroadcaster
-        && access.address
-        && activeBroadcaster.broadcasterAddress?.toLowerCase() !== access.address.toLowerCase()
-    );
+    const isTeacher = access.isTeacher;
+    const isViewingCurrentLecture = !selectedBoardSessionId || selectedBoardSessionId === String(boardSession?.id || "");
+    const reactionSessionDisplayLabel = reactionSession
+        ? `${formatSessionLabel(reactionSession)}${reactionSession?.endedAt ? "" : "（現在）"}`
+        : "現在の授業";
+    const displayedMessages = isViewingCurrentLecture
+        ? messages
+        : (sessionMessages[selectedBoardSessionId] || []);
 
     const resolveDefaultDisplayName = () => {
         if (chatDisplayName) return chatDisplayName;
-        if (access.isTeacher) return formatDefaultLabel("TEACHER");
-        if (access.isConnected) return formatDefaultLabel("USER");
+        if (access.roleLabel) {
+            return formatDefaultLabel(access.roleLabel);
+        }
+        if (access.isTeacher) return formatDefaultLabel("教員");
+        if (access.isConnected) return formatDefaultLabel("学生");
         return "GUEST";
     };
 
-    const setDisplayedStream = (stream) => {
-        if (!videoRef.current) return;
+    const questionMessages = useMemo(() => (
+        [...displayedMessages]
+            .filter((item) => item.messageKind === "question")
+            .sort((left, right) => {
+                const likeGap = Number(right.likeCount || 0) - Number(left.likeCount || 0);
+                if (likeGap !== 0) return likeGap;
+                return String(right.timestamp || "").localeCompare(String(left.timestamp || ""));
+            })
+            .slice(0, 5)
+    ), [displayedMessages]);
 
-        const videoElement = videoRef.current;
-        videoElement.srcObject = stream || null;
+    const boardSessionOptions = useMemo(() => {
+        const currentOption = boardSession ? [{
+            id: String(boardSession.id),
+            label: `${formatSessionLabel(boardSession)}（現在）`,
+            messageCount: Array.isArray(messages) ? messages.length : 0,
+            startedAt: boardSession.startedAt || "",
+            isCurrent: true,
+        }] : [];
+        const historyOptions = boardSessionHistory.map((session) => ({
+            id: String(session.id),
+            label: formatSessionLabel(session),
+            messageCount: Number(session.messageCount || 0),
+            startedAt: session.startedAt || "",
+            isCurrent: false,
+        }));
+        return [...currentOption, ...historyOptions];
+    }, [messages, boardSession, boardSessionHistory]);
 
-        if (!stream) return;
-
-        const tryPlay = () => {
-            videoElement.play?.().catch((error) => {
-                console.warn("Live video playback was blocked", error);
-            });
-        };
-
-        videoElement.onloadedmetadata = tryPlay;
-        tryPlay();
-    };
-
-    const createChatMessage = (text, type = "normal", amount = 0, user = "viewer") => ({
-        id: Date.now(),
-        text,
-        type,
-        amount,
-        timestamp: new Date().toLocaleTimeString(),
-        user,
-    });
+    const selectedBoardSession = useMemo(
+        () => boardSessionOptions.find((session) => session.id === selectedBoardSessionId) || boardSessionOptions[0] || null,
+        [boardSessionOptions, selectedBoardSessionId]
+    );
 
     const sendSocketMessage = (payload) => {
         const socket = wsRef.current;
@@ -187,365 +254,290 @@ function Live_page(props) {
         return true;
     };
 
-    const closePeer = (peer) => {
-        if (!peer) return;
-        peer.onicecandidate = null;
-        peer.ontrack = null;
-        peer.onconnectionstatechange = null;
-        peer.close();
-    };
-
-    const closeBroadcasterPeers = () => {
-        Object.values(peersRef.current).forEach(closePeer);
-        peersRef.current = {};
-    };
-
-    const closeViewerPeer = () => {
-        if (viewerPeerRef.current) {
-            closePeer(viewerPeerRef.current);
-            viewerPeerRef.current = null;
+    const syncBoardState = (boardState) => {
+        if (!boardState) return;
+        if (Array.isArray(boardState.messages)) {
+            const nextMessages = boardState.messages.map(normalizeBoardMessage);
+            setMessages(nextMessages);
+            if (boardState.boardSession?.id) {
+                setSessionMessages((current) => ({
+                    ...current,
+                    [String(boardState.boardSession.id)]: nextMessages,
+                }));
+            }
+            const latestSuperchat = [...nextMessages].reverse().find((item) => item.type === "superchat") || null;
+            setPinnedSuperchat(latestSuperchat);
         }
-        if (remoteStreamRef.current) {
-            remoteStreamRef.current.getTracks().forEach((track) => track.stop());
-            remoteStreamRef.current = null;
-        }
-        setRemoteConnected(false);
-    };
-
-    const refreshCameraDevices = async () => {
-        if (!navigator.mediaDevices?.enumerateDevices) return [];
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const list = devices.filter((device) => device.kind === "videoinput");
-        setCameraDevices(list);
-        return list;
-    };
-
-    const getCameraStream = async (facingMode, preferredCameraId = "") => {
-        const attempts = [];
-
-        if (preferredCameraId) {
-            attempts.push({
-                video: { deviceId: { exact: preferredCameraId } },
-                audio: true,
-            });
-        }
-
-        attempts.push({
-            video: { facingMode: { ideal: facingMode } },
-            audio: true,
+        setPinnedNotice(boardState.pinnedNotice || null);
+        setReactionSession(boardState.reactionSession || null);
+        setReactionHistory(filterDeletedReactionHistory(boardState.reactionHistory, deletedReactionHistoryIds));
+        setBoardSession(boardState.boardSession || null);
+        setBoardSessionHistory(Array.isArray(boardState.boardSessionHistory) ? boardState.boardSessionHistory : []);
+        setBoardReactions({
+            ...createDefaultReactions(),
+            ...(boardState.reactionSession?.reactions || {}),
         });
-        attempts.push({ video: true, audio: true });
-        attempts.push({ video: true, audio: false });
+        setSelectedReaction(boardState.reactionSession?.currentReaction || "");
+    };
 
-        let lastError = null;
-        for (const constraints of attempts) {
+    const handleIncomingMessage = (payload) => {
+        const nextMessage = normalizeBoardMessage(payload);
+        setMessages((prev) => upsertMessage(prev, nextMessage));
+
+        if (nextMessage.type === "superchat") {
+            if (pinTimeoutRef.current) clearTimeout(pinTimeoutRef.current);
+            setPinnedSuperchat(nextMessage);
+            pinTimeoutRef.current = window.setTimeout(() => {
+                setPinnedSuperchat(null);
+            }, 15000);
+        }
+    };
+
+    const publishChatMessage = async (text, type = "normal", amount = 0, options = {}) => {
+        const trimmed = String(text || "").trim();
+        if (type !== "superchat" && !trimmed) return;
+
+        let superchatRecipient = null;
+        if (type === "superchat") {
             try {
-                return await navigator.mediaDevices.getUserMedia(constraints);
+                superchatRecipient = await contract?.send_superchat?.(amount, options.recipientAddress || "");
             } catch (error) {
-                lastError = error;
+                console.error("Failed to send superchat", error);
+                if (error?.message === "superchat_recipient_not_found") {
+                    alert("送金先の教員アドレスが見つかりませんでした。");
+                } else if (error?.message === "insufficient_ttt_balance") {
+                    alert("TTT 残高が不足しています。");
+                } else {
+                    alert(error?.message || "スーパーチャットの送信に失敗しました。");
+                }
+                return;
             }
         }
-        throw lastError || new Error("camera_stream_unavailable");
-    };
 
-    const syncBroadcastSnapshot = (snapshot) => {
-        if (!snapshot) {
-            setLiveState(null);
-            clearLiveBroadcastState();
-            return;
-        }
-        const nextState = toStoredLiveState(snapshot);
-        setLiveState(nextState);
-        setLiveBroadcastState(nextState);
-    };
-
-    const finalizeBroadcast = () => {
-        const session = currentSessionRef.current;
-        if (!session) return;
-
-        const endedAt = new Date().toISOString();
-        const durationMs = Date.now() - new Date(session.startedAt).getTime();
-        appendLiveBroadcastHistory({
-            id: session.sessionId,
-            broadcasterAddress: session.broadcasterAddress,
-            broadcasterRole: session.broadcasterRole,
-            startedAt: session.startedAt,
-            endedAt,
-            durationMs,
-            outputType: session.outputType,
-        });
-
-        clearLiveBroadcastState();
-        currentSessionRef.current = null;
-        setLiveState(null);
-        setIsBroadcasting(false);
-        setLiveNotice("");
-        appendActivityLog(ACTION_TYPES.LIVE_CAMERA_STOPPED, {
-            page: "live",
-            sessionId: session.sessionId,
-            durationMs,
-        });
-    };
-
-    const stopBroadcast = (reason = "stopped") => {
-        if (localStreamRef.current) {
-            localStreamRef.current.getTracks().forEach((track) => track.stop());
-            localStreamRef.current = null;
-        }
-        closeBroadcasterPeers();
-        closeViewerPeer();
-        setDisplayedStream(null);
-        if (currentSessionRef.current) {
-            sendSocketMessage({ type: "stop-broadcast", reason });
-        }
-        finalizeBroadcast();
-    };
-
-    const createPeerForViewer = async (viewerId) => {
-        if (!localStreamRef.current) return;
-        const peer = new RTCPeerConnection(ICE_SERVERS);
-        peersRef.current[viewerId] = peer;
-
-        localStreamRef.current.getTracks().forEach((track) => {
-            peer.addTrack(track, localStreamRef.current);
-        });
-
-        peer.onicecandidate = (event) => {
-            if (!event.candidate) return;
-            sendSocketMessage({ type: "signal-ice", targetId: viewerId, candidate: event.candidate });
-        };
-
-        peer.onconnectionstatechange = () => {
-            if (["failed", "closed", "disconnected"].includes(peer.connectionState)) {
-                closePeer(peer);
-                delete peersRef.current[viewerId];
-            }
-        };
-
-        const offer = await peer.createOffer();
-        await peer.setLocalDescription(offer);
-        sendSocketMessage({
-            type: "signal-offer",
-            targetId: viewerId,
-            description: peer.localDescription,
-        });
-    };
-
-    const handleIncomingOffer = async (message) => {
-        if (isBroadcastingRef.current) return;
-
-        closeViewerPeer();
-        const peer = new RTCPeerConnection(ICE_SERVERS);
-        viewerPeerRef.current = peer;
-        const inboundStream = new MediaStream();
-        remoteStreamRef.current = inboundStream;
-        setDisplayedStream(inboundStream);
-
-        peer.ontrack = (event) => {
-            event.streams[0].getTracks().forEach((track) => inboundStream.addTrack(track));
-            setRemoteConnected(true);
-        };
-
-        peer.onicecandidate = (event) => {
-            if (!event.candidate) return;
-            sendSocketMessage({ type: "signal-ice", targetId: message.fromId, candidate: event.candidate });
-        };
-
-        peer.onconnectionstatechange = () => {
-            if (peer.connectionState === "connected") {
-                setRemoteConnected(true);
-                setLiveNotice("配信中の映像を受信しています。");
-            }
-            if (["failed", "closed", "disconnected"].includes(peer.connectionState)) {
-                setRemoteConnected(false);
-            }
-        };
-
-        await peer.setRemoteDescription(new RTCSessionDescription(message.description));
-        const answer = await peer.createAnswer();
-        await peer.setLocalDescription(answer);
-        sendSocketMessage({
-            type: "signal-answer",
-            targetId: message.fromId,
-            description: peer.localDescription,
-        });
-    };
-
-    const startBroadcast = async () => {
-        appendActivityLog(ACTION_TYPES.LIVE_CAMERA_TOGGLE_CLICKED, {
-            page: "live",
-            currentState: isBroadcasting ? "on" : "off",
-            outputType: "camera",
-        });
-
-        if (!isAdmin) {
-            alert("配信開始は先生またはTAのみ実行できます。");
-            return;
-        }
-        if (isLockedByOtherStaff) {
-            alert("現在は別の先生またはTAが配信中です。配信終了後に開始してください。");
-            return;
-        }
-        if (!navigator.mediaDevices) {
-            alert("このブラウザはライブ配信に必要なメディアAPIに対応していません。");
-            return;
-        }
-        if (signalStatus !== "connected") {
-            alert("ライブ配信サーバーに接続できていません。少し待ってから再度お試しください。");
-            return;
-        }
-
-        try {
-            closeBroadcasterPeers();
-            closeViewerPeer();
-
-            const stream = await getCameraStream(cameraFacingMode, activeCameraId);
-            const startedAt = new Date().toISOString();
-            const session = {
-                sessionId: `live_${Date.now()}`,
-                startedAt,
-                broadcasterAddress: access.address,
-                broadcasterRole: "Teacher / TA",
-                broadcasterName: resolveDefaultDisplayName(),
-                outputType: "camera",
-            };
-
-            localStreamRef.current = stream;
-            currentSessionRef.current = session;
-            setDisplayedStream(stream);
-            setIsBroadcasting(true);
-            setLiveNotice("カメラ映像を配信中です。");
-            setRemoteConnected(false);
-
-            const videoTrack = stream.getVideoTracks()[0];
-            const selectedSettings = videoTrack?.getSettings?.() || {};
-            if (selectedSettings.deviceId) {
-                setActiveCameraId(selectedSettings.deviceId);
-            }
-            await refreshCameraDevices();
-
-            stream.getVideoTracks().forEach((track) => {
-                track.onended = () => stopBroadcast("track_ended");
-            });
-
-            sendSocketMessage({
-                type: "start-broadcast",
-                startedAt,
-                broadcasterRole: session.broadcasterRole,
-                broadcasterName: session.broadcasterName,
-                outputType: "camera",
-            });
-
-            syncBroadcastSnapshot({
-                broadcasterId: clientIdRef.current || session.sessionId,
-                broadcasterAddress: access.address,
-                broadcasterName: session.broadcasterName,
-                broadcasterRole: session.broadcasterRole,
-                outputType: "camera",
-                startedAt,
-                viewerCount: 0,
-            });
-        } catch (error) {
-            console.error("Failed to start live output", error);
-            appendActivityLog(ACTION_TYPES.LIVE_CAMERA_FAILED, {
-                page: "live",
-                reason: error?.name || "stream_start_failed",
-                errorMessage: error?.message || "",
-            });
-            alert(`配信の開始に失敗しました。詳細: ${error?.name || "UnknownError"}${error?.message ? ` / ${error.message}` : ""}`);
-        }
-    };
-
-    const switchCamera = async () => {
-        const nextFacingMode = cameraFacingMode === "user" ? "environment" : "user";
-        if (!isBroadcasting || !localStreamRef.current) {
-            setCameraFacingMode(nextFacingMode);
-            return;
-        }
-
-        try {
-            const knownDevices = cameraDevices.length ? cameraDevices : await refreshCameraDevices();
-            const currentIndex = knownDevices.findIndex((device) => device.deviceId === activeCameraId);
-            const nextDevice = knownDevices.length > 1
-                ? knownDevices[(currentIndex + 1 + knownDevices.length) % knownDevices.length]
-                : null;
-
-            const nextStream = await getCameraStream(nextFacingMode, nextDevice?.deviceId || "");
-            const previousStream = localStreamRef.current;
-            const nextVideoTrack = nextStream.getVideoTracks()[0];
-            const nextAudioTrack = nextStream.getAudioTracks()[0];
-
-            Object.values(peersRef.current).forEach((peer) => {
-                peer.getSenders().forEach((sender) => {
-                    if (sender.track?.kind === "video" && nextVideoTrack) sender.replaceTrack(nextVideoTrack);
-                    if (sender.track?.kind === "audio" && nextAudioTrack) sender.replaceTrack(nextAudioTrack);
-                });
-            });
-
-            nextStream.getVideoTracks().forEach((track) => {
-                track.onended = () => stopBroadcast("track_ended");
-            });
-
-            localStreamRef.current = nextStream;
-            setDisplayedStream(nextStream);
-            setCameraFacingMode(nextFacingMode);
-            setLiveNotice(nextFacingMode === "user" ? "内カメラに切り替えました。" : "外カメラに切り替えました。");
-
-            const selectedSettings = nextVideoTrack?.getSettings?.() || {};
-            setActiveCameraId(selectedSettings.deviceId || nextDevice?.deviceId || "");
-            await refreshCameraDevices();
-            previousStream.getTracks().forEach((track) => track.stop());
-        } catch (error) {
-            console.error("Failed to switch camera", error);
-            alert(`カメラの切り替えに失敗しました。詳細: ${error?.name || "UnknownError"}${error?.message ? ` / ${error.message}` : ""}`);
-        }
-    };
-
-    const handleToggleDummyComments = () => setDummyCommentsEnabled((current) => !current);
-
-    const publishChatMessage = (text, type = "normal", amount = 0, userLabel = "") => {
-        const fallbackMessage = createChatMessage(
-            text,
-            type,
-            amount,
-            userLabel || resolveDefaultDisplayName()
-        );
-
-        const sent = sendSocketMessage({
+        const payload = {
             type: "chat-message",
-            id: fallbackMessage.id,
-            text,
+            id: `chat_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+            text: trimmed,
             amount,
             chatType: type,
-            timestamp: fallbackMessage.timestamp,
-            user: userLabel || resolveDefaultDisplayName(),
-        });
+            timestamp: new Date().toLocaleTimeString("ja-JP"),
+            user: options.isAnonymous ? "匿名質問" : (options.overrideUser || resolveDefaultDisplayName()),
+            messageKind: options.messageKind || (type === "superchat" ? "superchat" : "comment"),
+            isQuestion: Boolean(options.isQuestion),
+            isAnonymous: Boolean(options.isAnonymous),
+            recipientLabel: type === "superchat" ? (superchatRecipient?.label || "教員側") : "",
+            recipientAddress: type === "superchat" ? (superchatRecipient?.address || options.recipientAddress || "") : "",
+        };
 
+        const sent = sendSocketMessage(payload);
         if (!sent) {
-            setMessages((prev) => [...prev.slice(-119), fallbackMessage]);
-            if (type === "superchat") {
-                if (pinTimeoutRef.current) clearTimeout(pinTimeoutRef.current);
-                setPinnedSuperchat(fallbackMessage);
-                pinTimeoutRef.current = setTimeout(() => setPinnedSuperchat(null), 15000);
-            }
+            alert(type === "superchat"
+                ? "掲示板サーバーに接続できていないため、スーパーチャットを反映できません。"
+                : "掲示板サーバーに接続できていないため、コメントを送信できません。");
         }
     };
 
-    const handleSendMessage = (text, type = "normal", amount = 0) => {
-        publishChatMessage(text, type, amount);
+    const handleSendMessage = async (text, type = "normal", amount = 0, options = {}) => {
+        await publishChatMessage(text, type, amount, options);
     };
 
-    const getSuperchatGradient = (amount) => {
-        if (amount >= 1000) return "linear-gradient(135deg, rgba(211,47,47,0.9), rgba(198,40,40,0.95))";
-        if (amount >= 500) return "linear-gradient(135deg, rgba(194,24,91,0.9), rgba(173,20,87,0.95))";
-        if (amount >= 100) return "linear-gradient(135deg, rgba(230,139,0,0.9), rgba(251,140,0,0.95))";
-        if (amount >= 50) return "linear-gradient(135deg, rgba(56,142,60,0.9), rgba(46,125,50,0.95))";
-        return "linear-gradient(135deg, rgba(25,118,210,0.9), rgba(21,101,192,0.95))";
+    const handleQuestionLike = (messageId) => {
+        if (!canPostChat) {
+            alert("質問を支持するには MetaMask を接続してください。");
+            return;
+        }
+        if (likedQuestionIds.includes(messageId)) return;
+        const sent = sendSocketMessage({
+            type: "board-question-like",
+            messageId,
+        });
+        if (!sent) {
+            alert("掲示板サーバーに接続できていません。");
+            return;
+        }
+        appendActivityLog(ACTION_TYPES.LIVE_QUESTION_LIKED, { page: "live", messageId });
+        setLikedQuestionIds((current) => [...current, messageId]);
     };
 
-    useEffect(() => {
-        isBroadcastingRef.current = isBroadcasting;
-    }, [isBroadcasting]);
+    const handleReaction = (reactionKey) => {
+        if (!canPostChat) {
+            alert("リアクションするには MetaMask を接続してください。");
+            return;
+        }
+        setSelectedReaction(reactionKey);
+        sendSocketMessage({
+            type: "board-reaction",
+            reaction: reactionKey,
+        });
+    };
+
+    const handlePinNotice = () => {
+        const trimmed = teacherNoticeDraft.trim();
+        if (!trimmed) {
+            alert("固定コメントを入力してください。");
+            return;
+        }
+        const sent = sendSocketMessage({
+            type: "board-pin-notice",
+            text: trimmed,
+        });
+        if (!sent) {
+            alert("掲示板サーバーに接続できていません。");
+            return;
+        }
+        publishAnnouncement({
+            title: "授業内お知らせ",
+            body: trimmed,
+            author: resolveDefaultDisplayName(),
+        });
+        appendActivityLog(ACTION_TYPES.LIVE_ANNOUNCEMENT_PUBLISHED, {
+            page: "live",
+            textLength: trimmed.length,
+        });
+        setTeacherNoticeDraft("");
+    };
+
+    const handleClearPinnedNotice = () => {
+        const sent = sendSocketMessage({ type: "board-clear-pinned-notice" });
+        if (!sent) {
+            alert("掲示板サーバーに接続できていません。");
+        }
+        const current = announcements[0];
+        if (current?.pinned) {
+            removeAnnouncement(current.id);
+        }
+    };
+
+    const handleResetReactions = () => {
+        const sent = sendSocketMessage({ type: "board-reset-reactions" });
+        if (!sent) {
+            alert("掲示板サーバーに接続できていません。");
+        }
+        appendActivityLog(ACTION_TYPES.LIVE_REACTION_RESET, { page: "live" });
+    };
+
+    const handleStartReactionSession = () => {
+        const sent = sendSocketMessage({
+            type: "board-start-reaction-session",
+            label: reactionSessionLabel.trim(),
+        });
+        if (!sent) {
+            alert("掲示板サーバーに接続できていません。");
+            return;
+        }
+        appendActivityLog(ACTION_TYPES.LIVE_REACTION_SESSION_STARTED, {
+            page: "live",
+            label: reactionSessionLabel.trim() || "現在の授業",
+        });
+        setReactionSessionLabel("");
+    };
+
+    const handleStartBoardSession = () => {
+        const sent = sendSocketMessage({
+            type: "board-start-chat-session",
+            label: boardSessionLabel.trim(),
+        });
+        if (!sent) {
+            alert("掲示板サーバーに接続できていません。");
+            return;
+        }
+        setBoardSessionLabel("");
+    };
+
+    const toggleBoardHistorySelection = (sessionId) => {
+        const normalizedId = String(sessionId || "");
+        setSelectedBoardHistoryIds((current) => (
+            current.includes(normalizedId)
+                ? current.filter((item) => item !== normalizedId)
+                : [...current, normalizedId]
+        ));
+    };
+
+    const handleDeleteSelectedBoardHistory = () => {
+        if (selectedBoardHistoryIds.length === 0) return;
+        setBoardSessionHistory((current) => current.filter((session) => !selectedBoardHistoryIds.includes(String(session.id))));
+        setSessionMessages((current) => {
+            const next = { ...current };
+            selectedBoardHistoryIds.forEach((id) => {
+                delete next[String(id)];
+            });
+            return next;
+        });
+        setSelectedBoardHistoryIds((current) => current.filter((id) => !selectedBoardHistoryIds.includes(id)));
+
+        const sent = sendSocketMessage({
+            type: "board-delete-chat-history",
+            sessionIds: selectedBoardHistoryIds,
+        });
+        if (!sent) {
+            alert("掲示板サーバーに接続できていないため、この端末の共有コメント履歴からのみ削除しました。");
+        }
+    };
+
+    const handleClearPinnedSuperchat = () => {
+        setPinnedSuperchat(null);
+    };
+
+    const handleDeleteBoardMessage = (messageId) => {
+        if (!isTeacher) return;
+        const targetSessionId = String(selectedBoardSessionId || boardSession?.id || "");
+        if (!targetSessionId || !messageId) return;
+
+        if (targetSessionId === String(boardSession?.id || "")) {
+            setMessages((current) => current.filter((item) => String(item.id) !== String(messageId)));
+        }
+        setSessionMessages((current) => {
+            const next = { ...current };
+            const currentMessages = next[targetSessionId] || [];
+            next[targetSessionId] = currentMessages.filter((item) => String(item.id) !== String(messageId));
+            return next;
+        });
+        if (String(pinnedSuperchat?.id || "") === String(messageId)) {
+            setPinnedSuperchat(null);
+        }
+
+        const sent = sendSocketMessage({
+            type: "board-delete-message",
+            sessionId: targetSessionId,
+            messageId: String(messageId),
+        });
+        if (!sent) {
+            alert("掲示板サーバーに接続できていないため、この端末の表示からのみ削除しました。");
+        }
+    };
+
+    const toggleReactionHistorySelection = (sessionId) => {
+        const normalizedId = String(sessionId || "");
+        setSelectedReactionHistoryIds((current) => (
+            current.includes(normalizedId)
+                ? current.filter((item) => item !== normalizedId)
+                : [...current, normalizedId]
+        ));
+    };
+
+    const handleDeleteSelectedReactionHistory = () => {
+        if (selectedReactionHistoryIds.length === 0) return;
+        const nextDeletedIds = [...new Set([...deletedReactionHistoryIds, ...selectedReactionHistoryIds])];
+        setDeletedReactionHistoryIds(nextDeletedIds);
+        persistDeletedReactionHistoryIds(nextDeletedIds);
+        setReactionHistory((current) => filterDeletedReactionHistory(current, nextDeletedIds));
+        setSessionMessages((current) => {
+            const next = { ...current };
+            selectedReactionHistoryIds.forEach((id) => {
+                delete next[String(id)];
+            });
+            return next;
+        });
+        setSelectedReactionHistoryIds([]);
+
+        const sent = sendSocketMessage({
+            type: "board-delete-reaction-history",
+            sessionIds: selectedReactionHistoryIds,
+        });
+        if (!sent) {
+            alert("掲示板サーバーに接続できていないため、この端末の履歴からのみ削除しました。");
+        }
+    };
 
     useEffect(() => {
         let active = true;
@@ -562,17 +554,11 @@ function Live_page(props) {
                 const userName = String(userData?.[0] || "").trim();
                 if (!active) return;
                 setChatDisplayName(
-                    userName || (access.isTeacher
-                        ? formatDefaultLabel("TEACHER")
-                        : formatDefaultLabel("USER"))
+                    userName || resolveDefaultDisplayName()
                 );
             } catch (error) {
                 if (!active) return;
-                setChatDisplayName(
-                    access.isTeacher
-                        ? formatDefaultLabel("TEACHER")
-                        : formatDefaultLabel("USER")
-                );
+                setChatDisplayName(resolveDefaultDisplayName());
             }
         };
 
@@ -581,11 +567,12 @@ function Live_page(props) {
         return () => {
             active = false;
         };
-    }, [access.address, access.isLoading, access.isTeacher, contract]);
+    }, [access.address, access.isLoading, access.isTeacher, access.roleLabel, contract]);
 
     useEffect(() => {
-        logPageView("live", { action: ACTION_TYPES.LIVE_PAGE_VIEWED });
-        appendActivityLog(ACTION_TYPES.LIVE_PAGE_VIEWED, { page: "live" });
+        logPageView("board", { action: ACTION_TYPES.LIVE_PAGE_VIEWED });
+        appendActivityLog(ACTION_TYPES.LIVE_PAGE_VIEWED, { page: "board" });
+
         let socket = null;
         let heartbeatTimer = null;
         let cancelled = false;
@@ -593,7 +580,7 @@ function Live_page(props) {
         const initializeSocket = async () => {
             try {
                 setSignalStatus("connecting");
-                setLiveNotice("ライブ配信サーバーを起動しています。少しお待ちください。");
+                setBoardNotice("掲示板サーバーを起動しています。少しお待ちください。");
                 await wakeSignalServer();
                 if (cancelled) return;
 
@@ -602,16 +589,15 @@ function Live_page(props) {
 
                 socket.onopen = () => {
                     setSignalStatus("connected");
-                    setLiveNotice("ライブ配信サーバーに接続しました。");
-                    if (!access.isLoading) {
-                        socket.send(JSON.stringify({
-                            type: "register",
-                            address: access.address,
-                            displayName: resolveDefaultDisplayName(),
-                            role: isAdmin ? "staff" : "viewer",
-                            canBroadcast: isAdmin,
-                        }));
-                    }
+                    setBoardNotice("講義掲示板に接続しました。コメント、質問、リアクションが使えます。");
+                    socket.send(JSON.stringify({
+                        type: "register",
+                        address: access.address,
+                        displayName: resolveDefaultDisplayName(),
+                        role: isTeacher ? "staff" : "viewer",
+                        canBroadcast: false,
+                    }));
+
                     heartbeatTimer = window.setInterval(() => {
                         if (socket.readyState === WebSocket.OPEN) {
                             socket.send(JSON.stringify({ type: "heartbeat" }));
@@ -621,100 +607,127 @@ function Live_page(props) {
 
                 socket.onclose = () => {
                     setSignalStatus("disconnected");
-                    setLiveNotice("ライブ配信サーバーとの接続が切れました。");
-                    syncBroadcastSnapshot(null);
-                    closeViewerPeer();
-                    if (currentSessionRef.current) stopBroadcast("signal_disconnected");
+                    setBoardNotice("掲示板サーバーとの接続が切れました。しばらく待って再読み込みしてください。");
                 };
 
                 socket.onerror = () => {
                     setSignalStatus("error");
-                    setLiveNotice("ライブ配信サーバーに接続できていません。少し待ってから再度お試しください。");
+                    setBoardNotice("掲示板サーバーに接続できていません。少し待ってから再度お試しください。");
                 };
 
-                socket.onmessage = async (event) => {
+                socket.onmessage = (event) => {
                     const message = JSON.parse(event.data);
 
                     switch (message.type) {
-            case "welcome":
-            case "presence":
-                clientIdRef.current = message.clientId;
-                syncBroadcastSnapshot(message.activeBroadcast);
-                break;
-            case "broadcast-state":
-                syncBroadcastSnapshot(message.activeBroadcast);
-                if (!message.activeBroadcast) {
-                    setLiveNotice("現在配信はありません。");
-                    closeViewerPeer();
-                    if (!isBroadcastingRef.current) setDisplayedStream(null);
-                } else if (!isBroadcastingRef.current) {
-                    setLiveNotice(`${message.activeBroadcast.broadcasterName || message.activeBroadcast.broadcasterRole} がカメラ配信を開始しました。`);
-                }
-                break;
-            case "broadcast-ended":
-                syncBroadcastSnapshot(null);
-                closeViewerPeer();
-                if (!isBroadcastingRef.current) {
-                    setDisplayedStream(null);
-                    setLiveNotice("配信が終了しました。");
-                }
-                break;
-            case "broadcast-rejected":
-                syncBroadcastSnapshot(message.activeBroadcast);
-                alert("現在は別の先生またはTAが配信中です。");
-                break;
-            case "viewer-joined":
-                if (isBroadcastingRef.current) await createPeerForViewer(message.viewerId);
-                break;
-            case "viewer-left":
-                if (peersRef.current[message.viewerId]) {
-                    closePeer(peersRef.current[message.viewerId]);
-                    delete peersRef.current[message.viewerId];
-                }
-                break;
-            case "signal-offer":
-                await handleIncomingOffer(message);
-                break;
-            case "signal-answer":
-                if (peersRef.current[message.fromId]) {
-                    await peersRef.current[message.fromId].setRemoteDescription(new RTCSessionDescription(message.description));
-                }
-                break;
-            case "signal-ice":
-                if (message.fromId && peersRef.current[message.fromId]) {
-                    await peersRef.current[message.fromId].addIceCandidate(new RTCIceCandidate(message.candidate));
-                } else if (viewerPeerRef.current) {
-                    await viewerPeerRef.current.addIceCandidate(new RTCIceCandidate(message.candidate));
-                }
-                break;
-            case "chat-message": {
-                const nextMessage = {
-                    id: message.message.id,
-                    text: message.message.text,
-                    type: message.message.chatType || "normal",
-                    amount: message.message.amount || 0,
-                    timestamp: message.message.timestamp,
-                    user: message.message.user || resolveDefaultDisplayName(),
-                };
-                setMessages((prev) => [...prev.slice(-119), nextMessage]);
-                if (nextMessage.type === "superchat") {
-                    if (pinTimeoutRef.current) clearTimeout(pinTimeoutRef.current);
-                    setPinnedSuperchat(nextMessage);
-                    pinTimeoutRef.current = setTimeout(() => setPinnedSuperchat(null), 15000);
-                }
-                break;
-            }
-            case "heartbeat-ack":
-                break;
-            default:
-                break;
-            }
+                    case "welcome":
+                    case "presence":
+                        syncBoardState(message.boardState);
+                        break;
+                    case "heartbeat-ack":
+                        break;
+                    case "chat-message":
+                        appendBoardLog({
+                            id: message.message.id,
+                            createdAt: new Date().toISOString(),
+                            type: message.message.chatType || "normal",
+                            messageKind: message.message.messageKind || (message.message.isQuestion ? "question" : "comment"),
+                            user: message.message.user || resolveDefaultDisplayName(),
+                            text: message.message.text || "",
+                            amount: message.message.amount || 0,
+                            isAnonymous: Boolean(message.message.isAnonymous),
+                            likeCount: Number(message.message.likeCount || 0),
+                            status: "visible",
+                        });
+                        handleIncomingMessage(message.message);
+                        break;
+                    case "board-message-updated":
+                        upsertBoardLog({
+                            id: message.message.id,
+                            createdAt: new Date().toISOString(),
+                            type: message.message.chatType || "normal",
+                            messageKind: message.message.messageKind || (message.message.isQuestion ? "question" : "comment"),
+                            user: message.message.user || resolveDefaultDisplayName(),
+                            text: message.message.text || "",
+                            amount: message.message.amount || 0,
+                            isAnonymous: Boolean(message.message.isAnonymous),
+                            likeCount: Number(message.message.likeCount || 0),
+                            status: "visible",
+                        });
+                        setMessages((prev) => upsertMessage(prev, message.message));
+                        break;
+                    case "board-pinned-notice":
+                        setPinnedNotice(message.notice || null);
+                        break;
+                    case "board-reactions":
+                        setReactionSession(message.reactionSession || null);
+                        setReactionHistory(filterDeletedReactionHistory(message.reactionHistory, deletedReactionHistoryIds));
+                        setBoardReactions({
+                            ...createDefaultReactions(),
+                            ...(message.reactionSession?.reactions || {}),
+                        });
+                        if (message.reactionSession?.currentReaction !== undefined) {
+                            setSelectedReaction(message.reactionSession.currentReaction || "");
+                        }
+                        break;
+                    case "board-session-updated":
+                        setBoardSession(message.boardSession || null);
+                        setBoardSessionHistory(Array.isArray(message.boardSessionHistory) ? message.boardSessionHistory : []);
+                        if (Array.isArray(message.messages)) {
+                            const nextMessages = message.messages.map(normalizeBoardMessage);
+                            setMessages(nextMessages);
+                            if (message.boardSession?.id) {
+                                setSessionMessages((current) => ({
+                                    ...current,
+                                    [String(message.boardSession.id)]: nextMessages,
+                                }));
+                            }
+                        }
+                        break;
+                    case "board-session-messages":
+                        setSessionMessages((current) => ({
+                            ...current,
+                            [String(message.sessionId || "")]: Array.isArray(message.messages)
+                                ? message.messages.map(normalizeBoardMessage)
+                                : [],
+                        }));
+                        break;
+                    case "board-message-deleted":
+                        if (String(message.sessionId || "") === String(boardSession?.id || "")) {
+                            setMessages((current) => current.filter((item) => String(item.id) !== String(message.messageId || "")));
+                        }
+                        setSessionMessages((current) => {
+                            const targetSessionId = String(message.sessionId || "");
+                            const existing = current[targetSessionId] || [];
+                            return {
+                                ...current,
+                                [targetSessionId]: existing.filter((item) => String(item.id) !== String(message.messageId || "")),
+                            };
+                        });
+                        if (String(pinnedSuperchat?.id || "") === String(message.messageId || "")) {
+                            setPinnedSuperchat(null);
+                        }
+                        break;
+                    case "message-blocked":
+                        appendBoardLog({
+                            type: "normal",
+                            messageKind: "comment",
+                            user: resolveDefaultDisplayName(),
+                            text: "",
+                            status: "blocked",
+                            reason: "server_moderation",
+                            categories: ["server"],
+                        });
+                        alert("コメントは不適切またはスパムと判断され、送信できませんでした。");
+                        break;
+                    default:
+                        break;
+                    }
                 };
             } catch (error) {
-                console.error("Failed to wake live signal server", error);
+                console.error("Failed to wake board signal server", error);
                 if (cancelled) return;
                 setSignalStatus("error");
-                setLiveNotice("ライブ配信サーバーに接続できていません。少し待ってから再度お試しください。");
+                setBoardNotice("掲示板サーバーに接続できていません。少し待ってから再度お試しください。");
             }
         };
 
@@ -724,24 +737,42 @@ function Live_page(props) {
             cancelled = true;
             if (heartbeatTimer) window.clearInterval(heartbeatTimer);
             if (pinTimeoutRef.current) clearTimeout(pinTimeoutRef.current);
-            stopBroadcast("page_unmount");
-            closeBroadcasterPeers();
-            closeViewerPeer();
             socket?.close();
             wsRef.current = null;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [access.address, access.isLoading, isAdmin]);
+    }, [deletedReactionHistoryIds]);
 
     useEffect(() => {
-        if (isBroadcasting && localStreamRef.current) {
-            setDisplayedStream(localStreamRef.current);
-            return;
+        localStorage.setItem(REACTION_HISTORY_KEY, JSON.stringify(reactionHistory));
+        window.dispatchEvent(new Event("board-reaction-history-updated"));
+    }, [reactionHistory]);
+
+    useEffect(() => {
+        setSelectedReactionHistoryIds((current) => current.filter((id) => reactionHistory.some((session) => String(session.id) === id)));
+    }, [reactionHistory]);
+
+    useEffect(() => {
+        setSelectedBoardHistoryIds((current) => current.filter((id) => boardSessionHistory.some((session) => String(session.id) === id)));
+    }, [boardSessionHistory]);
+
+    useEffect(() => {
+        const currentSessionId = String(boardSession?.id || "");
+        const selectedExists = selectedBoardSessionId && boardSessionOptions.some((option) => option.id === selectedBoardSessionId);
+        if (!selectedBoardSessionId || !selectedExists) {
+            setSelectedBoardSessionId(currentSessionId);
         }
-        if (remoteConnected && remoteStreamRef.current) {
-            setDisplayedStream(remoteStreamRef.current);
-        }
-    }, [isBroadcasting, remoteConnected]);
+    }, [boardSessionOptions, boardSession, selectedBoardSessionId]);
+
+    useEffect(() => {
+        if (!selectedBoardSessionId) return;
+        if (selectedBoardSessionId === String(boardSession?.id || "")) return;
+        if (sessionMessages[selectedBoardSessionId]) return;
+        sendSocketMessage({
+            type: "board-view-session",
+            sessionId: selectedBoardSessionId,
+        });
+    }, [boardSession, selectedBoardSessionId, sessionMessages]);
 
     useEffect(() => {
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN || access.isLoading) return;
@@ -749,156 +780,494 @@ function Live_page(props) {
             type: "register",
             address: access.address,
             displayName: resolveDefaultDisplayName(),
-            role: isAdmin ? "staff" : "viewer",
-            canBroadcast: isAdmin,
+            role: isTeacher ? "staff" : "viewer",
+            canBroadcast: false,
         });
-    }, [access.address, access.isLoading, chatDisplayName, isAdmin]);
+    }, [access.address, access.isLoading, chatDisplayName, isTeacher]);
 
     useEffect(() => {
-        if (!activeBroadcaster || isBroadcasting || !canViewLive || signalStatus !== "connected") {
-            subscribedBroadcastIdRef.current = "";
-            return;
-        }
-        if (activeBroadcaster.sessionId === subscribedBroadcastIdRef.current) return;
-        subscribedBroadcastIdRef.current = activeBroadcaster.sessionId;
-        sendSocketMessage({ type: "viewer-ready" });
-    }, [activeBroadcaster, canViewLive, isBroadcasting, signalStatus]);
+        const sync = () => setAnnouncements(getAnnouncements().slice(0, 5));
+        const unsubscribe = subscribeAnnouncements(sync);
+        sync();
+        return unsubscribe;
+    }, []);
 
     useEffect(() => {
-        if (!isAdmin || !dummyCommentsEnabled) return undefined;
-        const interval = setInterval(() => {
+        if (!isTeacher || !dummyCommentsEnabled) return undefined;
+
+        const interval = window.setInterval(() => {
             const randomComment = DUMMY_COMMENTS[Math.floor(Math.random() * DUMMY_COMMENTS.length)];
-            publishChatMessage(
-                randomComment,
-                "normal",
-                0,
-                DUMMY_VIEWER_NAMES[Math.floor(Math.random() * DUMMY_VIEWER_NAMES.length)]
-            );
+            const randomName = DUMMY_VIEWER_NAMES[Math.floor(Math.random() * DUMMY_VIEWER_NAMES.length)];
+            publishChatMessage(randomComment, "normal", 0, {
+                messageKind: "comment",
+                overrideUser: randomName,
+            });
         }, 3000);
-        return () => clearInterval(interval);
-    }, [dummyCommentsEnabled, isAdmin]);
+
+        return () => window.clearInterval(interval);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dummyCommentsEnabled, isTeacher]);
 
     if (access.isLoading) {
         return <div className="admin-not-authorized">権限を確認しています...</div>;
     }
 
-    if (!canViewLive) {
-        return <div className="admin-not-authorized">ライブ機能を表示できません。</div>;
+    if (!canViewBoard) {
+        return <div className="admin-not-authorized">掲示板機能を表示できません。</div>;
     }
 
     return (
         <div className="live-page animate-fadeIn">
-            <div className="live-container">
-                <div className="video-section glass-card">
-                    <div className="video-wrapper">
-                        {isBroadcasting || remoteConnected ? (
-                            <video
-                                ref={videoRef}
-                                autoPlay
-                                playsInline
-                                muted
-                                style={{ width: "100%", height: "100%", objectFit: "cover", backgroundColor: "#000" }}
-                            />
-                        ) : (
-                            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#000", color: "var(--text-tertiary)" }}>
-                                <div style={{ textAlign: "center", padding: "24px", maxWidth: "720px" }}>
-                                    <h3>{activeBroadcaster ? "配信への接続を待っています" : "現在ライブ配信はありません"}</h3>
-                                    <p style={{ marginTop: "12px", color: "rgba(255,255,255,0.85)", lineHeight: 1.8 }}>
-                                        {liveNotice || "先生またはTAが配信を開始すると、ここに同じ映像が表示されます。"}
-                                    </p>
+            <div className="live-container board-container">
+                <section className="board-hero glass-card">
+                    <div>
+                        <div className="board-kicker">Lecture Board</div>
+                        <h2 className="heading-lg board-title">講義掲示板</h2>
+                        <p className="board-description">
+                            動画共有は使わず、講義中のコメント、質問、理解度リアクションをまとめる画面です。
+                        </p>
+                    </div>
+                    <div className="board-status-group">
+                        <div className={`board-status-pill ${signalStatus === "connected" ? "is-connected" : "is-disconnected"}`}>
+                            接続状態: {signalStatus === "connected" ? "接続中" : "未接続"}
+                        </div>
+                        <div className="board-status-pill">
+                            表示名: {resolveDefaultDisplayName()}
+                        </div>
+                    </div>
+                </section>
+
+                <div className="board-layout">
+                    <aside className="board-sidebar glass-card">
+                        <div className="board-panel board-panel--compact">
+                            <h3 className="board-panel-title">お知らせ</h3>
+                            <p className="board-panel-text">{boardNotice}</p>
+                            {announcements.length > 0 ? (
+                                <div className="board-question-list" style={{ marginTop: "12px" }}>
+                                    {announcements.slice(0, 3).map((item) => (
+                                        <div key={item.id} className="board-question-item">
+                                            <div className="board-question-meta">
+                                                <span>{item.author}</span>
+                                                <span>{formatSessionTime(item.createdAt)}</span>
+                                            </div>
+                                            <div className="board-question-text">{item.body}</div>
+                                        </div>
+                                    ))}
                                 </div>
-                            </div>
-                        )}
-
-                        {activeBroadcaster && (
-                            <div style={{ position: "absolute", left: "16px", top: "16px", zIndex: 10, padding: "10px 14px", borderRadius: "999px", background: "rgba(0,0,0,0.55)", color: "#fff", border: "1px solid rgba(255,255,255,0.18)" }}>
-                                配信者: {activeBroadcaster.broadcasterName || activeBroadcaster.broadcasterAddress} / 視聴者 {activeBroadcaster.viewerCount || 0} 人
-                            </div>
-                        )}
-
-                        <div style={{ position: "absolute", left: "16px", bottom: "16px", zIndex: 10, padding: "10px 14px", borderRadius: "16px", background: "rgba(0,0,0,0.45)", color: "#fff", border: "1px solid rgba(255,255,255,0.12)", maxWidth: "min(80vw, 460px)" }}>
-                            <div style={{ fontWeight: 700, marginBottom: "4px" }}>
-                                接続状態: {signalStatus === "connected" ? "ライブサーバー接続中" : "未接続"}
-                            </div>
-                            <div style={{ fontSize: "14px", color: "rgba(255,255,255,0.88)" }}>
-                                {liveNotice || "配信待機中"}
-                            </div>
+                            ) : null}
                         </div>
 
-                        {isAdmin && (
-                            <div style={{ position: "absolute", top: "16px", right: "16px", zIndex: 10, display: "flex", gap: "12px", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                                <button onClick={handleToggleDummyComments} className={`btn ${dummyCommentsEnabled ? "btn-secondary" : "btn-primary"}`} style={{ padding: "8px 16px", borderRadius: "var(--radius-md)", fontWeight: "bold", boxShadow: "var(--glass-shadow)" }}>
+                        <div className="board-panel board-panel--compact">
+                            <h3 className="board-panel-title">利用ルール</h3>
+                            <ul className="board-rule-list">
+                                <li>不適切なコメントやスパムは自動でブロックされます。</li>
+                                <li>質問モードで送ると、重要な質問として整理されます。</li>
+                                <li>多くの人が気になる質問は支持ボタンで上に集められます。</li>
+                            </ul>
+                        </div>
+
+                        <div className="board-panel">
+                            <div className="board-panel-title" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                <FaThumbtack />
+                                教員固定コメント
+                            </div>
+                            {pinnedNotice ? (
+                                <div className="board-pinned-notice">
+                                    <div className="board-pinned-user">{pinnedNotice.user || "Teacher"}</div>
+                                    <div className="board-pinned-text">{pinnedNotice.text}</div>
+                                </div>
+                            ) : (
+                                <p className="board-panel-text">まだ固定コメントはありません。</p>
+                            )}
+                            {isTeacher ? (
+                                <div className="board-teacher-tools">
+                                    <textarea
+                                        className="form-control-custom board-textarea"
+                                        value={teacherNoticeDraft}
+                                        onChange={(event) => setTeacherNoticeDraft(event.target.value)}
+                                        placeholder="講義中の案内や重要事項を固定表示できます。"
+                                        rows={3}
+                                    />
+                                    <div className="board-teacher-actions">
+                                        <button type="button" className="btn btn-primary" onClick={handlePinNotice}>
+                                            固定する
+                                        </button>
+                                        <button type="button" className="btn btn-secondary" onClick={handleClearPinnedNotice}>
+                                            解除
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : null}
+                        </div>
+
+                        <div className="board-panel">
+                            <div className="board-panel-title" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                <FaBolt />
+                                注目の質問
+                            </div>
+                            {questionMessages.length === 0 ? (
+                                <p className="board-panel-text">質問が投稿されると、支持数の多いものがここに表示されます。</p>
+                            ) : (
+                                <div className="board-question-list">
+                                    {questionMessages.map((item) => (
+                                        <div key={item.id} className="board-question-item">
+                                            <div className="board-question-meta">
+                                                <span>{item.user}</span>
+                                                <span>支持 {item.likeCount || 0}</span>
+                                            </div>
+                                            <div className="board-question-text">{item.text}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {isTeacher ? (
+                            <div className="board-panel">
+                                <div className="board-reactions-header" style={{ alignItems: "center", marginBottom: "12px" }}>
+                                    <h3 className="board-panel-title">授業別リアクション履歴</h3>
+                                    <button
+                                        type="button"
+                                        className="btn btn-secondary"
+                                        onClick={handleDeleteSelectedReactionHistory}
+                                        disabled={selectedReactionHistoryIds.length === 0}
+                                    >
+                                        選択した履歴を削除
+                                    </button>
+                                </div>
+                                {reactionHistory.length === 0 ? (
+                                    <p className="board-panel-text">授業を切り替えると、前の授業の集計がここに残ります。</p>
+                                ) : (
+                                    <div className="board-session-history">
+                                        {reactionHistory.slice(0, 5).map((session) => (
+                                            <div key={session.id} className="board-session-history-item">
+                                                <div className="board-question-meta" style={{ gap: "12px", alignItems: "center" }}>
+                                                    <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedReactionHistoryIds.includes(String(session.id))}
+                                                            onChange={() => toggleReactionHistorySelection(session.id)}
+                                                        />
+                                                        <span>{formatSessionLabel(session)}</span>
+                                                    </label>
+                                                    <span>{formatSessionTime(session.startedAt)}</span>
+                                                </div>
+                                                <div className="board-session-reaction-values">
+                                                    {REACTION_OPTIONS.map((item) => (
+                                                        <span key={item.key}>{item.label}: {session.reactions?.[item.key] || 0}</span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        ) : null}
+
+                        {pinnedSuperchat ? (
+                            <div className="board-panel board-superchat-panel" style={{ background: "linear-gradient(135deg, rgba(230,139,0,0.18), rgba(211,47,47,0.18))" }}>
+                                <div className="board-reactions-header" style={{ alignItems: "center", marginBottom: "12px" }}>
+                                    <div className="board-panel-title" style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: 0 }}>
+                                        <FaCoins />
+                                        注目のスーパーチャット
+                                    </div>
+                                    {isTeacher ? (
+                                        <button type="button" className="btn btn-secondary" onClick={handleClearPinnedSuperchat}>
+                                            注目表示を削除
+                                        </button>
+                                    ) : null}
+                                </div>
+                                <div className="board-superchat-user">{pinnedSuperchat.user}</div>
+                                <div className="board-superchat-amount">{pinnedSuperchat.amount} TTT</div>
+                                {pinnedSuperchat.recipientLabel ? (
+                                    <div className="board-panel-text" style={{ marginBottom: "8px" }}>
+                                        送り先: {pinnedSuperchat.recipientLabel}
+                                    </div>
+                                ) : null}
+                                <div className="board-superchat-text">{pinnedSuperchat.text || "メッセージなし"}</div>
+                            </div>
+                        ) : null}
+
+                        {isTeacher ? (
+                            <div className="board-panel">
+                                <h3 className="board-panel-title">教員用操作</h3>
+                                <button
+                                    onClick={() => setDummyCommentsEnabled((current) => !current)}
+                                    className={`btn ${dummyCommentsEnabled ? "btn-secondary" : "btn-primary"}`}
+                                    style={{ width: "100%" }}
+                                >
                                     {dummyCommentsEnabled ? "ダミーコメント停止" : "ダミーコメント開始"}
                                 </button>
-                                <button onClick={startBroadcast} disabled={isBroadcasting || isLockedByOtherStaff} className="btn btn-primary" style={{ padding: "8px 16px", borderRadius: "var(--radius-md)", fontWeight: "bold", boxShadow: "var(--glass-shadow)", opacity: isBroadcasting || isLockedByOtherStaff ? 0.6 : 1 }}>
-                                    カメラ配信
-                                </button>
-                                <button onClick={switchCamera} className="btn btn-secondary" style={{ padding: "8px 16px", borderRadius: "var(--radius-md)", fontWeight: "bold", boxShadow: "var(--glass-shadow)" }}>
-                                    {cameraFacingMode === "user" ? "外カメラへ切替" : "内カメラへ切替"}
-                                </button>
-                                <button onClick={() => stopBroadcast("manual_stop")} disabled={!isBroadcasting} className="btn btn-danger" style={{ padding: "8px 16px", borderRadius: "var(--radius-md)", fontWeight: "bold", boxShadow: "var(--glass-shadow)", opacity: !isBroadcasting ? 0.6 : 1 }}>
-                                    配信停止
-                                </button>
                             </div>
-                        )}
+                        ) : null}
+                    </aside>
 
-                        <div className="danmaku-container">
-                            {messages.map((msg) => (
-                                <div
-                                    key={`danmaku-${msg.id}`}
-                                    className={`danmaku-item ${msg.type === "superchat" ? "superchat-danmaku" : "normal-danmaku"}`}
-                                    style={{ top: `${Math.random() * 80}%`, animationDuration: `${msg.type === "superchat" ? 8 : Math.random() * 5 + 4}s` }}
+                    <div className="board-main-column">
+                        <section className="board-chat glass-card">
+                            <div className="board-chat-header">
+                                <div>
+                                    <h3 className="heading-md" style={{ margin: 0 }}>共有コメント</h3>
+                                    <p className="board-chat-subtitle">
+                                        コメント、質問、スーパーチャットを同じ掲示板で共有できます。
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => setIsChatVisible((current) => !current)}
+                                    className="btn board-chat-toggle"
+                                    title="掲示板の表示を切り替える"
                                 >
-                                    {msg.text}
-                                </div>
-                            ))}
-                        </div>
+                                    {isChatVisible ? <><FaCommentSlash /> 掲示板を閉じる</> : <><FaComment /> 掲示板を開く</>}
+                                </button>
+                            </div>
 
-                        <button
-                            onClick={() => setIsChatVisible((current) => !current)}
-                            className="btn glass-card"
-                            style={{ position: "absolute", bottom: isChatVisible ? "auto" : "24px", top: isChatVisible ? "64px" : "auto", right: "16px", zIndex: 100, padding: "8px 16px", borderRadius: "var(--radius-full)", background: "rgba(0,0,0,0.5)", color: "#fff", border: "1px solid rgba(255,255,255,0.2)", cursor: "pointer", backdropFilter: "blur(10px)", fontSize: "14px", display: "flex", alignItems: "center", gap: "8px", boxShadow: "0 4px 6px rgba(0,0,0,0.3)" }}
-                            title="チャット表示を切り替える"
-                        >
-                            {isChatVisible ? <><FaCommentSlash /> チャットを閉じる</> : <><FaComment /> チャットを開く</>}
-                        </button>
+                            {isChatVisible ? (
+                                <div className="board-chat-body">
+                                    <div className="board-panel board-chat-toolbar">
+                                        <div className="board-chat-toolbar-header">
+                                            <div className="board-chat-toolbar-copy">
+                                                <h3 className="board-panel-title" style={{ marginBottom: "4px" }}>講義ごとの共有コメント</h3>
+                                                {isBoardCommentSectionOpen && isBoardCommentPanelOpen ? (
+                                                    <p className="board-panel-text">
+                                                        現在の授業と過去の授業のコメント履歴を切り替えて確認できます。
+                                                    </p>
+                                                ) : null}
+                                            </div>
+                                            <div className="board-chat-toolbar-actions">
+                                                <button
+                                                    type="button"
+                                                    className="board-chat-toolbar-toggle"
+                                                    onClick={() => setIsBoardCommentSectionOpen((current) => !current)}
+                                                    aria-expanded={isBoardCommentSectionOpen}
+                                                >
+                                                    {isBoardCommentSectionOpen ? "講義ごとの共有コメントを閉じる" : "講義ごとの共有コメントを開く"}
+                                                </button>
+                                                {isTeacher && isBoardCommentSectionOpen ? (
+                                                    <button
+                                                        type="button"
+                                                        className="board-chat-toolbar-toggle is-secondary"
+                                                        onClick={() => setIsBoardCommentPanelOpen((current) => !current)}
+                                                        aria-expanded={isBoardCommentPanelOpen}
+                                                    >
+                                                        {isBoardCommentPanelOpen ? "講義コメント設定を閉じる" : "講義コメント設定を開く"}
+                                                    </button>
+                                                ) : null}
+                                            </div>
+                                        </div>
+                                        {!isBoardCommentSectionOpen && selectedBoardSession ? (
+                                            <div className="board-chat-toolbar-minimized">
+                                                <span className="board-chat-toolbar-collapsed-title">{selectedBoardSession.label}</span>
+                                                <span className={`board-lecture-state ${isViewingCurrentLecture ? "is-live" : "is-archive"}`}>
+                                                    {isViewingCurrentLecture ? "投稿できます" : "閲覧専用"}
+                                                </span>
+                                            </div>
+                                        ) : null}
+                                        {isBoardCommentSectionOpen && !isBoardCommentPanelOpen && selectedBoardSession ? (
+                                            <div className="board-chat-toolbar-collapsed">
+                                                <span className="board-lecture-badge">
+                                                    {selectedBoardSession.isCurrent ? "現在の講義" : "過去の講義"}
+                                                </span>
+                                                <span className="board-chat-toolbar-collapsed-title">{selectedBoardSession.label}</span>
+                                                <span className={`board-lecture-state ${isViewingCurrentLecture ? "is-live" : "is-archive"}`}>
+                                                    {isViewingCurrentLecture ? "投稿できます" : "閲覧専用"}
+                                                </span>
+                                            </div>
+                                        ) : null}
+                                        {isBoardCommentSectionOpen && isBoardCommentPanelOpen && selectedBoardSession ? (
+                                            <div className="board-chat-toolbar-current">
+                                                <div className="board-lecture-summary">
+                                                    <div className="board-lecture-summary-main">
+                                                        <div className="board-lecture-badge">
+                                                            {selectedBoardSession.isCurrent ? "現在の講義" : "過去の講義"}
+                                                        </div>
+                                                        <div className="board-lecture-title">{selectedBoardSession.label}</div>
+                                                        <div className="board-lecture-meta">
+                                                            <span>開始: {formatSessionTime(selectedBoardSession.startedAt)}</span>
+                                                            <span>共有コメント: {selectedBoardSession.messageCount}件</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className={`board-lecture-state ${isViewingCurrentLecture ? "is-live" : "is-archive"}`}>
+                                                        {isViewingCurrentLecture ? "投稿できます" : "閲覧専用"}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ) : null}
+                                        {isBoardCommentSectionOpen && isBoardCommentPanelOpen ? (
+                                            <div className="board-chat-toolbar-body">
+                                                {isTeacher ? (
+                                                    <div className="board-chat-toolbar-section">
+                                                        <div className="board-chat-toolbar-label">表示する講義コメントを選択</div>
+                                                        <div className="board-lecture-selector">
+                                                            <div className="board-lecture-selector-controls">
+                                                                <select
+                                                                    className="form-control-custom board-lecture-select"
+                                                                    value={selectedBoardSessionId}
+                                                                    onChange={(event) => setSelectedBoardSessionId(event.target.value)}
+                                                                >
+                                                                    {boardSessionOptions.map((session) => (
+                                                                        <option key={session.id} value={session.id}>
+                                                                            {session.label} / {session.messageCount}件
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ) : null}
+                                                {isTeacher ? (
+                                                    <div className="board-chat-toolbar-section">
+                                                        <div className="board-chat-toolbar-label">新しい講義コメントを開始</div>
+                                                        <div className="board-session-actions">
+                                                            <input
+                                                                type="text"
+                                                                className="form-control-custom board-session-input"
+                                                                value={boardSessionLabel}
+                                                                onChange={(event) => setBoardSessionLabel(event.target.value)}
+                                                                placeholder="共有コメントの講義名を任意で入力"
+                                                            />
+                                                            <button type="button" className="btn btn-secondary" onClick={handleStartBoardSession}>
+                                                                この授業でコメント開始
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ) : null}
+                                                {isTeacher && boardSessionHistory.length > 0 ? (
+                                                    <div className="board-chat-toolbar-section">
+                                                        <div className="board-reactions-header" style={{ alignItems: "center", marginBottom: "12px" }}>
+                                                            <h4 className="board-panel-title" style={{ marginBottom: 0 }}>共有コメント履歴</h4>
+                                                            <button
+                                                                type="button"
+                                                                className="btn btn-secondary"
+                                                                onClick={handleDeleteSelectedBoardHistory}
+                                                                disabled={selectedBoardHistoryIds.length === 0}
+                                                            >
+                                                                選択したコメント履歴を削除
+                                                            </button>
+                                                        </div>
+                                                        <div className="board-session-history">
+                                                            {boardSessionHistory.slice(0, 5).map((session) => (
+                                                                <div key={session.id} className="board-session-history-item">
+                                                                    <div className="board-question-meta" style={{ gap: "12px", alignItems: "center" }}>
+                                                                        <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={selectedBoardHistoryIds.includes(String(session.id))}
+                                                                                onChange={() => toggleBoardHistorySelection(session.id)}
+                                                                            />
+                                                                            <span>{formatSessionLabel(session)}</span>
+                                                                        </label>
+                                                                        <span>{formatSessionTime(session.startedAt)}</span>
+                                                                    </div>
+                                                                    <div className="board-session-reaction-values">
+                                                                        <span>共有コメント: {session.messageCount || 0}件</span>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ) : null}
+                                                {!isTeacher ? (
+                                                    <div className="board-chat-toolbar-section">
+                                                        <div className="board-chat-toolbar-label">共有コメントの種類</div>
+                                                        <div className="board-lecture-chip-list">
+                                                            {boardSessionOptions.slice(0, 5).map((session) => (
+                                                                <div
+                                                                    key={session.id}
+                                                                    className={`board-lecture-chip ${selectedBoardSessionId === session.id ? "is-active" : ""}`}
+                                                                >
+                                                                    <span className="board-lecture-chip-label">{session.label}</span>
+                                                                    <span className="board-lecture-chip-count">{session.messageCount}件</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ) : null}
+                                                {isTeacher ? (
+                                                    <div className="board-lecture-chip-list">
+                                                        {boardSessionOptions.slice(0, 5).map((session) => (
+                                                            <button
+                                                                key={session.id}
+                                                                type="button"
+                                                                className={`board-lecture-chip ${selectedBoardSessionId === session.id ? "is-active" : ""}`}
+                                                                onClick={() => setSelectedBoardSessionId(session.id)}
+                                                            >
+                                                                <span className="board-lecture-chip-label">{session.label}</span>
+                                                                <span className="board-lecture-chip-count">{session.messageCount}件</span>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                <div className="board-chat-feed">
+                                    <Chat_feed
+                                        messages={displayedMessages}
+                                        onQuestionLike={handleQuestionLike}
+                                        likedQuestionIds={likedQuestionIds}
+                                        canModerate={isTeacher}
+                                        onDeleteMessage={handleDeleteBoardMessage}
+                                    />
+                                </div>
+                                <div className="board-chat-input">
+                                    <Chat_input
+                                        onSendMessage={handleSendMessage}
+                                        cont={contract}
+                                        isRegistered={canPostChat && isViewingCurrentLecture}
+                                        isLoadingAuth={access.isLoading}
+                                        readOnlyReason={isViewingCurrentLecture ? "" : "過去の授業コメントを表示中です。送信するには現在の授業へ切り替えてください。"}
+                                    />
+                                </div>
+                            </div>
+                            ) : (
+                                <div className="board-chat-collapsed">
+                                    掲示板を閉じています。右上のボタンで再表示できます。
+                                </div>
+                            )}
+                        </section>
+
+                        <section className="board-reactions-strip glass-card">
+                            <div className="board-reactions-header">
+                                <div>
+                                    <h3 className="board-panel-title" style={{ marginBottom: "4px" }}>理解度リアクション</h3>
+                                    <p className="board-panel-text">
+                                        {reactionSessionDisplayLabel} / 開始 {formatSessionTime(reactionSession?.startedAt)}
+                                    </p>
+                                </div>
+                                {isTeacher ? (
+                                    <div className="reaction-session-actions">
+                                        <input
+                                            type="text"
+                                            className="form-control-custom reaction-session-input"
+                                            value={reactionSessionLabel}
+                                            onChange={(event) => setReactionSessionLabel(event.target.value)}
+                                            placeholder="授業名を任意で入力"
+                                        />
+                                        <button type="button" className="btn btn-primary" onClick={handleStartReactionSession}>
+                                            この授業で集計開始
+                                        </button>
+                                        <button type="button" className="btn btn-secondary" onClick={handleResetReactions}>
+                                            現在の授業をリセット
+                                        </button>
+                                    </div>
+                                ) : null}
+                            </div>
+                            <div className="reaction-grid">
+                                {REACTION_OPTIONS.map((item) => (
+                                    <button
+                                        key={item.key}
+                                        type="button"
+                                        className={`reaction-chip ${selectedReaction === item.key ? "is-active" : ""}`}
+                                        onClick={() => handleReaction(item.key)}
+                                    >
+                                        <span>{item.label}</span>
+                                        <strong>{boardReactions[item.key] || 0}</strong>
+                                    </button>
+                                ))}
+                            </div>
+                        </section>
                     </div>
                 </div>
-
-                {isChatVisible && (
-                    <div className="chat-section glass-card">
-                        <div className="chat-header">
-                            <h3 className="heading-md" style={{ margin: 0 }}>ライブチャット</h3>
-                        </div>
-
-                        {pinnedSuperchat && (
-                            <div className="pinned-superchat animate-fadeIn" style={{ padding: "12px 16px", margin: "8px 16px 0", borderRadius: "var(--radius-md)", background: getSuperchatGradient(pinnedSuperchat.amount), border: "1px solid rgba(255,255,255,0.4)", color: "#fff", boxShadow: "0 4px 12px rgba(0, 0, 0, 0.4)", zIndex: 10, position: "relative" }}>
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px", fontWeight: "bold" }}>
-                                    <span style={{ fontSize: "14px", color: "rgba(255,255,255,0.9)" }}>{pinnedSuperchat.user}</span>
-                                    <span style={{ fontSize: "18px", color: "#FFF" }}>{pinnedSuperchat.amount} TFT</span>
-                                </div>
-                                <div style={{ fontSize: "15px", fontWeight: "600", textShadow: "1px 1px 2px rgba(0,0,0,0.5)" }}>
-                                    {pinnedSuperchat.text}
-                                </div>
-                            </div>
-                        )}
-
-                        <div className="chat-body">
-                            <div className="chat-feed-container">
-                                <Chat_feed messages={messages} />
-                            </div>
-                            <div className="chat-input-container">
-                                <Chat_input onSendMessage={handleSendMessage} cont={props.cont} isRegistered={canPostChat} isLoadingAuth={access.isLoading} />
-                            </div>
-                        </div>
-                    </div>
-                )}
             </div>
-            {isBroadcasting && (
-                <div style={{ marginTop: "12px", color: "var(--text-secondary)", fontSize: "14px" }}>
-                    配信モード: カメラ配信 / {cameraFacingMode === "user" ? "内カメラ" : "外カメラ"}
-                </div>
-            )}
         </div>
     );
 }

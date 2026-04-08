@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Contracts_MetaMask } from "../../contract/contracts";
+import { getCourseEnhancementSnapshot } from "../../utils/courseEnhancements";
 import "./ranking.css";
 
 function Ranking() {
@@ -8,6 +9,8 @@ function Ranking() {
     const [myRank, setMyRank] = useState(null);
     const [myScore, setMyScore] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [rankingMode, setRankingMode] = useState("score");
+    const [boardRanking, setBoardRanking] = useState([]);
 
     const cont = new Contracts_MetaMask();
 
@@ -39,6 +42,20 @@ function Ranking() {
                         setMyRank(idx + 1);
                     }
                 }
+
+                const snapshot = getCourseEnhancementSnapshot();
+                const boardCounts = new Map();
+                snapshot.boardLogs
+                    .filter((item) => item.status === "visible")
+                    .forEach((item) => {
+                        const user = String(item.user || "");
+                        boardCounts.set(user, (boardCounts.get(user) || 0) + 1);
+                    });
+                setBoardRanking(
+                    [...boardCounts.entries()]
+                        .map(([user, count]) => ({ user, count }))
+                        .sort((a, b) => b.count - a.count)
+                );
             } catch (err) {
                 console.error("Ranking load error:", err);
             } finally {
@@ -81,16 +98,26 @@ function Ranking() {
     }
 
     const top3 = results.slice(0, 3);
+    const visibleRanking = rankingMode === "score" ? results : boardRanking;
 
     return (
         <div className="ranking-page">
             <div className="page-header">
                 <h1 className="page-title">🏆 ランキング</h1>
-                <p className="page-subtitle">全生徒のトークン獲得スコアによる順位</p>
+                <p className="page-subtitle">総合スコアと講義参加の両方を切り替えて確認できます</p>
+            </div>
+
+            <div style={{ display: "flex", gap: "10px", marginBottom: "20px", flexWrap: "wrap" }}>
+                <button className={`admin-tab-btn ${rankingMode === "score" ? "active" : ""}`} onClick={() => setRankingMode("score")}>
+                    総合スコア
+                </button>
+                <button className={`admin-tab-btn ${rankingMode === "board" ? "active" : ""}`} onClick={() => setRankingMode("board")}>
+                    掲示板参加
+                </button>
             </div>
 
             {/* My Rank Card */}
-            {myRank !== null && (
+            {rankingMode === "score" && myRank !== null && (
                 <div className="my-rank-card">
                     <div className="my-rank-left">
                         <span style={{ fontSize: "1.5rem" }}>🎯</span>
@@ -104,7 +131,7 @@ function Ranking() {
             )}
 
             {/* Top 3 Podium */}
-            {top3.length >= 3 && (
+            {rankingMode === "score" && top3.length >= 3 && (
                 <div className="podium-section">
                     {[1, 0, 2].map(idx => (
                         <div key={idx} className={`podium-item ${idx === 0 ? 'first' : idx === 1 ? 'second' : 'third'}`}>
@@ -126,7 +153,18 @@ function Ranking() {
 
             {/* Full Ranking List */}
             <div className="ranking-list-card">
-                {results.map((item, index) => {
+                {visibleRanking.map((item, index) => {
+                    if (rankingMode === "board") {
+                        return (
+                            <div key={`${item.user}_${index}`} className="ranking-row">
+                                <div className="rank-number">{index < 3 ? MEDALS[index] : index + 1}</div>
+                                <div className="rank-info">
+                                    <div className="rank-address">{item.user || "匿名"}</div>
+                                </div>
+                                <div className="rank-score">{item.count} posts</div>
+                            </div>
+                        );
+                    }
                     const isMe = myAddress && item.student && 
                         item.student.toLowerCase() === myAddress.toLowerCase();
                     const score = Number(item.result) / (10 ** 18);

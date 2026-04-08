@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Contracts_MetaMask } from "../../contract/contracts";
+import { getAnnouncements, subscribeAnnouncements } from "../../utils/courseEnhancements";
 import "./dashboard.css";
 
 function Dashboard() {
@@ -10,7 +11,9 @@ function Dashboard() {
     const [quizTotal, setQuizTotal] = useState(null);
     const [userData, setUserData] = useState(null);
     const [isTeacher, setIsTeacher] = useState(false);
+    const [roleLabel, setRoleLabel] = useState("未登録");
     const [loading, setLoading] = useState(true);
+    const [announcements, setAnnouncements] = useState(() => getAnnouncements().slice(0, 3));
 
     const cont = new Contracts_MetaMask();
 
@@ -20,17 +23,19 @@ function Dashboard() {
                 const addr = await cont.get_address();
                 setAddress(addr);
 
-                const [bal, total, teacher, user] = await Promise.all([
+                const [bal, total, teacher, user, role] = await Promise.all([
                     cont.get_token_balance(addr),
                     cont.get_quiz_lenght(),
                     cont.isTeacher(),
                     cont.get_user_data(addr),
+                    cont.getUserRole(addr),
                 ]);
 
                 setBalance(bal);
                 setQuizTotal(Number(total));
                 setIsTeacher(teacher);
                 setUserData(user);
+                setRoleLabel(role?.label || "未登録");
 
                 // ランクを計算
                 if (user && user[2]) {
@@ -44,6 +49,13 @@ function Dashboard() {
             }
         }
         loadData();
+    }, []);
+
+    useEffect(() => {
+        const sync = () => setAnnouncements(getAnnouncements().slice(0, 3));
+        const unsubscribe = subscribeAnnouncements(sync);
+        sync();
+        return unsubscribe;
     }, []);
 
     const shortAddress = address
@@ -88,6 +100,7 @@ function Dashboard() {
                 <div className="welcome-info">
                     <h2>ようこそ！</h2>
                     <span className="welcome-address">{address}</span>
+                    <div style={{ color: "rgba(255,255,255,0.7)", marginTop: "6px" }}>利用区分: {roleLabel}</div>
                 </div>
             </div>
 
@@ -150,6 +163,25 @@ function Dashboard() {
                     <div className="action-icon yellow">👤</div>
                     <span className="action-text">マイページ</span>
                 </Link>
+            </div>
+
+            <h3 className="section-header">授業内お知らせ</h3>
+            <div className="glass-card" style={{ padding: "var(--space-5)" }}>
+                {announcements.length === 0 ? (
+                    <div style={{ color: "rgba(255,255,255,0.7)" }}>現在表示中のお知らせはありません。</div>
+                ) : (
+                    <div style={{ display: "grid", gap: "14px" }}>
+                        {announcements.map((item) => (
+                            <div key={item.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: "12px" }}>
+                                <div style={{ fontWeight: 700, color: "#fff" }}>{item.title}</div>
+                                <div style={{ color: "rgba(255,255,255,0.8)", marginTop: "6px", whiteSpace: "pre-wrap" }}>{item.body}</div>
+                                <div style={{ color: "rgba(255,255,255,0.55)", marginTop: "6px", fontSize: "13px" }}>
+                                    {new Date(item.createdAt).toLocaleString("ja-JP")} / {item.author}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     );

@@ -1,11 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
+import React from "react";
 import "./chat.css";
 
-function Chat_feed({ messages }) {
-    const feedEndRef = useRef(null);
-
-    const [isAtBottom, setIsAtBottom] = useState(true);
-
+function Chat_feed({ messages, onQuestionLike, likedQuestionIds, canModerate = false, onDeleteMessage }) {
     // 金額に応じたスーパーチャットのカラークラスを取得
     const getSuperchatColorClass = (amount) => {
         if (amount >= 1000) return "superchat-red";
@@ -15,29 +11,44 @@ function Chat_feed({ messages }) {
         return "superchat-blue";
     };
 
-    // Auto-scroll to bottom only if user was already at the bottom
-    useEffect(() => {
-        if (isAtBottom && feedEndRef.current) {
-            feedEndRef.current.scrollIntoView({ behavior: "smooth" });
-        }
-    }, [messages, isAtBottom]);
-
-    // Track scroll position to determine if user is reading past history
-    const handleScroll = (e) => {
-        const { scrollTop, scrollHeight, clientHeight } = e.target;
-        // 50px の誤差を許容して一番下にいるか判定
-        const isBottom = scrollHeight - scrollTop - clientHeight < 50;
-        setIsAtBottom(isBottom);
-    };
-
     return (
-        <div className="chat-feed" onScroll={handleScroll} style={{ overflowY: 'auto', height: '100%', paddingRight: '12px' }}>
+        <div className="chat-feed" style={{ overflowY: "auto", height: "100%", paddingRight: "12px" }}>
             {messages.map((msg) => (
-                <div key={msg.id} className={`chat-message ${msg.type === "superchat" ? `chat-superchat ${getSuperchatColorClass(msg.amount)}` : ""}`}>
+                <div
+                    key={msg.id}
+                    className={`chat-message ${msg.type === "superchat" ? `chat-superchat ${getSuperchatColorClass(msg.amount)}` : ""} ${msg.messageKind === "question" ? "chat-question" : ""}`}
+                >
+                    {canModerate ? (
+                        <div className="chat-message-tools">
+                            <button
+                                type="button"
+                                className="chat-message-delete"
+                                onClick={() => onDeleteMessage?.(msg.id)}
+                            >
+                                削除
+                            </button>
+                        </div>
+                    ) : null}
+                    {msg.messageKind === "question" && (
+                        <div className="chat-question-header">
+                            <span className="chat-question-badge">質問</span>
+                            <button
+                                type="button"
+                                className={`chat-question-like ${likedQuestionIds?.includes(msg.id) ? "is-liked" : ""}`}
+                                onClick={() => onQuestionLike?.(msg.id)}
+                                disabled={!onQuestionLike || likedQuestionIds?.includes(msg.id)}
+                            >
+                                {likedQuestionIds?.includes(msg.id) ? "支持済み" : "支持する"} {msg.likeCount || 0}
+                            </button>
+                        </div>
+                    )}
                     {msg.type === "superchat" && (
                         <div className="superchat-header">
-                            <span className="superchat-amount">¥{msg.amount} TFT</span>
+                            <span className="superchat-amount">{msg.amount} TTT</span>
                             <span className="superchat-user">{msg.user}</span>
+                            {msg.recipientLabel ? (
+                                <span className="superchat-user">→ {msg.recipientLabel}</span>
+                            ) : null}
                         </div>
                     )}
                     <div className="chat-message-content">
@@ -48,7 +59,6 @@ function Chat_feed({ messages }) {
                     </div>
                 </div>
             ))}
-            <div ref={feedEndRef} />
         </div>
     );
 }

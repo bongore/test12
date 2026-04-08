@@ -25,6 +25,7 @@ function makeInternalId(prefix, index) {
 
 function buildActorDirectory(students, staffs) {
     const directory = {};
+
     staffs.forEach((address, index) => {
         directory[normalizeAddress(address)] = {
             role: "staff",
@@ -78,29 +79,62 @@ function stringifyDetails(log) {
     const ignored = new Set([
         "id", "action", "actor", "createdAt", "sessionId", "route", "url", "referrer",
         "online", "userAgent", "viewportWidth", "viewportHeight", "language", "timezone",
-        "actorMeta",
+        "actorMeta", "category",
     ]);
+
     return Object.entries(log)
         .filter(([key, value]) => !ignored.has(key) && value !== "" && value != null)
         .map(([key, value]) => `${key}: ${String(value)}`)
         .join(" | ");
 }
 
-function groupActorAction(logs) {
-    const counts = new Map();
+function deriveCategory(action) {
+    if (!action) return "other";
+    if (action.startsWith("login_") || action.startsWith("wallet_")) return "login";
+    if (action.startsWith("answer_") || action.startsWith("quiz_")) return "answer";
+    if (action.startsWith("live_")) return "live";
+    if (action.startsWith("route_") || action.startsWith("app_")) return "system";
+    if (action.startsWith("performance_") || action.startsWith("export_")) return "ops";
+    return "other";
+}
+
+function formatCategoryLabel(category) {
+    switch (category) {
+        case "login": return "ログイン";
+        case "answer": return "解答";
+        case "live": return "ライブ";
+        case "system": return "画面遷移";
+        case "ops": return "運用";
+        default: return "その他";
+    }
+}
+
+function groupActorActivity(logs) {
+    const map = new Map();
+
     logs.forEach((log) => {
-        const key = `${log.actorMeta.internalId}__${log.action}`;
-        const current = counts.get(key) || {
+        const key = log.actorMeta.internalId;
+        const current = map.get(key) || {
             internalId: log.actorMeta.internalId,
             roleLabel: log.actorMeta.roleLabel,
-            action: log.action,
-            label: formatActionLabel(log.action),
+            address: log.actorMeta.address,
             count: 0,
+            lastSeenAt: log.createdAt,
+            categories: new Set(),
         };
+
         current.count += 1;
-        counts.set(key, current);
+        current.lastSeenAt = log.createdAt > current.lastSeenAt ? log.createdAt : current.lastSeenAt;
+        current.categories.add(log.category);
+        map.set(key, current);
     });
-    return [...counts.values()].sort((a, b) => b.count - a.count);
+
+    return [...map.values()]
+        .map((item) => ({
+            ...item,
+            categories: [...item.categories].map(formatCategoryLabel).join(" / "),
+        }))
+        .sort((a, b) => b.count - a.count);
 }
 
 function Analytics_dashboard({ cont }) {
@@ -109,13 +143,16 @@ function Analytics_dashboard({ cont }) {
     const [pageFilter, setPageFilter] = useState("all");
     const [roleFilter, setRoleFilter] = useState("all");
     const [actorFilter, setActorFilter] = useState("all");
+    const [categoryFilter, setCategoryFilter] = useState("all");
     const [searchTerm, setSearchTerm] = useState("");
+    const [selectedLogId, setSelectedLogId] = useState("");
     const [students, setStudents] = useState([]);
     const [staffs, setStaffs] = useState([]);
     const logs = getActivityLogs();
 
     useEffect(() => {
         let mounted = true;
+
         const loadActors = async () => {
             try {
                 const [studentList, staffList] = await Promise.all([
@@ -144,6 +181,7 @@ function Analytics_dashboard({ cont }) {
     const enrichedLogs = useMemo(() => logs.map((log) => ({
         ...log,
         actorMeta: resolveActorMeta(log, actorDirectory),
+        category: deriveCategory(log.action),
     })), [logs, actorDirectory]);
 
     const summary = useMemo(() => {
@@ -185,13 +223,33 @@ function Analytics_dashboard({ cont }) {
             }));
     }, [enrichedLogs]);
 
-    const pageOptions = useMemo(() => [...new Set(enrichedLogs.map((log) => log.page).filter(Boolean))].sort(), [enrichedLogs]);
-    const actorOptions = useMemo(() => {
-        return [...new Set(enrichedLogs.map((log) => log.actorMeta.internalId).filter(Boolean))].sort();
+    const categorySummary = useMemo(() => {
+        const counts = new Map();
+        enrichedLogs.forEach((log) => {
+            counts.set(log.category, (counts.get(log.category) || 0) + 1);
+        });
+        return [...counts.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .map(([category, count]) => ({
+                category,
+                label: formatCategoryLabel(category),
+                count,
+            }));
     }, [enrichedLogs]);
+
+    const pageOptions = useMemo(
+        () => [...new Set(enrichedLogs.map((log) => log.page).filter(Boolean))].sort(),
+        [enrichedLogs]
+    );
+
+    const actorOptions = useMemo(
+        () => [...new Set(enrichedLogs.map((log) => log.actorMeta.internalId).filter(Boolean))].sort(),
+        [enrichedLogs]
+    );
 
     const filteredLogs = useMemo(() => {
         const normalizedSearch = searchTerm.trim().toLowerCase();
+
         return enrichedLogs.filter((log) => {
             const searchable = [
                 stringifyDetails(log),
@@ -202,8 +260,10 @@ function Analytics_dashboard({ cont }) {
                 log.actorMeta.internalId,
                 log.actorMeta.roleLabel,
                 log.actorMeta.address,
+                formatCategoryLabel(log.category),
             ].join(" ").toLowerCase();
 
+            if (categoryFilter !== "all" && log.category !== categoryFilter) return false;
             if (actionFilter !== "all" && log.action !== actionFilter) return false;
             if (pageFilter !== "all" && log.page !== pageFilter) return false;
             if (roleFilter !== "all" && log.actorMeta.role !== roleFilter) return false;
@@ -211,9 +271,26 @@ function Analytics_dashboard({ cont }) {
             if (!normalizedSearch) return true;
             return searchable.includes(normalizedSearch);
         });
-    }, [enrichedLogs, actionFilter, pageFilter, roleFilter, actorFilter, searchTerm]);
+    }, [enrichedLogs, categoryFilter, actionFilter, pageFilter, roleFilter, actorFilter, searchTerm]);
 
-    const filteredActorActionSummary = useMemo(() => groupActorAction(filteredLogs), [filteredLogs]);
+    const actorSummary = useMemo(() => groupActorActivity(filteredLogs), [filteredLogs]);
+
+    useEffect(() => {
+        if (!filteredLogs.length) {
+            setSelectedLogId("");
+            return;
+        }
+
+        const selectedExists = filteredLogs.some((log) => log.id === selectedLogId);
+        if (!selectedExists) {
+            setSelectedLogId(filteredLogs[0].id);
+        }
+    }, [filteredLogs, selectedLogId]);
+
+    const selectedLog = useMemo(
+        () => filteredLogs.find((log) => log.id === selectedLogId) || null,
+        [filteredLogs, selectedLogId]
+    );
 
     const handleClear = () => {
         clearActivityLogs();
@@ -222,14 +299,16 @@ function Analytics_dashboard({ cont }) {
         setPageFilter("all");
         setRoleFilter("all");
         setActorFilter("all");
+        setCategoryFilter("all");
         setSearchTerm("");
+        setSelectedLogId("");
     };
 
     return (
         <div key={refreshKey}>
             <h3 className="section-title">分析ログ</h3>
             <p className="section-desc">
-                先生 / TA のみが利用者識別番号を確認できます。ログは `USER-*`、`STAFF-*`、`GUEST-*` 単位で検索・集計できます。
+                分析ログをカテゴリ別に分け、識別番号・ページ・行動・詳細から横断検索できます。
             </p>
 
             <div className="analytics-grid">
@@ -247,13 +326,19 @@ function Analytics_dashboard({ cont }) {
                 <button className="btn-action" onClick={handleClear}>ログを初期化</button>
             </div>
 
-            <div className="analytics-filters">
+            <div className="analytics-filters analytics-filters--wide">
                 <input
                     className="form-control"
                     value={searchTerm}
                     onChange={(event) => setSearchTerm(event.target.value)}
-                    placeholder="識別番号、権限、行動、詳細、クイズIDで検索"
+                    placeholder="識別番号、権限、カテゴリ、行動、詳細、クイズIDで検索"
                 />
+                <select className="form-control" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+                    <option value="all">すべてのカテゴリ</option>
+                    {categorySummary.map((item) => (
+                        <option key={item.category} value={item.category}>{item.label}</option>
+                    ))}
+                </select>
                 <select className="form-control" value={actionFilter} onChange={(event) => setActionFilter(event.target.value)}>
                     <option value="all">すべての行動</option>
                     {actionSummary.map((item) => (
@@ -280,90 +365,110 @@ function Analytics_dashboard({ cont }) {
                 </select>
             </div>
 
-            {actionSummary.length > 0 && (
-                <div className="results-table-wrap" style={{ marginBottom: "var(--space-6)" }}>
-                    <table className="results-table">
-                        <thead>
-                            <tr>
-                                <th>行動</th>
-                                <th>ログキー</th>
-                                <th>件数</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {actionSummary.map((item) => (
-                                <tr key={item.action}>
-                                    <td>{item.label}</td>
-                                    <td>{item.action}</td>
-                                    <td>{item.count}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
+            <div className="analytics-category-row">
+                {categorySummary.map((item) => (
+                    <button
+                        key={item.category}
+                        className={`analytics-category-chip ${categoryFilter === item.category ? "active" : ""}`}
+                        onClick={() => setCategoryFilter((current) => (current === item.category ? "all" : item.category))}
+                    >
+                        <span>{item.label}</span>
+                        <strong>{item.count}</strong>
+                    </button>
+                ))}
+            </div>
 
-            {filteredActorActionSummary.length > 0 && (
-                <div className="results-table-wrap" style={{ marginBottom: "var(--space-6)" }}>
-                    <table className="results-table">
-                        <thead>
-                            <tr>
-                                <th>識別番号</th>
-                                <th>権限</th>
-                                <th>行動</th>
-                                <th>件数</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filteredActorActionSummary.map((item) => (
-                                <tr key={`${item.internalId}-${item.action}`}>
-                                    <td className="analytics-text">{item.internalId}</td>
-                                    <td>{item.roleLabel}</td>
-                                    <td>{item.label}</td>
-                                    <td>{item.count}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+            {actorSummary.length > 0 && (
+                <div className="analytics-actor-grid">
+                    {actorSummary.slice(0, 8).map((item) => (
+                        <button
+                            key={item.internalId}
+                            className={`analytics-actor-card ${actorFilter === item.internalId ? "active" : ""}`}
+                            onClick={() => setActorFilter((current) => (current === item.internalId ? "all" : item.internalId))}
+                        >
+                            <div className="analytics-actor-title">{item.internalId}</div>
+                            <div className="analytics-actor-meta">{item.roleLabel} / {item.count} 件</div>
+                            <div className="analytics-actor-meta">{item.categories}</div>
+                            <div className="analytics-actor-meta">{formatDateTime(item.lastSeenAt)}</div>
+                        </button>
+                    ))}
                 </div>
             )}
 
             {filteredLogs.length === 0 ? (
                 <div className="analytics-empty">対象に一致するログがありません。</div>
             ) : (
-                <div className="results-table-wrap">
-                    <table className="results-table">
-                        <thead>
-                            <tr>
-                                <th>時刻</th>
-                                <th>識別番号</th>
-                                <th>権限</th>
-                                <th>ウォレット</th>
-                                <th>行動</th>
-                                <th>ページ</th>
-                                <th>対象ID</th>
-                                <th>経過時間</th>
-                                <th>詳細</th>
-                            </tr>
-                        </thead>
-                        <tbody>
+                <div className="analytics-workspace">
+                    <div className="analytics-log-list glass-card">
+                        <div className="analytics-panel-header">
+                            <strong>ログ一覧</strong>
+                            <span>表示中 {filteredLogs.length} 件 / 全体 {logs.length} 件</span>
+                        </div>
+                        <div className="analytics-log-items">
                             {filteredLogs.map((log) => (
-                                <tr key={log.id}>
-                                    <td>{formatDateTime(log.createdAt)}</td>
-                                    <td className="analytics-text">{log.actorMeta.internalId}</td>
-                                    <td>{log.actorMeta.roleLabel}</td>
-                                    <td className="analytics-text">{log.actorMeta.address}</td>
-                                    <td>{formatActionLabel(log.action)}</td>
-                                    <td>{log.page || "-"}</td>
-                                    <td>{log.quizId || "-"}</td>
-                                    <td>{log.durationMs || log.submitDurationMs || "-"}</td>
-                                    <td className="analytics-text">{stringifyDetails(log) || "-"}</td>
-                                </tr>
+                                <button
+                                    key={log.id}
+                                    className={`analytics-log-item ${selectedLogId === log.id ? "active" : ""}`}
+                                    onClick={() => setSelectedLogId(log.id)}
+                                >
+                                    <div className="analytics-log-top">
+                                        <span className="analytics-log-category">{formatCategoryLabel(log.category)}</span>
+                                        <span className="analytics-log-time">{formatDateTime(log.createdAt)}</span>
+                                    </div>
+                                    <div className="analytics-log-title">{formatActionLabel(log.action)}</div>
+                                    <div className="analytics-log-meta">
+                                        <span>{log.actorMeta.internalId}</span>
+                                        <span>{log.page || "-"}</span>
+                                        <span>{log.quizId || "-"}</span>
+                                    </div>
+                                    <div className="analytics-log-preview">{stringifyDetails(log) || "詳細なし"}</div>
+                                </button>
                             ))}
-                        </tbody>
-                    </table>
-                    <div className="analytics-table-note">
-                        表示中 {filteredLogs.length} 件 / 全体 {logs.length} 件
+                        </div>
+                    </div>
+
+                    <div className="analytics-log-detail glass-card">
+                        <div className="analytics-panel-header">
+                            <strong>個別詳細</strong>
+                            <span>{selectedLog ? formatActionLabel(selectedLog.action) : "-"}</span>
+                        </div>
+
+                        {selectedLog ? (
+                            <div className="analytics-detail-grid">
+                                <div className="analytics-detail-card"><div className="analytics-label">時刻</div><div className="analytics-detail-value">{formatDateTime(selectedLog.createdAt)}</div></div>
+                                <div className="analytics-detail-card"><div className="analytics-label">カテゴリ</div><div className="analytics-detail-value">{formatCategoryLabel(selectedLog.category)}</div></div>
+                                <div className="analytics-detail-card"><div className="analytics-label">行動</div><div className="analytics-detail-value">{formatActionLabel(selectedLog.action)}</div></div>
+                                <div className="analytics-detail-card"><div className="analytics-label">識別番号</div><div className="analytics-detail-value">{selectedLog.actorMeta.internalId}</div></div>
+                                <div className="analytics-detail-card"><div className="analytics-label">権限</div><div className="analytics-detail-value">{selectedLog.actorMeta.roleLabel}</div></div>
+                                <div className="analytics-detail-card"><div className="analytics-label">ウォレット</div><div className="analytics-detail-value analytics-text">{selectedLog.actorMeta.address}</div></div>
+                                <div className="analytics-detail-card"><div className="analytics-label">ページ</div><div className="analytics-detail-value">{selectedLog.page || "-"}</div></div>
+                                <div className="analytics-detail-card"><div className="analytics-label">対象ID</div><div className="analytics-detail-value">{selectedLog.quizId || "-"}</div></div>
+                                <div className="analytics-detail-card"><div className="analytics-label">経過時間</div><div className="analytics-detail-value">{selectedLog.durationMs || selectedLog.submitDurationMs || "-"}</div></div>
+                            </div>
+                        ) : (
+                            <div className="analytics-empty">ログを選択してください。</div>
+                        )}
+
+                        {selectedLog && (
+                            <div className="analytics-detail-block">
+                                <div className="analytics-label">詳細データ</div>
+                                <div className="analytics-detail-pre">{stringifyDetails(selectedLog) || "詳細なし"}</div>
+                            </div>
+                        )}
+
+                        {actionSummary.length > 0 && (
+                            <div className="analytics-detail-block">
+                                <div className="analytics-label">行動別件数</div>
+                                <div className="analytics-mini-table">
+                                    {actionSummary.slice(0, 10).map((item) => (
+                                        <div key={item.action} className="analytics-mini-row">
+                                            <span>{item.label}</span>
+                                            <strong>{item.count}</strong>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

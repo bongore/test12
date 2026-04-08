@@ -9,3 +9,14 @@ serve.out.log
 dist
 .DS_Store
 docs/
+.deploys/
+.deps/
+artifacts/
+Docker/
+solidity/.deps/
+solidity/artifacts/
+solidity/scenario.json
+solidity/scenario1.json
+solidity/scenario2.json
+extract_pdf.js
+yarn.lock

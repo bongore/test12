@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Form } from "react-bootstrap";
+import { ACTION_TYPES, appendActivityLog } from "../../../utils/activityLog";
 
 function formatInternalId(prefix, index) {
     return `${prefix}-${String(index + 1).padStart(3, "0")}`;
@@ -26,6 +27,10 @@ function Add_students(props) {
     const add_student = async () => {
         if (!addStudent_list.length) return;
         await props.cont.add_student(addStudent_list);
+        appendActivityLog(ACTION_TYPES.ADMIN_ADD_STUDENT, {
+            page: "admin",
+            count: addStudent_list.length,
+        });
         setAddStudent("");
         await loadStudents();
     };

@@ -5,6 +5,7 @@ import View_result from "./components/view_results";
 import View_answers from "./components/view_answers";
 import Analytics_dashboard from "./components/analytics_dashboard";
 import View_live_history from "./components/view_live_history";
+import Course_operations_panel from "./components/course_operations_panel";
 import "./admin.css";
 
 function Admin_page(props) {
@@ -38,8 +39,9 @@ function Admin_page(props) {
                 <button className={`admin-tab-btn ${component === "Add_teacher" ? "active" : ""}`} onClick={() => setComponent("Add_teacher")}>教員を追加</button>
                 <button className={`admin-tab-btn ${component === "View_result" ? "active" : ""}`} onClick={() => setComponent("View_result")}>成績を見る</button>
                 <button className={`admin-tab-btn ${component === "View_answers" ? "active" : ""}`} onClick={() => setComponent("View_answers")}>回答を見る</button>
-                <button className={`admin-tab-btn ${component === "Live_history" ? "active" : ""}`} onClick={() => setComponent("Live_history")}>配信履歴</button>
+                <button className={`admin-tab-btn ${component === "Live_history" ? "active" : ""}`} onClick={() => setComponent("Live_history")}>掲示板監視</button>
                 <button className={`admin-tab-btn ${component === "Analytics" ? "active" : ""}`} onClick={() => setComponent("Analytics")}>分析ログ</button>
+                <button className={`admin-tab-btn ${component === "Operations" ? "active" : ""}`} onClick={() => setComponent("Operations")}>運営補助</button>
             </div>
 
             <div className="admin-panel">
@@ -49,6 +51,7 @@ function Admin_page(props) {
                 {component === "View_answers" && <View_answers cont={props.cont} />}
                 {component === "Live_history" && <View_live_history />}
                 {component === "Analytics" && <Analytics_dashboard cont={props.cont} />}
+                {component === "Operations" && <Course_operations_panel cont={props.cont} />}
             </div>
         </div>
     );
