@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: test2-live-signal
+    name: test12-live-signal
     runtime: node
     plan: free
     rootDir: live-signal-service
