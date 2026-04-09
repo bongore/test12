@@ -185,4 +185,21 @@ describe("resolveAccessState", () => {
         expect(access.isStudent).toBe(true);
         expect(access.isAuthorizedUser).toBe(true);
     });
+
+    test("does not treat a failed teacher check as teacher access", async () => {
+        const access = await resolveAccessState({
+            get_address: jest.fn().mockResolvedValue("0xguest"),
+            getRegistrationDetails: jest.fn().mockResolvedValue(null),
+            getRoleSummary: jest.fn().mockResolvedValue(null),
+            getUserRole: jest.fn().mockResolvedValue({ key: "guest", label: "未登録" }),
+            isRegistered: jest.fn().mockResolvedValue(false),
+            isTeacher: jest.fn().mockResolvedValue([]),
+            isStudent: jest.fn().mockResolvedValue(false),
+            get_user_data: jest.fn().mockResolvedValue(null),
+        });
+
+        expect(access.isTeacher).toBe(false);
+        expect(access.isAuthorizedUser).toBe(false);
+        expect(access.canAnswerQuiz).toBe(false);
+    });
 });

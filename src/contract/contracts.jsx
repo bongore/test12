@@ -1262,7 +1262,7 @@ class Contracts_MetaMask {
         } catch (err) {
             console.log(err);
         }
-        return [];
+        return false;
     }
 
     async isStudent(address = "") {

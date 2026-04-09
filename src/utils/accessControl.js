@@ -108,7 +108,7 @@ async function resolveAccessState(cont) {
                 safeCall(cont?.getRoleSummary, address),
                 safeCall(cont?.getUserRole, address),
                 safeCall(cont?.isRegistered, address),
-                safeCall(cont?.isTeacher).then((value) => Boolean(value)),
+                safeCall(cont?.isTeacher).then((value) => value === true),
                 safeCall(cont?.isStudent, address),
                 safeCall(cont?.get_user_data, address),
             ]);
@@ -119,9 +119,9 @@ async function resolveAccessState(cont) {
                 ? { key: roleSummaryResult.roleKey, label: roleSummaryResult.roleLabel || "未登録" }
                 : roleResult && typeof roleResult === "object"
                 ? roleResult
-                : Boolean(isTeacherResult)
+                : isTeacherResult === true
                     ? { key: "teacher", label: "教員" }
-                    : Boolean(isStudentResult)
+                    : isStudentResult === true
                         ? { key: "student", label: "学生" }
                         : { key: "guest", label: "未登録" };
 
@@ -129,8 +129,8 @@ async function resolveAccessState(cont) {
             nextState.roleLabel = normalizedRole.label;
             nextState.registeredBy = String(registrationSnapshot?.addedBy || "");
             nextState.registeredAt = Number(registrationSnapshot?.addedAt || 0);
-            nextState.isTeacher = Boolean(registrationSnapshot?.isTeacher) || Boolean(roleSummaryResult?.isTeacher) || normalizedRole.key === "teacher" || Boolean(isTeacherResult);
-            nextState.isStudent = Boolean(registrationSnapshot?.isStudent) || Boolean(roleSummaryResult?.isStudent) || normalizedRole.key === "student" || Boolean(isStudentResult);
+            nextState.isTeacher = registrationSnapshot?.isTeacher === true || roleSummaryResult?.isTeacher === true || normalizedRole.key === "teacher" || isTeacherResult === true;
+            nextState.isStudent = registrationSnapshot?.isStudent === true || roleSummaryResult?.isStudent === true || normalizedRole.key === "student" || isStudentResult === true;
             nextState.hasProfile = Boolean(userData?.[3]);
             nextState.isAuthorizedUser = nextState.isTeacher
                 || nextState.isStudent
