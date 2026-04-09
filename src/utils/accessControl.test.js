@@ -123,6 +123,54 @@ describe("resolveAccessState", () => {
         expect(access.canAnswerQuiz).toBe(true);
     });
 
+    test("keeps method context when contract methods rely on this", async () => {
+        const contractLike = {
+            teacherAddress: "0xstudent",
+            get_address: jest.fn().mockResolvedValue("0xstudent"),
+            getRegistrationDetails(address) {
+                return Promise.resolve({
+                    registered: address === this.teacherAddress,
+                    isTeacher: false,
+                    isStudent: address === this.teacherAddress,
+                    roleKey: address === this.teacherAddress ? "student" : "guest",
+                    roleLabel: address === this.teacherAddress ? "学生" : "未登録",
+                    addedBy: "0xteacher",
+                    addedAt: 123,
+                });
+            },
+            getRoleSummary(address) {
+                return Promise.resolve({
+                    registered: address === this.teacherAddress,
+                    isTeacher: false,
+                    isStudent: address === this.teacherAddress,
+                    roleKey: address === this.teacherAddress ? "student" : "guest",
+                    roleLabel: address === this.teacherAddress ? "学生" : "未登録",
+                });
+            },
+            getUserRole(address) {
+                return Promise.resolve({
+                    key: address === this.teacherAddress ? "student" : "guest",
+                    label: address === this.teacherAddress ? "学生" : "未登録",
+                });
+            },
+            isRegistered(address) {
+                return Promise.resolve(address === this.teacherAddress);
+            },
+            isTeacher: jest.fn().mockResolvedValue(false),
+            isStudent(address) {
+                return Promise.resolve(address === this.teacherAddress);
+            },
+            get_user_data: jest.fn().mockResolvedValue([null, null, null, "Student"]),
+        };
+
+        const access = await resolveAccessState(contractLike);
+
+        expect(access.role).toBe("student");
+        expect(access.roleLabel).toBe("学生");
+        expect(access.isAuthorizedUser).toBe(true);
+        expect(access.canAnswerQuiz).toBe(true);
+    });
+
     test("keeps connected but unregistered users in view-only mode when registration APIs are unavailable", async () => {
         const access = await resolveAccessState({
             get_address: jest.fn().mockResolvedValue("0xstudent"),

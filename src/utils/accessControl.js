@@ -33,11 +33,12 @@ function resetAccessStateCache() {
     resolveAccessPromise = null;
 }
 
-function safeCall(method, ...args) {
+function safeCall(target, methodName, ...args) {
+    const method = target?.[methodName];
     if (typeof method !== "function") {
         return Promise.resolve(null);
     }
-    return Promise.resolve(method(...args)).catch(() => null);
+    return Promise.resolve(method.call(target, ...args)).catch(() => null);
 }
 
 function normalizeAddress(address) {
@@ -139,13 +140,13 @@ async function resolveAccessState(cont) {
             }
 
             const [registrationSnapshot, roleSummaryResult, roleResult, isRegisteredResult, isTeacherResult, isStudentResult, userData] = await Promise.all([
-                safeCall(cont?.getRegistrationDetails, address),
-                safeCall(cont?.getRoleSummary, address),
-                safeCall(cont?.getUserRole, address),
-                safeCall(cont?.isRegistered, address),
-                safeCall(cont?.isTeacher).then((value) => value === true),
-                safeCall(cont?.isStudent, address),
-                safeCall(cont?.get_user_data, address),
+                safeCall(cont, "getRegistrationDetails", address),
+                safeCall(cont, "getRoleSummary", address),
+                safeCall(cont, "getUserRole", address),
+                safeCall(cont, "isRegistered", address),
+                safeCall(cont, "isTeacher").then((value) => value === true),
+                safeCall(cont, "isStudent", address),
+                safeCall(cont, "get_user_data", address),
             ]);
 
             const normalizedRole = registrationSnapshot && typeof registrationSnapshot === "object" && registrationSnapshot.roleKey
