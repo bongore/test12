@@ -14,6 +14,7 @@ import {
     quiz_abi,
     token_address,
     ttt_token_address,
+    class_room_address,
     quiz_address,
     tokenContract as token,
     tttTokenContract as tttToken,
@@ -321,6 +322,10 @@ function toQuizSimpleArray(result) {
 }
 
 class Contracts_MetaMask {
+    getAccessControlAddress() {
+        return class_room_address || quiz_address;
+    }
+
     normalizeAddress(address) {
         return String(address || "").toLowerCase();
     }
@@ -1125,7 +1130,7 @@ class Contracts_MetaMask {
                     let account = await this.get_address();
                     const { request } = await publicClient.simulateContract({
                         account,
-                        address: quiz_address,
+                        address: this.getAccessControlAddress(),
                         abi: quiz_abi,
                         functionName: "add_student",
                         args: [address],
@@ -1149,7 +1154,7 @@ class Contracts_MetaMask {
                     let account = await this.get_address();
                     const { request } = await publicClient.simulateContract({
                         account,
-                        address: quiz_address,
+                        address: this.getAccessControlAddress(),
                         abi: quiz_abi,
                         functionName: "add_teacher",
                         args: [address],
@@ -1170,9 +1175,13 @@ class Contracts_MetaMask {
         try {
             if (this.getEthereumProvider()) {
                 let account = await this.get_address();
-                return account
-                    ? await quiz.read.get_teacher_all({ account, args: [] })
-                    : await quiz.read.get_teacher_all({ args: [] });
+                return await publicClient.readContract({
+                    account,
+                    address: this.getAccessControlAddress(),
+                    abi: quiz_abi,
+                    functionName: "get_teacher_all",
+                    args: [],
+                });
             } else {
                 console.log("Ethereum object does not exist");
             }
@@ -1224,7 +1233,7 @@ class Contracts_MetaMask {
                     if (!IS_TEACHER_NO_ARG_ABI) throw new Error("is_teacher_no_arg_abi_missing");
                     const directResult = await publicClient.readContract({
                         account,
-                        address: quiz_address,
+                        address: this.getAccessControlAddress(),
                         abi: [IS_TEACHER_NO_ARG_ABI],
                         functionName: "_isTeacher",
                         args: [],
@@ -1238,7 +1247,7 @@ class Contracts_MetaMask {
                     if (!IS_TEACHER_WITH_ADDRESS_ABI) throw new Error("is_teacher_with_address_abi_missing");
                     const overloadResult = await publicClient.readContract({
                         account,
-                        address: quiz_address,
+                        address: this.getAccessControlAddress(),
                         abi: [IS_TEACHER_WITH_ADDRESS_ABI],
                         functionName: "_isTeacher",
                         args: [account],
@@ -1276,7 +1285,7 @@ class Contracts_MetaMask {
                     if (!IS_STUDENT_WITH_ADDRESS_ABI) throw new Error("is_student_with_address_abi_missing");
                     return await publicClient.readContract({
                         account,
-                        address: quiz_address,
+                        address: this.getAccessControlAddress(),
                         abi: [IS_STUDENT_WITH_ADDRESS_ABI],
                         functionName: "_isStudent",
                         args: [targetAddress],
@@ -1286,7 +1295,7 @@ class Contracts_MetaMask {
                         if (!IS_STUDENT_NO_ARG_ABI) throw new Error("is_student_no_arg_abi_missing");
                         return await publicClient.readContract({
                             account,
-                            address: quiz_address,
+                            address: this.getAccessControlAddress(),
                             abi: [IS_STUDENT_NO_ARG_ABI],
                             functionName: "_isStudent",
                             args: [],
@@ -1316,7 +1325,7 @@ class Contracts_MetaMask {
                 try {
                     const roleCode = await publicClient.readContract({
                         account,
-                        address: quiz_address,
+                        address: this.getAccessControlAddress(),
                         abi: [GET_USER_ROLE_WITH_ADDRESS_ABI],
                         functionName: "get_user_role",
                         args: [targetAddress],
@@ -1326,7 +1335,7 @@ class Contracts_MetaMask {
                     try {
                         roleLabel = await publicClient.readContract({
                             account,
-                            address: quiz_address,
+                            address: this.getAccessControlAddress(),
                             abi: [GET_USER_ROLE_LABEL_WITH_ADDRESS_ABI],
                             functionName: "get_user_role_label",
                             args: [targetAddress],
@@ -1343,7 +1352,7 @@ class Contracts_MetaMask {
                         }
                         const roleCode = await publicClient.readContract({
                             account,
-                            address: quiz_address,
+                            address: this.getAccessControlAddress(),
                             abi: [GET_USER_ROLE_NO_ARG_ABI],
                             functionName: "get_user_role",
                             args: [],
@@ -1397,7 +1406,7 @@ class Contracts_MetaMask {
             try {
                 return await publicClient.readContract({
                     account,
-                    address: quiz_address,
+                    address: this.getAccessControlAddress(),
                     abi: [IS_REGISTERED_WITH_ADDRESS_ABI],
                     functionName: "isRegistered",
                     args: [targetAddress],
@@ -1411,7 +1420,7 @@ class Contracts_MetaMask {
                 try {
                     return await publicClient.readContract({
                         account,
-                        address: quiz_address,
+                        address: this.getAccessControlAddress(),
                         abi: [IS_REGISTERED_NO_ARG_ABI],
                         functionName: "isRegistered",
                         args: [],
@@ -1457,7 +1466,7 @@ class Contracts_MetaMask {
 
             const result = await publicClient.readContract({
                 account,
-                address: quiz_address,
+                address: this.getAccessControlAddress(),
                 abi: [GET_ROLE_SUMMARY_WITH_ADDRESS_ABI],
                 functionName: "getRoleSummary",
                 args: [targetAddress],
@@ -1518,7 +1527,7 @@ class Contracts_MetaMask {
             try {
                 result = await publicClient.readContract({
                     account,
-                    address: quiz_address,
+                    address: this.getAccessControlAddress(),
                     abi: [GET_REGISTRATION_DETAILS_WITH_ADDRESS_ABI],
                     functionName: "getRegistrationDetails",
                     args: [targetAddress],
@@ -1529,7 +1538,7 @@ class Contracts_MetaMask {
                 }
                 result = await publicClient.readContract({
                     account,
-                    address: quiz_address,
+                    address: this.getAccessControlAddress(),
                     abi: [GET_REGISTRATION_DETAILS_NO_ARG_ABI],
                     functionName: "getRegistrationDetails",
                     args: [],
@@ -1900,9 +1909,13 @@ class Contracts_MetaMask {
         try {
             if (this.getEthereumProvider()) {
                 let account = await this.get_address();
-                let res = account
-                    ? await quiz.read.get_student_all({ account, args: [] })
-                    : await quiz.read.get_student_all({ args: [] });
+                let res = await publicClient.readContract({
+                    account,
+                    address: this.getAccessControlAddress(),
+                    abi: quiz_abi,
+                    functionName: "get_student_all",
+                    args: [],
+                });
                 return res;
             } else {
                 console.log("Ethereum object does not exists");
