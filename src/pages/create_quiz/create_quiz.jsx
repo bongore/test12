@@ -45,19 +45,46 @@ function Create_quiz() {
 
     const create_quiz = async () => {
         if (correct !== "") {
-            console.log(new Date(reply_startline).getTime(), new Date(reply_deadline).getTime());
-            const receipt = await Contract.create_quiz(title, explanation, thumbnail_url, content, answer_type, answer_data, convertFullWidthNumbersToHalf(correct), reply_startline, reply_deadline, reward, correct_limit, setShow);
-            appendActivityLog(ACTION_TYPES.ADMIN_CREATE_QUIZ, {
-                page: "create_quiz",
-                title,
-                answerType: answer_type,
-                reward,
-            });
-            const createdQuizId = receipt?.logs?.[2]?.topics?.[2];
-            if (createdQuizId) {
-                const normalizedQuizId = BigInt(createdQuizId).toString();
-                setRegisteredCorrectAnswer(normalizedQuizId, convertFullWidthNumbersToHalf(correct));
-                navigate(`/answer_quiz/${normalizedQuizId}`);
+            try {
+                const previousLength = Number(await Contract.get_quiz_lenght());
+                const receipt = await Contract.create_quiz(
+                    title,
+                    explanation,
+                    thumbnail_url,
+                    content,
+                    answer_type,
+                    answer_data,
+                    convertFullWidthNumbersToHalf(correct),
+                    reply_startline,
+                    reply_deadline,
+                    reward,
+                    correct_limit,
+                    setShow,
+                );
+                appendActivityLog(ACTION_TYPES.ADMIN_CREATE_QUIZ, {
+                    page: "create_quiz",
+                    title,
+                    answerType: answer_type,
+                    reward,
+                });
+
+                let createdQuizId = receipt?.logs?.[2]?.topics?.[2];
+                if (!createdQuizId) {
+                    const latestLength = Number(await Contract.get_quiz_lenght());
+                    if (latestLength > previousLength) {
+                        createdQuizId = String(latestLength - 1);
+                    }
+                }
+
+                if (createdQuizId) {
+                    const normalizedQuizId = BigInt(createdQuizId).toString();
+                    setRegisteredCorrectAnswer(normalizedQuizId, convertFullWidthNumbersToHalf(correct));
+                    navigate(`/answer_quiz/${normalizedQuizId}`);
+                    return;
+                }
+            } catch (error) {
+                console.error("Failed to create quiz", error);
+                alert(error?.shortMessage || error?.message || "問題作成に失敗しました。MetaMask の承認状態と教員権限を確認してください。");
                 return;
             }
             navigate("/list_quiz");
@@ -93,7 +120,8 @@ function Create_quiz() {
 
     useEffect(() => {
         async function get_contract() {
-            setCorrect_limit((await Contract.get_num_of_students()) + 30);
+            const studentCount = await Contract.get_num_of_students();
+            setCorrect_limit(Math.max(Number(studentCount || 0) + 30, 30));
         }
         get_contract();
         setnow(getLocalizedDateTimeString());

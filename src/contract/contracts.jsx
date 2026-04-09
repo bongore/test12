@@ -799,39 +799,38 @@ class Contracts_MetaMask {
 
     async create_quiz(title, explanation, thumbnail_url, content, answer_type, answer_data, correct, reply_startline, reply_deadline, reward, correct_limit, setShow) {
         setShow(true);
-        //console.log([title, explanation, thumbnail_url, content, answer_type, answer_data, correct, reply_startline, reply_deadline, reward, correct_limit]);
         let res = null;
         let hash = null;
-        reward = reward * 10 ** 18;
+        const respondentLimit = Number(correct_limit || 0);
+        reward = Number(reward || 0) * 10 ** 18;
         try {
             if (ethereum) {
                 let account = await this.get_address();
+                if (!account) {
+                    throw new Error("wallet_not_connected");
+                }
+                if (respondentLimit <= 0) {
+                    throw new Error("student_count_unavailable");
+                }
                 let approval = await token.read.allowance({ account, args: [account, quiz_address] });
 
-                if (Number(approval) >= Number(reward * correct_limit)) {
-                    hash = await this._create_quiz(account, title, explanation, thumbnail_url, content, answer_type, answer_data, correct, reply_startline, reply_deadline, reward, correct_limit);
-                    if (hash) {
-                        res = await publicClient.waitForTransactionReceipt({ hash });
-                    }
+                if (Number(approval) >= Number(reward * respondentLimit)) {
+                    hash = await this._create_quiz(account, title, explanation, thumbnail_url, content, answer_type, answer_data, correct, reply_startline, reply_deadline, reward, respondentLimit);
+                    res = await publicClient.waitForTransactionReceipt({ hash });
                 } else {
-                    hash = await this.approve(account, reward * correct_limit);
-                    if (hash) {
-                        res = await publicClient.waitForTransactionReceipt({ hash });
-                        hash = await this._create_quiz(account, title, explanation, thumbnail_url, content, answer_type, answer_data, correct, reply_startline, reply_deadline, reward, correct_limit);
-                        console.log(hash);
-                        if (hash) {
-                            res = await publicClient.waitForTransactionReceipt({ hash });
-                        }
-                    }
+                    hash = await this.approve(account, reward * respondentLimit);
+                    res = await publicClient.waitForTransactionReceipt({ hash });
+                    hash = await this._create_quiz(account, title, explanation, thumbnail_url, content, answer_type, answer_data, correct, reply_startline, reply_deadline, reward, respondentLimit);
+                    res = await publicClient.waitForTransactionReceipt({ hash });
                 }
-                console.log("create_quiz_cont");
             } else {
-                setShow(false);
-                console.log("Ethereum object does not exist");
+                throw new Error("ethereum_not_found");
             }
         } catch (err) {
-            setShow(false);
             console.log(err);
+            throw err;
+        } finally {
+            setShow(false);
         }
         return res;
     }
@@ -845,27 +844,21 @@ class Contracts_MetaMask {
         const epochEndSeconds = Math.floor(dateEndObj.getTime() / 1000);
         try {
             if (ethereum) {
-                //console.log(title, explanation, thumbnail_url, content, answer_type, answer_data, correct, epochStartSeconds, epochEndSeconds, reward, correct_limit);
-                console.log(answer_type);
-                try {
-                    const { request } = await publicClient.simulateContract({
-                        account,
-                        address: quiz_address,
-                        abi: quiz_abi,
-                        functionName: "create_quiz",
-                        args: [title, explanation, thumbnail_url, content, answer_type, answer_data.toString(), correct, epochStartSeconds, epochEndSeconds, reward, correct_limit],
-                        //args: ["a", "a", "a", "a", 1, "a", "a", epochStartSeconds, epochEndSeconds, 2, 2],
-                    });
+                const { request } = await publicClient.simulateContract({
+                    account,
+                    address: quiz_address,
+                    abi: quiz_abi,
+                    functionName: "create_quiz",
+                    args: [title, explanation, thumbnail_url, content, answer_type, answer_data.toString(), correct, epochStartSeconds, epochEndSeconds, reward, correct_limit],
+                });
 
-                    return await walletClient.writeContract(request);
-                } catch (e) {
-                    console.log(e);
-                }
+                return await walletClient.writeContract(request);
             } else {
-                console.log("Ethereum object does not exist");
+                throw new Error("ethereum_not_found");
             }
         } catch (err) {
             console.log(err);
+            throw err;
         }
     }
 

@@ -417,6 +417,7 @@ function Live_page(props) {
     };
 
     const handleStartReactionSession = () => {
+        if (!isTeacher) return;
         const sent = sendSocketMessage({
             type: "board-start-reaction-session",
             label: reactionSessionLabel.trim(),
@@ -433,6 +434,7 @@ function Live_page(props) {
     };
 
     const handleStartBoardSession = () => {
+        if (!isTeacher) return;
         const sent = sendSocketMessage({
             type: "board-start-chat-session",
             label: boardSessionLabel.trim(),
@@ -672,6 +674,9 @@ function Live_page(props) {
                     case "board-session-updated":
                         setBoardSession(message.boardSession || null);
                         setBoardSessionHistory(Array.isArray(message.boardSessionHistory) ? message.boardSessionHistory : []);
+                        if (message.boardSession?.id) {
+                            setSelectedBoardSessionId(String(message.boardSession.id));
+                        }
                         if (Array.isArray(message.messages)) {
                             const nextMessages = message.messages.map(normalizeBoardMessage);
                             setMessages(nextMessages);
