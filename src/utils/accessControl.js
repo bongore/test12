@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { WALLET_PROVIDER_CHANGED_EVENT } from "../contract/contractClients";
+import { bootstrap_teacher_addresses } from "../contract/config";
 
 function createDefaultAccessState() {
     return {
@@ -37,6 +38,18 @@ function safeCall(method, ...args) {
         return Promise.resolve(null);
     }
     return Promise.resolve(method(...args)).catch(() => null);
+}
+
+function normalizeAddress(address) {
+    return String(address || "").toLowerCase();
+}
+
+function isBootstrapTeacherAddress(address) {
+    const normalizedTarget = normalizeAddress(address);
+    if (!normalizedTarget) return false;
+    return (bootstrap_teacher_addresses || []).some(
+        (teacherAddress) => normalizeAddress(teacherAddress) === normalizedTarget
+    );
 }
 
 function isSameAccessState(current, next) {
@@ -102,6 +115,28 @@ async function resolveAccessState(cont) {
 
             nextState.address = address;
             nextState.isConnected = true;
+
+            if (isBootstrapTeacherAddress(address)) {
+                const bootstrapTeacherState = {
+                    ...nextState,
+                    role: "teacher",
+                    roleLabel: "教員",
+                    registeredBy: address,
+                    registeredAt: 0,
+                    isStudent: false,
+                    canViewLive: true,
+                    isTeacher: true,
+                    hasProfile: true,
+                    canBroadcastLive: true,
+                    isAuthorizedUser: true,
+                    canAnswerQuiz: true,
+                    canJoinLive: true,
+                    isLoading: false,
+                };
+                lastResolvedAccessState = bootstrapTeacherState;
+                lastResolvedAt = Date.now();
+                return bootstrapTeacherState;
+            }
 
             const [registrationSnapshot, roleSummaryResult, roleResult, isRegisteredResult, isTeacherResult, isStudentResult, userData] = await Promise.all([
                 safeCall(cont?.getRegistrationDetails, address),

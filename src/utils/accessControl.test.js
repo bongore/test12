@@ -2,6 +2,10 @@ jest.mock("../contract/contractClients", () => ({
     WALLET_PROVIDER_CHANGED_EVENT: "wallet-provider-changed",
 }));
 
+jest.mock("../contract/config", () => ({
+    bootstrap_teacher_addresses: ["0xd5670D7B88411d03741680451C2ea630B68C6944"],
+}));
+
 import { mergeAccessState, resetAccessStateCache, resolveAccessState } from "./accessControl";
 
 describe("resolveAccessState", () => {
@@ -98,6 +102,25 @@ describe("resolveAccessState", () => {
         expect(access.canAnswerQuiz).toBe(true);
         expect(access.canViewLive).toBe(true);
         expect(access.isAuthorizedUser).toBe(true);
+    });
+
+    test("treats bootstrap teacher addresses as teacher even when contract role APIs fail", async () => {
+        const access = await resolveAccessState({
+            get_address: jest.fn().mockResolvedValue("0xd5670D7B88411d03741680451C2ea630B68C6944"),
+            getRegistrationDetails: jest.fn().mockResolvedValue(null),
+            getRoleSummary: jest.fn().mockResolvedValue(null),
+            getUserRole: jest.fn().mockResolvedValue({ key: "guest", label: "未登録" }),
+            isRegistered: jest.fn().mockResolvedValue(false),
+            isTeacher: jest.fn().mockResolvedValue(false),
+            isStudent: jest.fn().mockResolvedValue(false),
+            get_user_data: jest.fn().mockResolvedValue(null),
+        });
+
+        expect(access.role).toBe("teacher");
+        expect(access.roleLabel).toBe("教員");
+        expect(access.isTeacher).toBe(true);
+        expect(access.isAuthorizedUser).toBe(true);
+        expect(access.canAnswerQuiz).toBe(true);
     });
 
     test("keeps connected but unregistered users in view-only mode when registration APIs are unavailable", async () => {

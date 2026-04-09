@@ -7,6 +7,19 @@ import History_list from "./component/history_list";
 import User_card from "./component/user_card";
 import { useRef } from "react";
 import { buildBadgeSet, buildReviewList, getCourseEnhancementSnapshot } from "../../utils/courseEnhancements";
+import { bootstrap_teacher_addresses } from "../../contract/config";
+
+function normalizeAddress(address) {
+    return String(address || "").toLowerCase();
+}
+
+function isBootstrapTeacherAddress(address) {
+    const normalizedTarget = normalizeAddress(address);
+    if (!normalizedTarget) return false;
+    return (bootstrap_teacher_addresses || []).some(
+        (teacherAddress) => normalizeAddress(teacherAddress) === normalizedTarget
+    );
+}
 
 function User_page(props) {
     const { address } = useParams();
@@ -37,6 +50,7 @@ function User_page(props) {
         const nextRoleInfo = await cont.getUserRole(address);
         const nextRegistrationInfo = await cont.getRegistrationDetails(address);
         const nextConnectedAddress = await cont.get_address();
+        const bootstrapTeacher = isBootstrapTeacherAddress(address);
         Setuser_name(user_name);
         SetIcons(image);
         SetResult(result / 10 ** 18);
@@ -44,8 +58,16 @@ function User_page(props) {
         setNum_of_student(await cont.get_num_of_students());
         Set_state(state);
         setTttBalance(await cont.get_ttt_balance(address));
-        setRoleInfo(nextRoleInfo || { key: "guest", label: "未登録" });
-        setRegistrationInfo(nextRegistrationInfo || { registered: false, addedBy: "", addedAt: 0 });
+        setRoleInfo(
+            bootstrapTeacher
+                ? { key: "teacher", label: "教員" }
+                : (nextRoleInfo || { key: "guest", label: "未登録" })
+        );
+        setRegistrationInfo(
+            bootstrapTeacher
+                ? { registered: true, addedBy: address, addedAt: 0 }
+                : (nextRegistrationInfo || { registered: false, addedBy: "", addedAt: 0 })
+        );
         setConnectedAddress(nextConnectedAddress || "");
 
         cont.get_user_history_len(address).then((data) => {
