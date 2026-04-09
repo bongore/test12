@@ -322,8 +322,47 @@ function toQuizSimpleArray(result) {
 }
 
 class Contracts_MetaMask {
+    getAccessControlAddresses() {
+        return [quiz_address, class_room_address].filter(
+            (address, index, list) => Boolean(address) && list.indexOf(address) === index
+        );
+    }
+
     getAccessControlAddress() {
-        return class_room_address || quiz_address;
+        return this.getAccessControlAddresses()[0] || quiz_address;
+    }
+
+    async readAccessControlContract({ account, abi, functionName, args = [], preferTruthy = false, acceptResult } = {}) {
+        const addresses = this.getAccessControlAddresses();
+        let lastError = null;
+
+        for (const address of addresses) {
+            try {
+                const result = await publicClient.readContract({
+                    account,
+                    address,
+                    abi,
+                    functionName,
+                    args,
+                });
+
+                if (typeof acceptResult === "function") {
+                    if (acceptResult(result, address)) return result;
+                    continue;
+                }
+
+                if (!preferTruthy || result === true) {
+                    return result;
+                }
+            } catch (error) {
+                lastError = error;
+            }
+        }
+
+        if (lastError) {
+            throw lastError;
+        }
+        throw new Error(`access_control_call_failed:${functionName}`);
     }
 
     normalizeAddress(address) {
@@ -1130,7 +1169,7 @@ class Contracts_MetaMask {
                     let account = await this.get_address();
                     const { request } = await publicClient.simulateContract({
                         account,
-                        address: this.getAccessControlAddress(),
+                        address: quiz_address,
                         abi: quiz_abi,
                         functionName: "add_student",
                         args: [address],
@@ -1154,7 +1193,7 @@ class Contracts_MetaMask {
                     let account = await this.get_address();
                     const { request } = await publicClient.simulateContract({
                         account,
-                        address: this.getAccessControlAddress(),
+                        address: quiz_address,
                         abi: quiz_abi,
                         functionName: "add_teacher",
                         args: [address],
@@ -1175,12 +1214,12 @@ class Contracts_MetaMask {
         try {
             if (this.getEthereumProvider()) {
                 let account = await this.get_address();
-                return await publicClient.readContract({
+                return await this.readAccessControlContract({
                     account,
-                    address: this.getAccessControlAddress(),
                     abi: quiz_abi,
                     functionName: "get_teacher_all",
                     args: [],
+                    acceptResult: (result) => Array.isArray(result),
                 });
             } else {
                 console.log("Ethereum object does not exist");
@@ -1231,12 +1270,12 @@ class Contracts_MetaMask {
 
                 try {
                     if (!IS_TEACHER_NO_ARG_ABI) throw new Error("is_teacher_no_arg_abi_missing");
-                    const directResult = await publicClient.readContract({
+                    const directResult = await this.readAccessControlContract({
                         account,
-                        address: this.getAccessControlAddress(),
                         abi: [IS_TEACHER_NO_ARG_ABI],
                         functionName: "_isTeacher",
                         args: [],
+                        preferTruthy: true,
                     });
                     if (typeof directResult === "boolean") return directResult;
                 } catch (directError) {
@@ -1245,12 +1284,12 @@ class Contracts_MetaMask {
 
                 try {
                     if (!IS_TEACHER_WITH_ADDRESS_ABI) throw new Error("is_teacher_with_address_abi_missing");
-                    const overloadResult = await publicClient.readContract({
+                    const overloadResult = await this.readAccessControlContract({
                         account,
-                        address: this.getAccessControlAddress(),
                         abi: [IS_TEACHER_WITH_ADDRESS_ABI],
                         functionName: "_isTeacher",
                         args: [account],
+                        preferTruthy: true,
                     });
                     if (typeof overloadResult === "boolean") return overloadResult;
                 } catch (overloadError) {
@@ -1283,22 +1322,22 @@ class Contracts_MetaMask {
 
                 try {
                     if (!IS_STUDENT_WITH_ADDRESS_ABI) throw new Error("is_student_with_address_abi_missing");
-                    return await publicClient.readContract({
+                    return await this.readAccessControlContract({
                         account,
-                        address: this.getAccessControlAddress(),
                         abi: [IS_STUDENT_WITH_ADDRESS_ABI],
                         functionName: "_isStudent",
                         args: [targetAddress],
+                        preferTruthy: true,
                     });
                 } catch (overloadError) {
                     try {
                         if (!IS_STUDENT_NO_ARG_ABI) throw new Error("is_student_no_arg_abi_missing");
-                        return await publicClient.readContract({
+                        return await this.readAccessControlContract({
                             account,
-                            address: this.getAccessControlAddress(),
                             abi: [IS_STUDENT_NO_ARG_ABI],
                             functionName: "_isStudent",
                             args: [],
+                            preferTruthy: true,
                         });
                     } catch (fallbackError) {
                         return null;
@@ -1323,22 +1362,22 @@ class Contracts_MetaMask {
                 }
 
                 try {
-                    const roleCode = await publicClient.readContract({
+                    const roleCode = await this.readAccessControlContract({
                         account,
-                        address: this.getAccessControlAddress(),
                         abi: [GET_USER_ROLE_WITH_ADDRESS_ABI],
                         functionName: "get_user_role",
                         args: [targetAddress],
+                        acceptResult: (result) => Number(result) > 0,
                     });
 
                     let roleLabel = "";
                     try {
-                        roleLabel = await publicClient.readContract({
+                        roleLabel = await this.readAccessControlContract({
                             account,
-                            address: this.getAccessControlAddress(),
                             abi: [GET_USER_ROLE_LABEL_WITH_ADDRESS_ABI],
                             functionName: "get_user_role_label",
                             args: [targetAddress],
+                            acceptResult: (result) => typeof result === "string" && result !== "none",
                         });
                     } catch (labelError) {
                         console.log(labelError);
@@ -1350,12 +1389,12 @@ class Contracts_MetaMask {
                         if (targetAddress !== account) {
                             throw withAddressError;
                         }
-                        const roleCode = await publicClient.readContract({
+                        const roleCode = await this.readAccessControlContract({
                             account,
-                            address: this.getAccessControlAddress(),
                             abi: [GET_USER_ROLE_NO_ARG_ABI],
                             functionName: "get_user_role",
                             args: [],
+                            acceptResult: (result) => Number(result) > 0,
                         });
                         return normalizeRole(roleCode);
                     } catch (noArgError) {
@@ -1404,12 +1443,12 @@ class Contracts_MetaMask {
             if (!targetAddress) return false;
 
             try {
-                return await publicClient.readContract({
+                return await this.readAccessControlContract({
                     account,
-                    address: this.getAccessControlAddress(),
                     abi: [IS_REGISTERED_WITH_ADDRESS_ABI],
                     functionName: "isRegistered",
                     args: [targetAddress],
+                    preferTruthy: true,
                 });
             } catch (withAddressError) {
                 if (targetAddress !== account) {
@@ -1418,12 +1457,12 @@ class Contracts_MetaMask {
                 }
 
                 try {
-                    return await publicClient.readContract({
+                    return await this.readAccessControlContract({
                         account,
-                        address: this.getAccessControlAddress(),
                         abi: [IS_REGISTERED_NO_ARG_ABI],
                         functionName: "isRegistered",
                         args: [],
+                        preferTruthy: true,
                     });
                 } catch (noArgError) {
                     const role = await this.getUserRole(targetAddress);
@@ -1464,12 +1503,12 @@ class Contracts_MetaMask {
                 };
             }
 
-            const result = await publicClient.readContract({
+            const result = await this.readAccessControlContract({
                 account,
-                address: this.getAccessControlAddress(),
                 abi: [GET_ROLE_SUMMARY_WITH_ADDRESS_ABI],
                 functionName: "getRoleSummary",
                 args: [targetAddress],
+                acceptResult: (result) => Boolean(result?.[0]) || Boolean(result?.[1]) || Boolean(result?.[2]) || Number(result?.[3] || 0) > 0,
             });
 
             return {
@@ -1525,23 +1564,23 @@ class Contracts_MetaMask {
 
             let result;
             try {
-                result = await publicClient.readContract({
+                result = await this.readAccessControlContract({
                     account,
-                    address: this.getAccessControlAddress(),
                     abi: [GET_REGISTRATION_DETAILS_WITH_ADDRESS_ABI],
                     functionName: "getRegistrationDetails",
                     args: [targetAddress],
+                    acceptResult: (nextResult) => Boolean(nextResult?.[0]) || Boolean(nextResult?.[1]) || Boolean(nextResult?.[2]) || Number(nextResult?.[3] || 0) > 0,
                 });
             } catch (withAddressError) {
                 if (targetAddress !== account) {
                     throw withAddressError;
                 }
-                result = await publicClient.readContract({
+                result = await this.readAccessControlContract({
                     account,
-                    address: this.getAccessControlAddress(),
                     abi: [GET_REGISTRATION_DETAILS_NO_ARG_ABI],
                     functionName: "getRegistrationDetails",
                     args: [],
+                    acceptResult: (nextResult) => Boolean(nextResult?.[0]) || Boolean(nextResult?.[1]) || Boolean(nextResult?.[2]) || Number(nextResult?.[3] || 0) > 0,
                 });
             }
 
@@ -1909,12 +1948,12 @@ class Contracts_MetaMask {
         try {
             if (this.getEthereumProvider()) {
                 let account = await this.get_address();
-                let res = await publicClient.readContract({
+                let res = await this.readAccessControlContract({
                     account,
-                    address: this.getAccessControlAddress(),
                     abi: quiz_abi,
                     functionName: "get_student_all",
                     args: [],
+                    acceptResult: (result) => Array.isArray(result),
                 });
                 return res;
             } else {
