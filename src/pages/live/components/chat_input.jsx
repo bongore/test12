@@ -134,7 +134,7 @@ function Chat_input({ onSendMessage, cont, isRegistered, isLoadingAuth, readOnly
             ) : !isRegistered ? (
                 <div className="auth-warning glass-card text-center" style={{ padding: "12px", borderRadius: "var(--radius-md)", border: "1px solid var(--accent-red)", background: "rgba(255, 50, 50, 0.1)" }}>
                     <p style={{ margin: 0, fontSize: "14px", color: "#ff8888" }}>
-                        コメントするには MetaMask を接続してください。
+                        コメントや質問をするには、MetaMask 接続後に教員から登録してもらってください。
                     </p>
                 </div>
         ) : readOnlyReason ? (

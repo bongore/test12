@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { Contracts_MetaMask } from "../../contract/contracts";
 import { getAnnouncements, subscribeAnnouncements } from "../../utils/courseEnhancements";
+import { useAccessControl } from "../../utils/accessControl";
 import "./dashboard.css";
 
 function Dashboard() {
@@ -10,12 +11,11 @@ function Dashboard() {
     const [rank, setRank] = useState(null);
     const [quizTotal, setQuizTotal] = useState(null);
     const [userData, setUserData] = useState(null);
-    const [isTeacher, setIsTeacher] = useState(false);
-    const [roleLabel, setRoleLabel] = useState("未登録");
     const [loading, setLoading] = useState(true);
     const [announcements, setAnnouncements] = useState(() => getAnnouncements().slice(0, 3));
 
-    const cont = new Contracts_MetaMask();
+    const cont = useMemo(() => new Contracts_MetaMask(), []);
+    const access = useAccessControl(cont);
 
     useEffect(() => {
         async function loadData() {
@@ -23,19 +23,15 @@ function Dashboard() {
                 const addr = await cont.get_address();
                 setAddress(addr);
 
-                const [bal, total, teacher, user, role] = await Promise.all([
+                const [bal, total, user] = await Promise.all([
                     cont.get_token_balance(addr),
                     cont.get_quiz_lenght(),
-                    cont.isTeacher(),
                     cont.get_user_data(addr),
-                    cont.getUserRole(addr),
                 ]);
 
                 setBalance(bal);
                 setQuizTotal(Number(total));
-                setIsTeacher(teacher);
                 setUserData(user);
-                setRoleLabel(role?.label || "未登録");
 
                 // ランクを計算
                 if (user && user[2]) {
@@ -100,7 +96,7 @@ function Dashboard() {
                 <div className="welcome-info">
                     <h2>ようこそ！</h2>
                     <span className="welcome-address">{address}</span>
-                    <div style={{ color: "rgba(255,255,255,0.7)", marginTop: "6px" }}>利用区分: {roleLabel}</div>
+                    <div style={{ color: "rgba(255,255,255,0.7)", marginTop: "6px" }}>利用区分: {access.roleLabel}</div>
                 </div>
             </div>
 
@@ -152,7 +148,7 @@ function Dashboard() {
                     <span className="action-text">ランキングを見る</span>
                 </Link>
 
-                {isTeacher && (
+                {access.isTeacher && (
                     <Link to="/create_quiz" className="action-card">
                         <div className="action-icon green">✏️</div>
                         <span className="action-text">クイズを作成</span>

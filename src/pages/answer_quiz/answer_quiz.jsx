@@ -443,7 +443,7 @@ function Answer_quiz() {
                 <div className="glass-card" style={{ padding: "var(--space-6)" }}>
                     <h3 className="heading-md">解答権限がありません</h3>
                     <p style={{ color: "var(--text-secondary)", marginBottom: 0 }}>
-                        問題解答を利用するには MetaMask を接続してください。
+                        問題解答を利用するには、MetaMask 接続後に教員から登録してもらってください。
                     </p>
                 </div>
             </div>

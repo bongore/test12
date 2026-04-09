@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import Add_students from "./components/add_student";
 import Add_teacher from "./components/add_teacher";
 import View_result from "./components/view_results";
@@ -6,20 +6,15 @@ import View_answers from "./components/view_answers";
 import Analytics_dashboard from "./components/analytics_dashboard";
 import View_live_history from "./components/view_live_history";
 import Course_operations_panel from "./components/course_operations_panel";
+import { useAccessControl } from "../../utils/accessControl";
 import "./admin.css";
 
 function Admin_page(props) {
     const [component, setComponent] = useState("Add_students");
-    const [isTeacher, setIsTeacher] = useState(null);
+    const access = useAccessControl(props.cont);
+    const isTeacher = access.isTeacher;
 
-    useEffect(() => {
-        async function checkTeacher() {
-            setIsTeacher(await props.cont.isTeacher());
-        }
-        checkTeacher();
-    }, [props.cont]);
-
-    if (isTeacher === null) {
+    if (access.isLoading) {
         return <div className="admin-not-authorized">権限を確認中です...</div>;
     }
 

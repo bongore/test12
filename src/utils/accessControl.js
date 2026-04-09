@@ -136,10 +136,9 @@ async function resolveAccessState(cont) {
                 || nextState.isStudent
                 || Boolean(registrationSnapshot?.registered)
                 || Boolean(roleSummaryResult?.registered)
-                || Boolean(isRegisteredResult)
-                || (isStudentResult == null && isRegisteredResult == null && normalizedRole.key === "guest" ? nextState.isConnected : false);
+                || Boolean(isRegisteredResult);
             nextState.canBroadcastLive = nextState.isTeacher;
-            nextState.canViewLive = nextState.isAuthorizedUser;
+            nextState.canViewLive = nextState.isConnected;
             nextState.canAnswerQuiz = nextState.isAuthorizedUser;
             nextState.canJoinLive = nextState.isAuthorizedUser;
         } catch (error) {

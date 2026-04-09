@@ -100,7 +100,7 @@ describe("resolveAccessState", () => {
         expect(access.isAuthorizedUser).toBe(true);
     });
 
-    test("falls back to current deployments by allowing connected users when isStudent is unavailable", async () => {
+    test("keeps connected but unregistered users in view-only mode when registration APIs are unavailable", async () => {
         const access = await resolveAccessState({
             get_address: jest.fn().mockResolvedValue("0xstudent"),
             getRegistrationDetails: jest.fn().mockResolvedValue(null),
@@ -114,9 +114,10 @@ describe("resolveAccessState", () => {
 
         expect(access.isConnected).toBe(true);
         expect(access.isTeacher).toBe(false);
-        expect(access.isAuthorizedUser).toBe(true);
-        expect(access.canAnswerQuiz).toBe(true);
-        expect(access.canJoinLive).toBe(true);
+        expect(access.isAuthorizedUser).toBe(false);
+        expect(access.canAnswerQuiz).toBe(false);
+        expect(access.canJoinLive).toBe(false);
+        expect(access.canViewLive).toBe(true);
     });
 
     test("blocks connected users when the contract explicitly reports they are not registered", async () => {
@@ -148,7 +149,7 @@ describe("resolveAccessState", () => {
         expect(access.isConnected).toBe(true);
         expect(access.isAuthorizedUser).toBe(false);
         expect(access.canAnswerQuiz).toBe(false);
-        expect(access.canViewLive).toBe(false);
+        expect(access.canViewLive).toBe(true);
     });
 
     test("marks registered students as student role when the new role API is available", async () => {
