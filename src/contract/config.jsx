@@ -15,5 +15,8 @@ const class_room_address = "0xa9AA6D24ecF43fEd6203680866f78B9A4798A8e0";
 const quiz_address = "0x49576E6B1a9D81075767D61dAE3AdcB0b30B00d4";
 const token_address = "0x021e416bb6bfA1e76Aa4E280828b1d55F2d5f2F0";
 const ttt_token_address = "0x22b6457aC35b2A839EE6eb47c91f0941E1b21476";
+const bootstrap_teacher_addresses = [
+    "0xd5670D7B88411d03741680451C2ea630B68C6944",
+];
 
-export { chainId, rpc, class_room_address, quiz_address, token_address, ttt_token_address };
+export { chainId, rpc, class_room_address, quiz_address, token_address, ttt_token_address, bootstrap_teacher_addresses };

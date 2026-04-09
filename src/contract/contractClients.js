@@ -7,7 +7,7 @@
 import { createPublicClient, createWalletClient, http, getContract, custom } from "viem";
 import token_contract from "./token_abi.json";
 import quiz_contract from "./quiz_abi.json";
-import { class_room_address, quiz_address, token_address, ttt_token_address } from "./config";
+import { class_room_address, quiz_address, token_address, ttt_token_address, bootstrap_teacher_addresses } from "./config";
 import { amoy } from "./network";
 
 /* eslint-disable no-restricted-globals */
@@ -156,6 +156,7 @@ export {
     quiz_abi,
     token_address,
     ttt_token_address,
+    bootstrap_teacher_addresses,
     class_room_address,
     quiz_address,
     tokenContract,

@@ -12,6 +12,7 @@ import {
     publicClient,
     token_abi,
     quiz_abi,
+    bootstrap_teacher_addresses,
     token_address,
     ttt_token_address,
     class_room_address,
@@ -367,6 +368,14 @@ class Contracts_MetaMask {
 
     normalizeAddress(address) {
         return String(address || "").toLowerCase();
+    }
+
+    isBootstrapTeacherAddress(address) {
+        const normalizedTarget = this.normalizeAddress(address);
+        if (!normalizedTarget) return false;
+        return (bootstrap_teacher_addresses || []).some(
+            (teacherAddress) => this.normalizeAddress(teacherAddress) === normalizedTarget
+        );
     }
 
     formatShortAddress(address) {
@@ -1214,19 +1223,27 @@ class Contracts_MetaMask {
         try {
             if (this.getEthereumProvider()) {
                 let account = await this.get_address();
-                return await this.readAccessControlContract({
+                const teachers = await this.readAccessControlContract({
                     account,
                     abi: quiz_abi,
                     functionName: "get_teacher_all",
                     args: [],
                     acceptResult: (result) => Array.isArray(result),
                 });
+                const normalizedTeachers = Array.isArray(teachers) ? [...teachers] : [];
+                for (const teacherAddress of bootstrap_teacher_addresses || []) {
+                    if (!normalizedTeachers.some((item) => this.normalizeAddress(item) === this.normalizeAddress(teacherAddress))) {
+                        normalizedTeachers.push(teacherAddress);
+                    }
+                }
+                return normalizedTeachers;
             } else {
                 console.log("Ethereum object does not exist");
             }
         } catch (err) {
             console.log(err);
         }
+        return [...(bootstrap_teacher_addresses || [])];
     }
 
     async get_results() {
@@ -1267,6 +1284,7 @@ class Contracts_MetaMask {
             if (this.getEthereumProvider()) {
                 let account = await this.get_address();
                 if (!account) return false;
+                if (this.isBootstrapTeacherAddress(account)) return true;
 
                 try {
                     if (!IS_TEACHER_NO_ARG_ABI) throw new Error("is_teacher_no_arg_abi_missing");
@@ -1360,6 +1378,9 @@ class Contracts_MetaMask {
                 if (!targetAddress) {
                     return normalizeRole(ROLE_CODE.NONE);
                 }
+                if (this.isBootstrapTeacherAddress(targetAddress)) {
+                    return normalizeRole(ROLE_CODE.TEACHER);
+                }
 
                 try {
                     const roleCode = await this.readAccessControlContract({
@@ -1441,6 +1462,7 @@ class Contracts_MetaMask {
             const account = await this.get_address();
             const targetAddress = address || account;
             if (!targetAddress) return false;
+            if (this.isBootstrapTeacherAddress(targetAddress)) return true;
 
             try {
                 return await this.readAccessControlContract({
@@ -1502,6 +1524,16 @@ class Contracts_MetaMask {
                     roleLabel: "未登録",
                 };
             }
+            if (this.isBootstrapTeacherAddress(targetAddress)) {
+                return {
+                    registered: true,
+                    isTeacher: true,
+                    isStudent: false,
+                    role: ROLE_CODE.TEACHER,
+                    roleKey: "teacher",
+                    roleLabel: "教員",
+                };
+            }
 
             const result = await this.readAccessControlContract({
                 account,
@@ -1558,6 +1590,18 @@ class Contracts_MetaMask {
                     roleKey: "guest",
                     roleLabel: "未登録",
                     addedBy: "",
+                    addedAt: 0,
+                };
+            }
+            if (this.isBootstrapTeacherAddress(targetAddress)) {
+                return {
+                    registered: true,
+                    isTeacher: true,
+                    isStudent: false,
+                    role: ROLE_CODE.TEACHER,
+                    roleKey: "teacher",
+                    roleLabel: "教員",
+                    addedBy: targetAddress,
                     addedAt: 0,
                 };
             }
