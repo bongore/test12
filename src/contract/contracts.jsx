@@ -907,6 +907,7 @@ class Contracts_MetaMask {
         } catch (err) {
             console.log(err);
         }
+        return ["", "", 0, false];
     }
 
     async _payment_of_reward_manual(account, id, confirmAnswer, correctStudents, incorrectStudents, finalizePayment) {
@@ -1269,11 +1270,16 @@ class Contracts_MetaMask {
     }
 
     async get_quiz_simple(id) {
-        const account = await this.get_address();
-        if (account) {
-            return toQuizSimpleArray(await quiz.read.get_quiz_simple({ account, args: [id] }));
+        try {
+            const account = await this.get_address();
+            if (account) {
+                return toQuizSimpleArray(await quiz.read.get_quiz_simple({ account, args: [id] }));
+            }
+            return toQuizSimpleArray(await quiz.read.get_quiz_simple({ args: [id] }));
+        } catch (error) {
+            console.log(error);
+            return [Number(id), "", "", "", "", 0, 0, 0, 0, 0, 0, false];
         }
-        return toQuizSimpleArray(await quiz.read.get_quiz_simple({ args: [id] }));
     }
 
     async get_is_payment(id) {
@@ -1361,7 +1367,12 @@ class Contracts_MetaMask {
     }
 
     async get_quiz_lenght() {
-        return await quiz.read.get_quiz_length();
+        try {
+            return await quiz.read.get_quiz_length();
+        } catch (error) {
+            console.log(error);
+            return 0;
+        }
     }
 
     async get_num_of_students() {

@@ -7,7 +7,7 @@
 import { createPublicClient, createWalletClient, http, getContract, custom } from "viem";
 import token_contract from "./token_abi.json";
 import quiz_contract from "./quiz_abi.json";
-import { class_room_address, quiz_address, token_address, ttt_token_address, bootstrap_teacher_addresses } from "./config";
+import { class_room_address, quiz_address, token_address, ttt_token_address, bootstrap_teacher_addresses, rpc } from "./config";
 import { amoy } from "./network";
 
 /* eslint-disable no-restricted-globals */
@@ -22,7 +22,12 @@ let quizContract = null;
 /* ── Public Client (RPC) ── */
 const publicClient = createPublicClient({
     chain: amoy,
-    transport: http(),
+    transport: http(rpc, {
+        batch: true,
+        retryCount: 2,
+        retryDelay: 300,
+        timeout: 10000,
+    }),
 });
 
 /* ── ABI ── */
