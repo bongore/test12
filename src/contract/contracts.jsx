@@ -240,6 +240,36 @@ const HAS_BADGE_ABI = {
     inputs: [{ name: "user", type: "address" }, { name: "badge_key", type: "bytes32" }],
     outputs: [{ name: "granted", type: "bool" }],
 };
+const GET_STUDENT_ANSWER_DETAIL_ABI = {
+    type: "function",
+    name: "get_student_answer_detail",
+    stateMutability: "view",
+    inputs: [
+        { name: "quiz_id", type: "uint256" },
+        { name: "student", type: "address" },
+    ],
+    outputs: [
+        { name: "answer_text", type: "string" },
+        { name: "state", type: "uint256" },
+        { name: "answer_time", type: "uint256" },
+        { name: "reward", type: "uint256" },
+        { name: "result", type: "bool" },
+        { name: "submitted", type: "bool" },
+    ],
+};
+const PAYMENT_OF_REWARD_MANUAL_ABI = {
+    type: "function",
+    name: "payment_of_reward_manual",
+    stateMutability: "nonpayable",
+    inputs: [
+        { name: "quiz_id", type: "uint256" },
+        { name: "confirm_answer", type: "string" },
+        { name: "correct_students", type: "address[]" },
+        { name: "incorrect_students", type: "address[]" },
+        { name: "finalize_payment", type: "bool" },
+    ],
+    outputs: [{ name: "correct_count", type: "uint256" }],
+};
 
 const ROLE_CODE = {
     NONE: 0,
@@ -739,8 +769,8 @@ class Contracts_MetaMask {
                     console.log(addreses)
                     for (let i = 0; i < addreses.length; i++) {
                         hash2 = await this._payment_of_reward(account, id, answer, addreses[i]);
-                        if (hash) {
-                            res2 = await publicClient.waitForTransactionReceipt({ hash });
+                        if (hash2) {
+                            res2 = await publicClient.waitForTransactionReceipt({ hash: hash2 });
                         }
                     }
                     if (is_not_adding_reward == false) {
@@ -749,7 +779,7 @@ class Contracts_MetaMask {
                         approval = await token.read.allowance({ account, args: [account, quiz_address] });
                         console.log(approval);
                         if (Number(approval) >= Number(reward)) {
-                            hash = await this._addingReward(account, id, reward);
+                            hash = await this._adding_reward(account, id, reward);
                             if (hash) {
                                 res = await publicClient.waitForTransactionReceipt({ hash });
                             }
@@ -825,6 +855,30 @@ class Contracts_MetaMask {
         }
     }
 
+    async _payment_of_reward_manual(account, id, confirmAnswer, correctStudents, incorrectStudents, finalizePayment) {
+        try {
+            if (ethereum) {
+                try {
+                    const { request } = await publicClient.simulateContract({
+                        account,
+                        address: quiz_address,
+                        abi: [PAYMENT_OF_REWARD_MANUAL_ABI],
+                        functionName: "payment_of_reward_manual",
+                        args: [id, String(confirmAnswer || ""), correctStudents, incorrectStudents, Boolean(finalizePayment)],
+                    });
+
+                    return await walletClient.writeContract(request);
+                } catch (e) {
+                    console.log(e);
+                }
+            } else {
+                console.log("Ethereum object does not exist");
+            }
+        } catch (err) {
+            console.log(err);
+        }
+    }
+
     async _adding_reward(account, id, reward) {
         console.log([account, id, reward]);
         try {
@@ -848,6 +902,90 @@ class Contracts_MetaMask {
         } catch (err) {
             console.log(err);
         }
+    }
+
+    async settle_quiz_rewards_manually(id, amount, confirmAnswer, correctStudents, incorrectStudents, isNotAddingReward) {
+        let res = null;
+        let payoutReceipts = [];
+        let hash = null;
+        const normalizedCorrectStudents = Array.from(new Set((correctStudents || []).filter(Boolean)));
+        const normalizedIncorrectStudents = Array.from(
+            new Set((incorrectStudents || []).filter((address) => Boolean(address) && !normalizedCorrectStudents.includes(address)))
+        );
+        const rewardPerStudent = Number(amount || 0) * 10 ** 18;
+
+        try {
+            if (!ethereum) {
+                console.log("Ethereum object does not exist");
+                return { res, payoutReceipts, hash };
+            }
+
+            const account = await this.get_address();
+            if (!account) {
+                throw new Error("wallet_not_connected");
+            }
+
+            if (rewardPerStudent > 0 && normalizedCorrectStudents.length > 0) {
+                let approval = await token.read.allowance({ account, args: [account, quiz_address] });
+                const requiredAmount = rewardPerStudent * normalizedCorrectStudents.length;
+
+                if (Number(approval) < Number(requiredAmount)) {
+                    hash = await this.approve(account, requiredAmount);
+                    if (hash) {
+                        res = await publicClient.waitForTransactionReceipt({ hash });
+                    }
+                }
+
+                hash = await this._investment_to_quiz(account, id, rewardPerStudent, normalizedCorrectStudents.length);
+                if (hash) {
+                    res = await publicClient.waitForTransactionReceipt({ hash });
+                }
+            }
+
+            if (normalizedCorrectStudents.length > 0 || normalizedIncorrectStudents.length > 0) {
+                const batchSize = 15;
+                const totalBatchCount = Math.max(
+                    Math.ceil(normalizedCorrectStudents.length / batchSize),
+                    Math.ceil(normalizedIncorrectStudents.length / batchSize),
+                    1
+                );
+
+                for (let index = 0; index < totalBatchCount; index += 1) {
+                    const correctChunk = normalizedCorrectStudents.slice(index * batchSize, (index + 1) * batchSize);
+                    const incorrectChunk = normalizedIncorrectStudents.slice(index * batchSize, (index + 1) * batchSize);
+                    const payoutHash = await this._payment_of_reward_manual(
+                        account,
+                        id,
+                        confirmAnswer,
+                        correctChunk,
+                        incorrectChunk,
+                        index === totalBatchCount - 1
+                    );
+                    if (payoutHash) {
+                        payoutReceipts.push(await publicClient.waitForTransactionReceipt({ hash: payoutHash }));
+                    }
+                }
+            }
+
+            if (isNotAddingReward === "false") {
+                let reward = (await this.get_quiz_simple(id))[7];
+                let approval = await token.read.allowance({ account, args: [account, quiz_address] });
+                if (Number(approval) < Number(reward)) {
+                    hash = await this.approve(account, reward);
+                    if (hash) {
+                        res = await publicClient.waitForTransactionReceipt({ hash });
+                    }
+                }
+                hash = await this._adding_reward(account, id, reward);
+                if (hash) {
+                    res = await publicClient.waitForTransactionReceipt({ hash });
+                }
+            }
+        } catch (err) {
+            console.log(err);
+        }
+
+        return { res, payoutReceipts, hash };
     }
 
     async create_quiz(title, explanation, thumbnail_url, content, answer_type, answer_data, correct, reply_startline, reply_deadline, reward, correct_limit, setShow) {
@@ -1985,6 +2123,55 @@ class Contracts_MetaMask {
         } catch (err) {
             console.log(err);
         }
+    }
+
+    async get_student_answer_detail(student, id) {
+        try {
+            if (ethereum) {
+                let account = await this.get_address();
+                const result = await publicClient.readContract({
+                    account,
+                    address: quiz_address,
+                    abi: [GET_STUDENT_ANSWER_DETAIL_ABI],
+                    functionName: "get_student_answer_detail",
+                    args: [Number(id), student],
+                });
+
+                return {
+                    answerText: String(result?.[0] || ""),
+                    state: Number(result?.[1] || 0),
+                    answerTime: Number(result?.[2] || 0),
+                    reward: Number(result?.[3] || 0),
+                    result: Boolean(result?.[4]),
+                    submitted: Boolean(result?.[5]),
+                };
+            } else {
+                console.log("Ethereum object does not exists");
+            }
+        } catch (err) {
+            console.log(err);
+            try {
+                const answerHash = await this.get_student_answer_hash(student, id);
+                return {
+                    answerText: answerHash ? `hash: ${String(answerHash).slice(0, 18)}...` : "",
+                    state: 0,
+                    answerTime: 0,
+                    reward: 0,
+                    result: false,
+                    submitted: Boolean(answerHash && String(answerHash) !== "0x0000000000000000000000000000000000000000000000000000000000000000"),
+                };
+            } catch (fallbackError) {
+                console.log(fallbackError);
+            }
+        }
+        return {
+            answerText: "",
+            state: 0,
+            answerTime: 0,
+            reward: 0,
+            result: false,
+            submitted: false,
+        };
     }
 
 

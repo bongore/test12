@@ -1,9 +1,15 @@
 /// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.2;
 
-import "./class_room.sol";
+interface IClassRoom {
+    function _isTeacher(address user) external view returns (bool);
+    function _isStudent(address user) external view returns (bool);
+    function get_platform_token_addresses() external view returns (address tft_token, address ttt_token);
+}
 
-contract Quiz_Dapp is class_room {
+contract Quiz_Dapp {
+    address public constant class_room_address = 0xa9AA6D24ecF43fEd6203680866f78B9A4798A8e0;
+    IClassRoom private immutable class_room;
     TokenInterface token;
 
     struct User {
@@ -16,6 +22,7 @@ contract Quiz_Dapp is class_room {
 
     struct Answer {
         address respondent;
+        string answer_text;
         uint answer_time;
         uint reward;
         bool result;
@@ -78,7 +85,14 @@ contract Quiz_Dapp is class_room {
     mapping(address => User) private users;
     Quiz[] private quizs;
 
+    modifier isTeacher() {
+        require(class_room._isTeacher(msg.sender), "teacher");
+        _;
+    }
+
     constructor() {
+        class_room = IClassRoom(class_room_address);
+        (address tft_token_address, ) = class_room.get_platform_token_addresses();
         token = TokenInterface(tft_token_address);
     }
 
@@ -211,7 +225,7 @@ contract Quiz_Dapp is class_room {
 
     function save_answer(uint quiz_id, string memory answer) public returns (uint answer_id) {
         Quiz storage quiz = quizs[quiz_id];
-        require(_isStudent(msg.sender) || _isTeacher(msg.sender), "auth");
+        require(class_room._isStudent(msg.sender) || class_room._isTeacher(msg.sender), "auth");
         require(quiz.start_time_epoch <= block.timestamp, "start");
         require(quiz.time_limit_epoch >= block.timestamp, "closed");
 
@@ -227,6 +241,7 @@ contract Quiz_Dapp is class_room {
         quiz.respondents_state[msg.sender] = answer_id;
         quiz.answers.push();
         quiz.answers[answer_id].respondent = msg.sender;
+        quiz.answers[answer_id].answer_text = answer;
         quiz.answers[answer_id].answer_time = block.timestamp;
         quiz.respondents_map[msg.sender] = 3;
     }
@@ -246,11 +261,44 @@ contract Quiz_Dapp is class_room {
 
         if (answer_id < quiz.answers.length && quiz.answers[answer_id].respondent == msg.sender) {
             quiz.answers[answer_id].respondent = address(0);
+            quiz.answers[answer_id].answer_text = "";
             quiz.answers[answer_id].answer_time = block.timestamp;
             quiz.answers[answer_id].reward = 0;
             quiz.answers[answer_id].result = false;
         }
         return true;
+    }
+
+    function get_student_answer_detail(uint quiz_id, address student)
+        public
+        view
+        returns (
+            string memory answer_text,
+            uint state,
+            uint answer_time,
+            uint reward,
+            bool result,
+            bool submitted
+        )
+    {
+        Quiz storage quiz = quizs[quiz_id];
+        state = quiz.respondents_map[student];
+        submitted = state != 0;
+
+        if (!submitted) {
+            return ("", 0, 0, 0, false, false);
+        }
+
+        uint answer_id = quiz.respondents_state[student];
+        if (answer_id >= quiz.answers.length || quiz.answers[answer_id].respondent != student) {
+            return ("", state, 0, 0, false, true);
+        }
+
+        Answer storage answer_data = quiz.answers[answer_id];
+        answer_text = answer_data.answer_text;
+        answer_time = answer_data.answer_time;
+        reward = answer_data.reward;
+        result = answer_data.result;
     }
 
     function _settle_reward_for_student(
@@ -288,8 +336,44 @@ contract Quiz_Dapp is class_room {
         quiz.confirm_answer = confirm_answer;
     }
 
+    function _settle_reward_for_student_manual(
+        Quiz storage quiz,
+        address student,
+        bool is_correct
+    ) internal returns (bool wasCorrect) {
+        uint answer_id = quiz.respondents_state[student];
+        uint previousState = quiz.respondents_map[student];
+        if (previousState == 0) {
+            return false;
+        }
+
+        uint reward = 0;
+        bool result = false;
+
+        if (is_correct) {
+            if (previousState != 2) {
+                reward = quiz.reward;
+                users[student].result += reward;
+                token.transfer_explanation(student, reward, "correct answer");
+            } else if (answer_id < quiz.answers.length) {
+                reward = quiz.answers[answer_id].reward;
+            }
+            quiz.respondents_map[student] = 2;
+            result = true;
+            wasCorrect = true;
+        } else {
+            quiz.respondents_map[student] = 1;
+        }
+
+        if (answer_id < quiz.answers.length && quiz.answers[answer_id].respondent == student) {
+            quiz.answers[answer_id].reward = reward;
+            quiz.answers[answer_id].result = result;
+        }
+    }
+
     function payment_of_reward(uint quiz_id, string memory answer, address[] memory students) public isTeacher returns (uint correct_count) {
         Quiz storage quiz = quizs[quiz_id];
+        require(!quiz.is_payment, "paid");
         bytes32 answer_hash = keccak256(abi.encodePacked(answer));
 
         for (uint i = 0; i < students.length; i++) {
@@ -299,11 +383,39 @@ contract Quiz_Dapp is class_room {
             }
 
         }
+        quiz.is_payment = true;
+        quiz.confirm_answer = answer;
+    }
+
+    function payment_of_reward_manual(
+        uint quiz_id,
+        string memory confirm_answer,
+        address[] memory correct_students,
+        address[] memory incorrect_students,
+        bool finalize_payment
+    ) public isTeacher returns (uint correct_count) {
+        Quiz storage quiz = quizs[quiz_id];
+        require(!quiz.is_payment, "paid");
+
+        for (uint i = 0; i < correct_students.length; i++) {
+            if (_settle_reward_for_student_manual(quiz, correct_students[i], true)) {
+                correct_count += 1;
+            }
+        }
+
+        for (uint i = 0; i < incorrect_students.length; i++) {
+            _settle_reward_for_student_manual(quiz, incorrect_students[i], false);
+        }
+
+        quiz.confirm_answer = confirm_answer;
+        if (finalize_payment) {
+            quiz.is_payment = true;
+        }
     }
 
     function adding_reward(uint quiz_id) public isTeacher returns (address owner) {
         owner = quizs[quiz_id].owner;
-        if (!_isTeacher(owner)) {
+        if (!class_room._isTeacher(owner)) {
             require(token.allowance(msg.sender, address(this)) >= quizs[quiz_id].reward, "approve");
             token.transferFrom_explanation(msg.sender, address(this), quizs[quiz_id].reward, "investment_to_quiz");
             users[owner].result += quizs[quiz_id].reward;

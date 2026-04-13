@@ -793,6 +793,55 @@
     {
       "inputs": [
         {
+          "internalType": "uint256",
+          "name": "quiz_id",
+          "type": "uint256"
+        },
+        {
+          "internalType": "address",
+          "name": "student",
+          "type": "address"
+        }
+      ],
+      "name": "get_student_answer_detail",
+      "outputs": [
+        {
+          "internalType": "string",
+          "name": "answer_text",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "state",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "answer_time",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "reward",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bool",
+          "name": "result",
+          "type": "bool"
+        },
+        {
+          "internalType": "bool",
+          "name": "submitted",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
           "internalType": "address",
           "name": "target",
           "type": "address"
@@ -968,6 +1017,45 @@
         }
       ],
       "name": "payment_of_reward",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "correct_count",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "quiz_id",
+          "type": "uint256"
+        },
+        {
+          "internalType": "string",
+          "name": "confirm_answer",
+          "type": "string"
+        },
+        {
+          "internalType": "address[]",
+          "name": "correct_students",
+          "type": "address[]"
+        },
+        {
+          "internalType": "address[]",
+          "name": "incorrect_students",
+          "type": "address[]"
+        },
+        {
+          "internalType": "bool",
+          "name": "finalize_payment",
+          "type": "bool"
+        }
+      ],
+      "name": "payment_of_reward_manual",
       "outputs": [
         {
           "internalType": "uint256",
