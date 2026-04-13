@@ -12,7 +12,7 @@ const rpc = "https://rpc-amoy.polygon.technology/"; // (required for Ethereum) J
 //const quiz_address = "0x5d12efccbd81c60c80e5e2caffa480f2cf80a813"//test10
 
 const class_room_address = "0xa9AA6D24ecF43fEd6203680866f78B9A4798A8e0";
-const quiz_address = "0x2DfaC485A476FdFbF33411C88A126D74fbfbD0Ee";
+const quiz_address = "0xEbBD4E3276bcb847838E18DDA7585Ac8925a5eA6";
 const token_address = "0x021e416bb6bfA1e76Aa4E280828b1d55F2d5f2F0";
 const ttt_token_address = "0x22b6457aC35b2A839EE6eb47c91f0941E1b21476";
 const bootstrap_teacher_addresses = [

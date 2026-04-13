@@ -796,6 +796,30 @@
           "internalType": "uint256",
           "name": "quiz_id",
           "type": "uint256"
+        }
+      ],
+      "name": "get_revealed_correct_answer",
+      "outputs": [
+        {
+          "internalType": "string",
+          "name": "correct_answer",
+          "type": "string"
+        },
+        {
+          "internalType": "bool",
+          "name": "visible",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "quiz_id",
+          "type": "uint256"
         },
         {
           "internalType": "address",

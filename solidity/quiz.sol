@@ -36,6 +36,7 @@ contract Quiz_Dapp {
         string content;
         uint answer_type;
         string answer_data;
+        string registered_answer;
         bytes32 answer_hash;
         uint create_time_epoch;
         uint start_time_epoch;
@@ -127,6 +128,7 @@ contract Quiz_Dapp {
         quiz.content = _content;
         quiz.answer_type = _answer_type;
         quiz.answer_data = _answer_data;
+        quiz.registered_answer = _answer;
         quiz.answer_hash = keccak256(abi.encodePacked(_answer));
         quiz.create_time_epoch = block.timestamp;
         quiz.start_time_epoch = _startline_after_epoch;
@@ -195,6 +197,15 @@ contract Quiz_Dapp {
     function get_confirm_answer(uint quiz_id) public view returns (string memory confirm_answer, bool is_payment) {
         confirm_answer = quizs[quiz_id].confirm_answer;
         is_payment = quizs[quiz_id].is_payment;
+    }
+
+    function get_revealed_correct_answer(uint quiz_id) public view returns (string memory correct_answer, bool visible) {
+        Quiz storage quiz = quizs[quiz_id];
+        visible = quiz.time_limit_epoch != 0 && block.timestamp > quiz.time_limit_epoch;
+        if (!visible) {
+            return ("", false);
+        }
+        correct_answer = quiz.registered_answer;
     }
 
     function get_student_answer_hash(address sender, uint quiz_id) public view returns (bytes32) {

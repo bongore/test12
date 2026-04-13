@@ -53,18 +53,39 @@ function List_quiz_top(props) {
 
         if (!expiredWithoutAnswer.length) return;
 
-        setCorrectAnswerMap((current) => {
-            const next = { ...current };
-            expiredWithoutAnswer.forEach((quiz) => {
-                const quizId = Number(quiz?.[0]);
-                const answer = getRegisteredCorrectAnswer(quizId);
-                if (answer) {
-                    next[quizId] = answer;
-                }
+        let cancelled = false;
+
+        (async () => {
+            const nextEntries = await Promise.all(
+                expiredWithoutAnswer.map(async (quiz) => {
+                    const quizId = Number(quiz?.[0]);
+                    const localAnswer = getRegisteredCorrectAnswer(quizId);
+                    if (localAnswer) {
+                        return [quizId, localAnswer];
+                    }
+
+                    const answer = await cont.get_revealed_correct_answer(quizId);
+                    return [quizId, answer];
+                })
+            );
+
+            if (cancelled) return;
+
+            setCorrectAnswerMap((current) => {
+                const next = { ...current };
+                nextEntries.forEach(([quizId, answer]) => {
+                    if (answer) {
+                        next[quizId] = answer;
+                    }
+                });
+                return next;
             });
-            return next;
-        });
-    }, [correctAnswerMap, currentEpoch, quiz_list]);
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [cont, correctAnswerMap, currentEpoch, quiz_list]);
 
     if (quiz_sum != null) {
         return (

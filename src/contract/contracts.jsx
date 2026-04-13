@@ -257,6 +257,16 @@ const GET_STUDENT_ANSWER_DETAIL_ABI = {
         { name: "submitted", type: "bool" },
     ],
 };
+const GET_REVEALED_CORRECT_ANSWER_ABI = {
+    type: "function",
+    name: "get_revealed_correct_answer",
+    stateMutability: "view",
+    inputs: [{ name: "quiz_id", type: "uint256" }],
+    outputs: [
+        { name: "correct_answer", type: "string" },
+        { name: "visible", type: "bool" },
+    ],
+};
 const PAYMENT_OF_REWARD_MANUAL_ABI = {
     type: "function",
     name: "payment_of_reward_manual",
@@ -1213,7 +1223,7 @@ class Contracts_MetaMask {
         const answer_typr = await quiz.read.get_quiz_answer_type({ args: [id] });
         const res = toQuizArray(await quiz.read.get_quiz({ args: [id] }));
         const res2 = await this.get_confirm_answer(id);
-        const registeredCorrectAnswer = getRegisteredCorrectAnswer(id);
+        const registeredCorrectAnswer = await this.get_revealed_correct_answer(id);
         return [...res, answer_typr, registeredCorrectAnswer, res2[1]];
     }
 
@@ -1231,6 +1241,26 @@ class Contracts_MetaMask {
 
     async get_confirm_answer(id) {
         return await quiz.read.get_confirm_answer({ args: [id] });
+    }
+
+    async get_revealed_correct_answer(id) {
+        try {
+            const result = await publicClient.readContract({
+                address: quiz_address,
+                abi: [GET_REVEALED_CORRECT_ANSWER_ABI],
+                functionName: "get_revealed_correct_answer",
+                args: [Number(id)],
+            });
+            const answer = String(result?.[0] || "");
+            const visible = Boolean(result?.[1]);
+            if (visible && answer) {
+                return answer;
+            }
+        } catch (error) {
+            console.log(error);
+        }
+
+        return getRegisteredCorrectAnswer(id);
     }
 
     async get_quiz_all_data_list(start, end) {
