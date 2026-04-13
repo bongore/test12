@@ -26,18 +26,62 @@ import {
 } from "./contractClients";
 import { getRegisteredCorrectAnswer } from "../utils/quizCorrectAnswerStore";
 
-const IS_TEACHER_NO_ARG_ABI = quiz_abi.find(
-    (item) => item?.type === "function" && item?.name === "_isTeacher" && (item?.inputs?.length || 0) === 0
-);
-const IS_TEACHER_WITH_ADDRESS_ABI = quiz_abi.find(
-    (item) => item?.type === "function" && item?.name === "_isTeacher" && (item?.inputs?.length || 0) === 1
-);
-const IS_STUDENT_NO_ARG_ABI = quiz_abi.find(
-    (item) => item?.type === "function" && item?.name === "_isStudent" && (item?.inputs?.length || 0) === 0
-);
-const IS_STUDENT_WITH_ADDRESS_ABI = quiz_abi.find(
-    (item) => item?.type === "function" && item?.name === "_isStudent" && (item?.inputs?.length || 0) === 1
-);
+const IS_TEACHER_NO_ARG_ABI = {
+    type: "function",
+    name: "_isTeacher",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "bool" }],
+};
+const IS_TEACHER_WITH_ADDRESS_ABI = {
+    type: "function",
+    name: "_isTeacher",
+    stateMutability: "view",
+    inputs: [{ name: "user", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+};
+const IS_STUDENT_NO_ARG_ABI = {
+    type: "function",
+    name: "_isStudent",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "bool" }],
+};
+const IS_STUDENT_WITH_ADDRESS_ABI = {
+    type: "function",
+    name: "_isStudent",
+    stateMutability: "view",
+    inputs: [{ name: "user", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+};
+const ADD_STUDENT_ABI = {
+    type: "function",
+    name: "add_student",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "students_address", type: "address[]" }],
+    outputs: [{ name: "res", type: "bool" }],
+};
+const ADD_TEACHER_ABI = {
+    type: "function",
+    name: "add_teacher",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "teacher_address", type: "address" }],
+    outputs: [{ name: "res", type: "bool" }],
+};
+const GET_STUDENT_ALL_ABI = {
+    type: "function",
+    name: "get_student_all",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "result", type: "address[]" }],
+};
+const GET_TEACHER_ALL_ABI = {
+    type: "function",
+    name: "get_teacher_all",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "result", type: "address[]" }],
+};
 const GET_USER_ROLE_WITH_ADDRESS_ABI = {
     type: "function",
     name: "get_user_role",
@@ -364,7 +408,7 @@ function toQuizSimpleArray(result) {
 
 class Contracts_MetaMask {
     getAccessControlAddresses() {
-        return [quiz_address, class_room_address].filter(
+        return [class_room_address, quiz_address].filter(
             (address, index, list) => Boolean(address) && list.indexOf(address) === index
         );
     }
@@ -1190,41 +1234,38 @@ class Contracts_MetaMask {
     }
 
     async get_quiz_all_data(id) {
-        try {
-            const result = await quiz.read.get_quiz_all_data({ args: [id] });
-            return toQuizAllDataArray(result);
-        } catch (error) {
-            console.log(error);
-            const [quizData, answerType, simpleData] = await Promise.all([
-                this.get_quiz(id),
-                quiz.read.get_quiz_answer_type({ args: [id] }),
-                this.get_quiz_simple(id),
-            ]);
-            return [
-                Number(quizData?.[0] || id),
-                quizData?.[1] || "",
-                quizData?.[2] || "",
-                quizData?.[3] || "",
-                quizData?.[4] || "",
-                quizData?.[5] || "",
-                Number(answerType || 0),
-                quizData?.[6] || "",
-                Number(quizData?.[8] || 0),
-                Number(quizData?.[9] || 0),
-                Number(quizData?.[10] || 0),
-                Number(simpleData?.[8] || 0),
-                Number(simpleData?.[9] || 0),
-                Number(simpleData?.[10] || 0),
-            ];
-        }
+        const [quizData, answerType, simpleData] = await Promise.all([
+            this.get_quiz(id),
+            quiz.read.get_quiz_answer_type({ args: [id] }),
+            this.get_quiz_simple(id),
+        ]);
+        return [
+            Number(quizData?.[0] || id),
+            quizData?.[1] || "",
+            quizData?.[2] || "",
+            quizData?.[3] || "",
+            quizData?.[4] || "",
+            quizData?.[5] || "",
+            Number(answerType || 0),
+            quizData?.[6] || "",
+            Number(quizData?.[8] || 0),
+            Number(quizData?.[9] || 0),
+            Number(quizData?.[10] || 0),
+            Number(simpleData?.[8] || 0),
+            Number(simpleData?.[9] || 0),
+            Number(simpleData?.[10] || 0),
+        ];
     }
 
     async get_quiz(id) {
-        const answer_typr = await quiz.read.get_quiz_answer_type({ args: [id] });
-        const res = toQuizArray(await quiz.read.get_quiz({ args: [id] }));
-        const res2 = await this.get_confirm_answer(id);
-        const registeredCorrectAnswer = await this.get_revealed_correct_answer(id);
-        return [...res, answer_typr, registeredCorrectAnswer, res2[1]];
+        const [answer_typr, res, res2, registeredCorrectAnswer] = await Promise.all([
+            quiz.read.get_quiz_answer_type({ args: [id] }),
+            quiz.read.get_quiz({ args: [id] }),
+            this.get_confirm_answer(id),
+            this.get_revealed_correct_answer(id),
+        ]);
+        const normalizedQuiz = toQuizArray(res);
+        return [...normalizedQuiz, answer_typr, registeredCorrectAnswer, res2[1]];
     }
 
     async get_quiz_simple(id) {
@@ -1325,16 +1366,11 @@ class Contracts_MetaMask {
 
     async get_num_of_students() {
         try {
-            return Number(await quiz.read.get_num_of_students());
-        } catch (error) {
-            console.log(error);
-            try {
-                const students = await this.get_student_list();
-                return Array.isArray(students) ? students.length : 0;
-            } catch (fallbackError) {
-                console.log(fallbackError);
-                return 0;
-            }
+            const students = await this.get_student_list();
+            return Array.isArray(students) ? students.length : 0;
+        } catch (fallbackError) {
+            console.log(fallbackError);
+            return 0;
         }
     }
 
@@ -1346,8 +1382,8 @@ class Contracts_MetaMask {
                     let account = await this.get_address();
                     const { request } = await publicClient.simulateContract({
                         account,
-                        address: quiz_address,
-                        abi: quiz_abi,
+                        address: class_room_address,
+                        abi: [ADD_STUDENT_ABI],
                         functionName: "add_student",
                         args: [address],
                     });
@@ -1370,8 +1406,8 @@ class Contracts_MetaMask {
                     let account = await this.get_address();
                     const { request } = await publicClient.simulateContract({
                         account,
-                        address: quiz_address,
-                        abi: quiz_abi,
+                        address: class_room_address,
+                        abi: [ADD_TEACHER_ABI],
                         functionName: "add_teacher",
                         args: [address],
                     });
@@ -1393,7 +1429,7 @@ class Contracts_MetaMask {
                 let account = await this.get_address();
                 const teachers = await this.readAccessControlContract({
                     account,
-                    abi: quiz_abi,
+                    abi: [GET_TEACHER_ALL_ABI],
                     functionName: "get_teacher_all",
                     args: [],
                     acceptResult: (result) => Array.isArray(result),
@@ -1416,34 +1452,20 @@ class Contracts_MetaMask {
 
     async get_results() {
         try {
-            if (this.getEthereumProvider()) {
-                let account = await this.get_address();
-                let res = account
-                    ? await quiz.read.get_student_results({ account, args: [] })
-                    : await quiz.read.get_student_results({ args: [] });
-                console.log(res);
-                return res;
-            } else {
-                console.log("Ethereum object does not exist");
-            }
-        } catch (err) {
-            console.log(err);
-            try {
-                const students = await this.get_student_list();
-                const rows = await Promise.all(
-                    (Array.isArray(students) ? students : []).map(async (student) => {
-                        const user = await this.get_user_data(student);
-                        return {
-                            student,
-                            result: BigInt(Math.floor(Number(user?.[2] || 0) * 10 ** 18)),
-                        };
-                    })
-                );
-                return rows;
-            } catch (fallbackError) {
-                console.log(fallbackError);
-                return [];
-            }
+            const students = await this.get_student_list();
+            const rows = await Promise.all(
+                (Array.isArray(students) ? students : []).map(async (student) => {
+                    const user = await this.get_user_data(student);
+                    return {
+                        student,
+                        result: BigInt(Math.floor(Number(user?.[2] || 0) * 10 ** 18)),
+                    };
+                })
+            );
+            return rows;
+        } catch (fallbackError) {
+            console.log(fallbackError);
+            return [];
         }
     }
 
@@ -2211,7 +2233,7 @@ class Contracts_MetaMask {
                 let account = await this.get_address();
                 let res = await this.readAccessControlContract({
                     account,
-                    abi: quiz_abi,
+                    abi: [GET_STUDENT_ALL_ABI],
                     functionName: "get_student_all",
                     args: [],
                     acceptResult: (result) => Array.isArray(result),
@@ -2245,61 +2267,39 @@ class Contracts_MetaMask {
 
     async get_data_for_survey_users() {
         try {
-            if (ethereum) {
-                let account = await this.get_address();
-                let res = await quiz.read.get_data_for_survey_users({ account, args: [] });
-                return res;
-            } else {
-                console.log("Ethereum object does not exists");
-            }
-        } catch (err) {
-            console.log(err);
-            try {
-                const students = await this.get_student_list();
-                const rows = await Promise.all(
-                    (Array.isArray(students) ? students : []).map(async (student) => {
-                        const user = await this.get_user_data(student);
-                        return {
-                            user: student,
-                            create_quiz_count: 0,
-                            result: BigInt(Math.floor(Number(user?.[2] || 0) * 10 ** 18)),
-                            answer_count: 0,
-                        };
-                    })
-                );
-                return rows;
-            } catch (fallbackError) {
-                console.log(fallbackError);
-                return [];
-            }
+            const students = await this.get_student_list();
+            const rows = await Promise.all(
+                (Array.isArray(students) ? students : []).map(async (student) => {
+                    const user = await this.get_user_data(student);
+                    return {
+                        user: student,
+                        create_quiz_count: 0,
+                        result: BigInt(Math.floor(Number(user?.[2] || 0) * 10 ** 18)),
+                        answer_count: 0,
+                    };
+                })
+            );
+            return rows;
+        } catch (fallbackError) {
+            console.log(fallbackError);
+            return [];
         }
     }
     async get_data_for_survey_quizs() {
         try {
-            if (ethereum) {
-                let account = await this.get_address();
-                let res = await quiz.read.get_data_for_survey_quizs({ account, args: [] });
-                return res;
-            } else {
-                console.log("Ethereum object does not exists");
+            const length = await this.get_quiz_lenght();
+            const rows = [];
+            for (let i = 0; i < Number(length || 0); i++) {
+                const quizData = await this.get_quiz_simple(i);
+                rows.push({
+                    reward: BigInt(Number(quizData?.[7] || 0)),
+                    respondent_count: Number(quizData?.[8] || 0),
+                });
             }
-        } catch (err) {
-            console.log(err);
-            try {
-                const length = await this.get_quiz_lenght();
-                const rows = [];
-                for (let i = 0; i < Number(length || 0); i++) {
-                    const quizData = await this.get_quiz_simple(i);
-                    rows.push({
-                        reward: BigInt(Number(quizData?.[7] || 0)),
-                        respondent_count: Number(quizData?.[8] || 0),
-                    });
-                }
-                return rows;
-            } catch (fallbackError) {
-                console.log(fallbackError);
-                return [];
-            }
+            return rows;
+        } catch (fallbackError) {
+            console.log(fallbackError);
+            return [];
         }
     }
 
