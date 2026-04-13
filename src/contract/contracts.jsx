@@ -1307,6 +1307,15 @@ class Contracts_MetaMask {
             console.log(error);
         }
 
+        try {
+            const [confirmAnswer, isPayment] = await this.get_confirm_answer(id);
+            if (isPayment && confirmAnswer) {
+                return String(confirmAnswer);
+            }
+        } catch (error) {
+            console.log(error);
+        }
+
         return getRegisteredCorrectAnswer(id);
     }
 
