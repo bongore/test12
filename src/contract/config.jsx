@@ -2,7 +2,12 @@
 //const rpc = "https://rpc-mumbai.maticvigil.com/"; // (required for Ethereum) JSON RPC endpoint
 
 const chainId = "0x13882"; // (required) chainId to be used
-const rpc = "https://rpc-amoy.polygon.technology/"; // (required for Ethereum) JSON RPC endpoint
+const rpc_urls = [
+    "https://rpc-amoy.polygon.technology/",
+    "https://polygon-amoy.drpc.org",
+    "https://polygon-amoy-bor-rpc.publicnode.com",
+];
+const rpc = rpc_urls[0]; // default RPC endpoint
 
 //const quiz_address = "0xB80f73B6be80f39b30bd8624368cDd57E0db3ff5";
 //const token_address = "0x1ceA098E584e46c7659f8460d3c13Cec2D0B22F4";
@@ -19,4 +24,4 @@ const bootstrap_teacher_addresses = [
     "0xd5670D7B88411d03741680451C2ea630B68C6944",
 ];
 
-export { chainId, rpc, class_room_address, quiz_address, token_address, ttt_token_address, bootstrap_teacher_addresses };
+export { chainId, rpc, rpc_urls, class_room_address, quiz_address, token_address, ttt_token_address, bootstrap_teacher_addresses };

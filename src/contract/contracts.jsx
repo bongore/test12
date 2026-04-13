@@ -472,6 +472,22 @@ class Contracts_MetaMask {
         return resolveEthereumProvider() || ethereum || null;
     }
 
+    async writeContractDirect({ account, address, abi, functionName, args = [] }) {
+        const provider = this.getEthereumProvider();
+        if (!provider || !walletClient) {
+            throw new Error("ethereum_not_found");
+        }
+
+        return await walletClient.writeContract({
+            account,
+            address,
+            abi,
+            functionName,
+            args,
+            chain: amoy,
+        });
+    }
+
     async add_watch_asset(address, symbol, decimals = 18) {
         const provider = this.getEthereumProvider();
         if (!provider || !address) return false;
@@ -724,10 +740,15 @@ class Contracts_MetaMask {
     }
 
     async get_user_history_len(address) {
-        console.log(token_address);
-        let account = await this.get_address();
-        const res = await token.read.get_user_history_len({ account, args: [address] });
-        return Number(res);
+        try {
+            console.log(token_address);
+            let account = await this.get_address();
+            const res = await token.read.get_user_history_len({ account, args: [address] });
+            return Number(res);
+        } catch (error) {
+            console.log(error);
+            return 0;
+        }
     }
 
     //ユーザーのデータを取得する
@@ -746,6 +767,7 @@ class Contracts_MetaMask {
         } catch (err) {
             console.log(err);
         }
+        return ["", "", 0, false];
     }
 
     async approve(account, amount) {
@@ -753,15 +775,13 @@ class Contracts_MetaMask {
             if (ethereum) {
                 console.log(amount);
                 try {
-                    const { request } = await publicClient.simulateContract({
+                    return await this.writeContractDirect({
                         account,
                         address: token_address,
                         abi: token_abi,
                         functionName: "approve",
                         args: [quiz_address, amount],
                     });
-                    console.log("成功");
-                    return await walletClient.writeContract(request);
                 } catch (e) {
                     console.log(e);
                 }
@@ -862,17 +882,14 @@ class Contracts_MetaMask {
         console.log([account, id, amount, numOfStudent])
         try {
             if (ethereum) {
-                //console.log(title, explanation, thumbnail_url, content, answer_type, answer_data, correct, epochStartSeconds, epochEndSeconds, reward, correct_limit);
                 try {
-                    const { request } = await publicClient.simulateContract({
+                    return await this.writeContractDirect({
                         account,
                         address: quiz_address,
                         abi: quiz_abi,
                         functionName: "investment_to_quiz",
                         args: [id, amount.toString(), numOfStudent],
                     });
-
-                    return await walletClient.writeContract(request);
                 } catch (e) {
                     console.log(e);
                 }
@@ -889,15 +906,13 @@ class Contracts_MetaMask {
         try {
             if (ethereum) {
                 try {
-                    const { request } = await publicClient.simulateContract({
+                    return await this.writeContractDirect({
                         account,
                         address: quiz_address,
                         abi: quiz_abi,
                         functionName: "payment_of_reward",
                         args: [id, answer, students],
                     });
-
-                    return await walletClient.writeContract(request);
                 } catch (e) {
                     console.log(e);
                 }
@@ -914,15 +929,13 @@ class Contracts_MetaMask {
         try {
             if (ethereum) {
                 try {
-                    const { request } = await publicClient.simulateContract({
+                    return await this.writeContractDirect({
                         account,
                         address: quiz_address,
                         abi: [PAYMENT_OF_REWARD_MANUAL_ABI],
                         functionName: "payment_of_reward_manual",
                         args: [id, String(confirmAnswer || ""), correctStudents, incorrectStudents, Boolean(finalizePayment)],
                     });
-
-                    return await walletClient.writeContract(request);
                 } catch (e) {
                     console.log(e);
                 }
@@ -939,15 +952,13 @@ class Contracts_MetaMask {
         try {
             if (ethereum) {
                 try {
-                    const { request } = await publicClient.simulateContract({
+                    return await this.writeContractDirect({
                         account,
                         address: quiz_address,
                         abi: quiz_abi,
                         functionName: "adding_reward",
                         args: [id],
                     });
-
-                    return await walletClient.writeContract(request);
                 } catch (e) {
                     console.log(e);
                 }
@@ -1090,15 +1101,13 @@ class Contracts_MetaMask {
         const epochEndSeconds = Math.floor(dateEndObj.getTime() / 1000);
         try {
             if (ethereum) {
-                const { request } = await publicClient.simulateContract({
+                return await this.writeContractDirect({
                     account,
                     address: quiz_address,
                     abi: quiz_abi,
                     functionName: "create_quiz",
                     args: [title, explanation, thumbnail_url, content, answer_type, answer_data.toString(), correct, epochStartSeconds, epochEndSeconds, reward, correct_limit],
                 });
-
-                return await walletClient.writeContract(request);
             } else {
                 throw new Error("ethereum_not_found");
             }
@@ -1146,19 +1155,14 @@ class Contracts_MetaMask {
         const epochEndSeconds = Math.floor(dateEndObj.getTime() / 1000);
         try {
             if (ethereum) {
-                //console.log(title, explanation, thumbnail_url, content, answer_type, answer_data, correct, epochStartSeconds, epochEndSeconds, reward, correct_limit);
-
                 try {
-                    const { request } = await publicClient.simulateContract({
+                    return await this.writeContractDirect({
                         account,
                         address: quiz_address,
                         abi: quiz_abi,
                         functionName: "edit_quiz",
                         args: [id, owner, title, explanation, thumbnail_url, content, epochStartSeconds, epochEndSeconds],
-                        //args: ["a", "a", "a", "a", 1, "a", "a", epochStartSeconds, epochEndSeconds, 2, 2],
                     });
-
-                    return await walletClient.writeContract(request);
                 } catch (e) {
                     console.log(e);
                 }
@@ -1204,15 +1208,13 @@ class Contracts_MetaMask {
 
     async _save_answer(account, id, answer) {
         try {
-            const { request } = await publicClient.simulateContract({
+            return await this.writeContractDirect({
                 account,
                 address: quiz_address,
                 abi: quiz_abi,
                 functionName: "save_answer",
                 args: [id, answer.toString()],
             });
-            console.log("正常そう");
-            return await walletClient.writeContract(request);
         } catch (e) {
             console.log(e);
         }
@@ -1220,15 +1222,13 @@ class Contracts_MetaMask {
 
     async _post_answer(account, id, answer) {
         try {
-            const { request } = await publicClient.simulateContract({
+            return await this.writeContractDirect({
                 account,
                 address: quiz_address,
                 abi: quiz_abi,
                 functionName: "post_answer",
                 args: [id, answer.toString()],
             });
-            console.log("正常そう");
-            return await walletClient.writeContract(request);
         } catch (e) {
             console.log(e);
         }
@@ -1391,14 +1391,13 @@ class Contracts_MetaMask {
             if (ethereum) {
                 try {
                     let account = await this.get_address();
-                    const { request } = await publicClient.simulateContract({
+                    return await this.writeContractDirect({
                         account,
                         address: class_room_address,
                         abi: [ADD_STUDENT_ABI],
                         functionName: "add_student",
                         args: [address],
                     });
-                    return await walletClient.writeContract(request);
                 } catch (e) {
                     console.log(e);
                 }
@@ -1415,14 +1414,13 @@ class Contracts_MetaMask {
             if (ethereum) {
                 try {
                     let account = await this.get_address();
-                    const { request } = await publicClient.simulateContract({
+                    return await this.writeContractDirect({
                         account,
                         address: class_room_address,
                         abi: [ADD_TEACHER_ABI],
                         functionName: "add_teacher",
                         args: [address],
                     });
-                    return await walletClient.writeContract(request);
                 } catch (e) {
                     console.log(e);
                 }
@@ -1958,14 +1956,13 @@ class Contracts_MetaMask {
     async createAttendanceSession(label, attendanceCode) {
         try {
             const account = await this.get_address();
-            const { request } = await publicClient.simulateContract({
+            return await this.writeContractDirect({
                 account,
                 address: quiz_address,
                 abi: [CREATE_ATTENDANCE_SESSION_ABI],
                 functionName: "create_attendance_session",
                 args: [String(label || ""), String(attendanceCode || "")],
             });
-            return await walletClient.writeContract(request);
         } catch (error) {
             console.log(error);
             return null;
@@ -1975,14 +1972,13 @@ class Contracts_MetaMask {
     async closeAttendanceSession(sessionId) {
         try {
             const account = await this.get_address();
-            const { request } = await publicClient.simulateContract({
+            return await this.writeContractDirect({
                 account,
                 address: quiz_address,
                 abi: [CLOSE_ATTENDANCE_SESSION_ABI],
                 functionName: "close_attendance_session",
                 args: [Number(sessionId)],
             });
-            return await walletClient.writeContract(request);
         } catch (error) {
             console.log(error);
             return null;
@@ -1992,14 +1988,13 @@ class Contracts_MetaMask {
     async markAttendance(sessionId, attendanceCode) {
         try {
             const account = await this.get_address();
-            const { request } = await publicClient.simulateContract({
+            return await this.writeContractDirect({
                 account,
                 address: quiz_address,
                 abi: [MARK_ATTENDANCE_ABI],
                 functionName: "mark_attendance",
                 args: [Number(sessionId), String(attendanceCode || "")],
             });
-            return await walletClient.writeContract(request);
         } catch (error) {
             console.log(error);
             return null;
@@ -2078,14 +2073,13 @@ class Contracts_MetaMask {
     async recordAnnouncementHash(contentHash, tag = "") {
         try {
             const account = await this.get_address();
-            const { request } = await publicClient.simulateContract({
+            return await this.writeContractDirect({
                 account,
                 address: quiz_address,
                 abi: [RECORD_ANNOUNCEMENT_HASH_ABI],
                 functionName: "record_announcement_hash",
                 args: [contentHash, String(tag || "")],
             });
-            return await walletClient.writeContract(request);
         } catch (error) {
             console.log(error);
             return null;
@@ -2095,14 +2089,13 @@ class Contracts_MetaMask {
     async recordSuperchatOnChain(messageId, messageHash, amount) {
         try {
             const account = await this.get_address();
-            const { request } = await publicClient.simulateContract({
+            return await this.writeContractDirect({
                 account,
                 address: quiz_address,
                 abi: [RECORD_SUPERCHAT_ABI],
                 functionName: "record_superchat",
                 args: [String(messageId || ""), messageHash, BigInt(amount)],
             });
-            return await walletClient.writeContract(request);
         } catch (error) {
             console.log(error);
             return null;
@@ -2112,14 +2105,13 @@ class Contracts_MetaMask {
     async awardBadge(user, badgeKey) {
         try {
             const account = await this.get_address();
-            const { request } = await publicClient.simulateContract({
+            return await this.writeContractDirect({
                 account,
                 address: quiz_address,
                 abi: [AWARD_BADGE_ABI],
                 functionName: "award_badge",
                 args: [user, badgeKey],
             });
-            return await walletClient.writeContract(request);
         } catch (error) {
             console.log(error);
             return null;
@@ -2256,6 +2248,7 @@ class Contracts_MetaMask {
         } catch (err) {
             console.log(err);
         }
+        return [];
     }
 
     async get_students_answer_hash_list(students, id) {
@@ -2363,15 +2356,13 @@ class Contracts_MetaMask {
                 }
                 const recipient = await this.resolveSuperchatRecipient(recipientAddress);
 
-                const { request } = await publicClient.simulateContract({
+                const hash = await this.writeContractDirect({
                     account,
                     address: ttt_token_address,
                     abi: token_abi,
                     functionName: "transfer",
                     args: [recipient.address, amountInWei],
                 });
-
-                const hash = await walletClient.writeContract(request);
 
                 console.log("Superchat Tx Hash:", hash);
                 await publicClient.waitForTransactionReceipt({ hash });

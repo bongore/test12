@@ -4,10 +4,10 @@
  * viemのclient初期化とコントラクトインスタンスの共通設定を一元管理。
  * 各モジュールからimportして利用する。
  */
-import { createPublicClient, createWalletClient, http, getContract, custom } from "viem";
+import { createPublicClient, createWalletClient, http, getContract, custom, fallback } from "viem";
 import token_contract from "./token_abi.json";
 import quiz_contract from "./quiz_abi.json";
-import { class_room_address, quiz_address, token_address, ttt_token_address, bootstrap_teacher_addresses, rpc } from "./config";
+import { class_room_address, quiz_address, token_address, ttt_token_address, bootstrap_teacher_addresses, rpc_urls } from "./config";
 import { amoy } from "./network";
 
 /* eslint-disable no-restricted-globals */
@@ -20,14 +20,20 @@ let tttTokenContract = null;
 let quizContract = null;
 
 /* ── Public Client (RPC) ── */
+const rpcTransports = (rpc_urls || [])
+    .filter(Boolean)
+    .map((url) =>
+        http(url, {
+            batch: true,
+            retryCount: 2,
+            retryDelay: 300,
+            timeout: 10000,
+        })
+    );
+
 const publicClient = createPublicClient({
     chain: amoy,
-    transport: http(rpc, {
-        batch: true,
-        retryCount: 2,
-        retryDelay: 300,
-        timeout: 10000,
-    }),
+    transport: rpcTransports.length > 1 ? fallback(rpcTransports) : rpcTransports[0],
 });
 
 /* ── ABI ── */

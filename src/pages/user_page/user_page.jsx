@@ -36,6 +36,7 @@ function User_page(props) {
     const [roleInfo, setRoleInfo] = useState({ key: "guest", label: "未登録" });
     const [registrationInfo, setRegistrationInfo] = useState({ registered: false, addedBy: "", addedAt: 0 });
     const [connectedAddress, setConnectedAddress] = useState("");
+    const [loadError, setLoadError] = useState("");
     const [reviewItems, setReviewItems] = useState([]);
     const [badges, setBadges] = useState([]);
     const now_numRef = useRef(0);
@@ -45,52 +46,59 @@ function User_page(props) {
     const [history_list, Set_history_list] = useState([]);
 
     const get_variable = async () => {
-        Set_token(await cont.get_token_balance(address));
-        let [user_name, image, result, state] = await cont.get_user_data(address);
-        const nextRoleInfo = await cont.getUserRole(address);
-        const nextRegistrationInfo = await cont.getRegistrationDetails(address);
-        const nextConnectedAddress = await cont.get_address();
-        const bootstrapTeacher = isBootstrapTeacherAddress(address);
-        Setuser_name(user_name);
-        SetIcons(image);
-        SetResult(result / 10 ** 18);
-        setRank(await cont.get_rank(result));
-        setNum_of_student(await cont.get_num_of_students());
-        Set_state(state);
-        setTttBalance(await cont.get_ttt_balance(address));
-        setRoleInfo(
-            bootstrapTeacher
-                ? { key: "teacher", label: "教員" }
-                : (nextRoleInfo || { key: "guest", label: "未登録" })
-        );
-        setRegistrationInfo(
-            bootstrapTeacher
-                ? { registered: true, addedBy: address, addedAt: 0 }
-                : (nextRegistrationInfo || { registered: false, addedBy: "", addedAt: 0 })
-        );
-        setConnectedAddress(nextConnectedAddress || "");
+        try {
+            setLoadError("");
+            Set_token(await cont.get_token_balance(address));
+            let [user_name, image, result, state] = await cont.get_user_data(address);
+            const nextRoleInfo = await cont.getUserRole(address);
+            const nextRegistrationInfo = await cont.getRegistrationDetails(address);
+            const nextConnectedAddress = await cont.get_address();
+            const bootstrapTeacher = isBootstrapTeacherAddress(address);
+            Setuser_name(user_name);
+            SetIcons(image);
+            SetResult(result / 10 ** 18);
+            setRank(await cont.get_rank(result));
+            setNum_of_student(await cont.get_num_of_students());
+            Set_state(state);
+            setTttBalance(await cont.get_ttt_balance(address));
+            setRoleInfo(
+                bootstrapTeacher
+                    ? { key: "teacher", label: "教員" }
+                    : (nextRoleInfo || { key: "guest", label: "未登録" })
+            );
+            setRegistrationInfo(
+                bootstrapTeacher
+                    ? { registered: true, addedBy: address, addedAt: 0 }
+                    : (nextRegistrationInfo || { registered: false, addedBy: "", addedAt: 0 })
+            );
+            setConnectedAddress(nextConnectedAddress || "");
 
-        cont.get_user_history_len(address).then((data) => {
-            Set_history_sum(Number(data));
-            now_numRef.current = Number(data);
-        });
+            const historyLength = Number(await cont.get_user_history_len(address));
+            Set_history_sum(historyLength);
+            now_numRef.current = historyLength;
 
-        const quizLength = Number(await cont.get_quiz_lenght());
-        const quizData = [];
-        for (let i = 0; i < quizLength; i += 1) {
-            try {
-                quizData.push(await cont.get_quiz_simple(i));
-            } catch (error) {
-                console.error("Failed to load quiz for review list", error);
+            const quizLength = Number(await cont.get_quiz_lenght());
+            const quizData = [];
+            for (let i = 0; i < quizLength; i += 1) {
+                try {
+                    quizData.push(await cont.get_quiz_simple(i));
+                } catch (error) {
+                    console.error("Failed to load quiz for review list", error);
+                }
             }
+
+            const snapshot = getCourseEnhancementSnapshot();
+            const ownLogs = snapshot.activityLogs.filter((log) => String(log.actor || log.address || "").toLowerCase() === String(address || "").toLowerCase());
+            const ownPractice = snapshot.practiceAttempts.filter((item) => String(item.address || "").toLowerCase() === String(address || "").toLowerCase());
+
+            setReviewItems(buildReviewList({ quizzes: quizData, address, practiceAttempts: ownPractice }));
+            setBadges(buildBadgeSet({ logs: ownLogs, boardLogs: snapshot.boardLogs, practiceAttempts: ownPractice }));
+        } catch (error) {
+            console.error("Failed to load user page", error);
+            Set_history_sum(0);
+            now_numRef.current = 0;
+            setLoadError("マイページの読み込みに失敗しました。通信状態を確認して再読み込みしてください。");
         }
-
-        const snapshot = getCourseEnhancementSnapshot();
-        const ownLogs = snapshot.activityLogs.filter((log) => String(log.actor || log.address || "").toLowerCase() === String(address || "").toLowerCase());
-        const ownPractice = snapshot.practiceAttempts.filter((item) => String(item.address || "").toLowerCase() === String(address || "").toLowerCase());
-
-        setReviewItems(buildReviewList({ quizzes: quizData, address, practiceAttempts: ownPractice }));
-        setBadges(buildBadgeSet({ logs: ownLogs, boardLogs: snapshot.boardLogs, practiceAttempts: ownPractice }));
     };
 
     useEffect(() => {
@@ -121,6 +129,15 @@ function User_page(props) {
                     connectedAddress={connectedAddress}
                     cont={cont}
                 />
+
+                {loadError ? (
+                    <div className="glass-card" style={{ padding: "var(--space-5)", marginBottom: "var(--space-5)", color: "#fff" }}>
+                        <div style={{ fontWeight: 700, marginBottom: "10px" }}>{loadError}</div>
+                        <button className="btn-primary-custom" onClick={() => window.location.reload()}>
+                            再読み込み
+                        </button>
+                    </div>
+                ) : null}
 
                 <div className="glass-card" style={{ padding: "var(--space-5)", marginBottom: "var(--space-5)" }}>
                     <h2 className="heading-md" style={{ marginBottom: "var(--space-3)" }}>実績バッジ</h2>

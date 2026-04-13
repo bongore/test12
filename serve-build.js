@@ -34,7 +34,9 @@ function sendFile(res, filePath) {
 
 const server = http.createServer((req, res) => {
     const requestPath = decodeURIComponent((req.url || "/").split("?")[0]);
-    const strippedPath = requestPath.startsWith("/test11/")
+    const strippedPath = requestPath.startsWith("/test12/")
+        ? requestPath.slice("/test12".length)
+        : requestPath.startsWith("/test11/")
         ? requestPath.slice("/test11".length)
         : requestPath.startsWith("/test2/")
             ? requestPath.slice("/test2".length)
