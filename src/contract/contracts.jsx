@@ -506,6 +506,48 @@ class Contracts_MetaMask {
         throw new Error(`access_control_call_failed:${functionName}`);
     }
 
+    async readAccessControlAddressList({ account, abi, functionName, args = [] } = {}) {
+        const addresses = this.getAccessControlAddresses();
+        const merged = [];
+        let lastError = null;
+
+        for (const address of addresses) {
+            try {
+                const result = await publicClient.readContract({
+                    account,
+                    address,
+                    abi,
+                    functionName,
+                    args,
+                });
+
+                if (!Array.isArray(result)) {
+                    continue;
+                }
+
+                result.forEach((item) => {
+                    const normalizedItem = this.normalizeAddress(item);
+                    if (!normalizedItem) return;
+                    if (!merged.some((current) => this.normalizeAddress(current) === normalizedItem)) {
+                        merged.push(item);
+                    }
+                });
+            } catch (error) {
+                lastError = error;
+            }
+        }
+
+        if (merged.length > 0) {
+            return merged;
+        }
+
+        if (lastError) {
+            throw lastError;
+        }
+
+        return [];
+    }
+
     normalizeAddress(address) {
         return String(address || "").toLowerCase();
     }
@@ -1561,12 +1603,11 @@ class Contracts_MetaMask {
         try {
             if (this.getEthereumProvider()) {
                 let account = await this.get_address();
-                const teachers = await this.readAccessControlContract({
+                const teachers = await this.readAccessControlAddressList({
                     account,
                     abi: [GET_TEACHER_ALL_ABI],
                     functionName: "get_teacher_all",
                     args: [],
-                    acceptResult: (result) => Array.isArray(result),
                 });
                 const normalizedTeachers = Array.isArray(teachers) ? [...teachers] : [];
                 for (const teacherAddress of bootstrap_teacher_addresses || []) {
@@ -2378,12 +2419,11 @@ class Contracts_MetaMask {
         try {
             if (this.getEthereumProvider()) {
                 let account = await this.get_address();
-                let res = await this.readAccessControlContract({
+                let res = await this.readAccessControlAddressList({
                     account,
                     abi: [GET_STUDENT_ALL_ABI],
                     functionName: "get_student_all",
                     args: [],
-                    acceptResult: (result) => Array.isArray(result),
                 });
                 return res;
             } else {
