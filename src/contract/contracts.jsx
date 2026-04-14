@@ -418,6 +418,40 @@ function withQuizSourceMetadata(quizArray, sourceAddress) {
 }
 
 class Contracts_MetaMask {
+    isMobileDevice() {
+        if (typeof navigator === "undefined") return false;
+        return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || "");
+    }
+
+    async copyTextToClipboard(value) {
+        if (!value) return false;
+        try {
+            if (navigator?.clipboard?.writeText) {
+                await navigator.clipboard.writeText(String(value));
+                return true;
+            }
+        } catch (error) {
+            console.error("Failed to copy text with clipboard API", error);
+        }
+
+        try {
+            const input = document.createElement("textarea");
+            input.value = String(value);
+            input.setAttribute("readonly", "readonly");
+            input.style.position = "fixed";
+            input.style.opacity = "0";
+            document.body.appendChild(input);
+            input.focus();
+            input.select();
+            const copied = document.execCommand("copy");
+            document.body.removeChild(input);
+            return copied;
+        } catch (error) {
+            console.error("Failed to copy text with execCommand", error);
+            return false;
+        }
+    }
+
     getAccessControlAddresses() {
         return [class_room_address, quiz_address, ...(legacy_quiz_addresses || [])].filter(
             (address, index, list) => Boolean(address) && list.indexOf(address) === index
@@ -591,7 +625,7 @@ class Contracts_MetaMask {
         if (!provider || !address) return false;
         try {
             await this.ensure_amoy_network();
-            return await provider.request({
+            const added = await provider.request({
                 method: "wallet_watchAsset",
                 params: {
                     type: "ERC20",
@@ -602,8 +636,25 @@ class Contracts_MetaMask {
                     },
                 },
             });
+            return { added: Boolean(added), fallback: null, address, symbol, decimals };
         } catch (error) {
             console.error("Failed to add watch asset", error);
+            const copied = await this.copyTextToClipboard(address);
+            const unsupported =
+                error?.code === -32601
+                || /wallet_watchasset|unsupported|not support|not implemented/i.test(String(error?.message || ""));
+
+            if (this.isMobileDevice() || unsupported) {
+                return {
+                    added: false,
+                    fallback: "manual",
+                    copied,
+                    address,
+                    symbol,
+                    decimals,
+                };
+            }
+
             throw error;
         }
     }

@@ -1,4 +1,5 @@
 import { convertTftToPoint } from "../../../utils/quizRewardRate";
+import { token_address, ttt_token_address } from "../../../contract/config";
 
 function User_card(props) {
     const isCurrentWallet = String(props.connectedAddress || "").toLowerCase() === String(props.address || "").toLowerCase();
@@ -10,9 +11,27 @@ function User_card(props) {
         : "未記録";
 
     const hasEthereumProvider = () => Boolean(props.cont?.getEthereumProvider?.());
+    const isMobileDevice = () => /iPhone|iPad|iPod|Android/i.test(navigator?.userAgent || "");
+
+    const showManualTokenGuide = (symbol, address) => {
+        const copiedMessage = address
+            ? "\nコントラクトアドレスはクリップボードへコピー済みです。"
+            : "";
+        alert(
+            `${symbol} の自動追加に対応しない環境のため、MetaMask で手動追加してください。\n`
+            + `トークン名: ${symbol}\n`
+            + `コントラクトアドレス: ${address}\n`
+            + "Decimals: 18"
+            + copiedMessage
+        );
+    };
 
     const addNetworkHandler = async () => {
         if (!hasEthereumProvider()) {
+            if (isMobileDevice()) {
+                alert("iPhone / Android では MetaMask アプリ内ブラウザで開くとネットワーク追加とトークン追加が使いやすくなります。");
+                return;
+            }
             alert("MetaMask が見つかりません。MetaMask をインストールしてから再度お試しください。");
             return;
         }
@@ -38,6 +57,10 @@ function User_card(props) {
 
     const addTokenHandler = async () => {
         if (!hasEthereumProvider()) {
+            if (isMobileDevice()) {
+                showManualTokenGuide("TFT", token_address);
+                return;
+            }
             alert("MetaMask が見つかりません。MetaMask をインストールしてから再度お試しください。");
             return;
         }
@@ -45,7 +68,11 @@ function User_card(props) {
         try {
             const ensured = await addNetworkHandler();
             if (!ensured) return;
-            await props.cont.add_token_wallet();
+            const result = await props.cont.add_token_wallet();
+            if (result?.fallback === "manual") {
+                showManualTokenGuide("TFT", result.address);
+                return;
+            }
             alert("TFT を MetaMask に追加しました。");
         } catch (error) {
             console.error("Failed to add token to MetaMask", error);
@@ -55,6 +82,10 @@ function User_card(props) {
 
     const addTTTTokenHandler = async () => {
         if (!hasEthereumProvider()) {
+            if (isMobileDevice()) {
+                showManualTokenGuide("TTT", ttt_token_address);
+                return;
+            }
             alert("MetaMask が見つかりません。MetaMask をインストールしてから再度お試しください。");
             return;
         }
@@ -62,7 +93,11 @@ function User_card(props) {
         try {
             const ensured = await addNetworkHandler();
             if (!ensured) return;
-            await props.cont.add_ttt_token_wallet();
+            const result = await props.cont.add_ttt_token_wallet();
+            if (result?.fallback === "manual") {
+                showManualTokenGuide("TTT", result.address);
+                return;
+            }
             alert("TTT を MetaMask に追加しました。");
         } catch (error) {
             console.error("Failed to add TTT token to MetaMask", error);
