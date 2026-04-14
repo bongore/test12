@@ -17,6 +17,9 @@
   justify-content: center;
   z-index: var(--z-modal);
   padding: var(--space-4);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .modal-content-box,
@@ -25,6 +28,22 @@
   width: 100%;
   text-align: center;
   padding: var(--space-10) var(--space-8);
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media screen and (max-width: 640px) {
+  .modal-overlay,
+  .network-modal-overlay {
+    align-items: flex-start;
+    padding: 12px;
+  }
+
+  .network-modal-content,
+  .modal-content-box {
+    max-height: calc(100dvh - 24px);
+  }
 }
 
 /* Transaction Loading Ring */
