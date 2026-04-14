@@ -41,6 +41,12 @@ function View_answers() {
     const [loading, setLoading] = useState(true);
     const [loadingAnswers, setLoadingAnswers] = useState(false);
 
+    const selectedQuizTitle = useMemo(() => {
+        const selectedRef = quizList.find((item) => `${item.sourceAddress || ""}:${item.id}` === selectedQuiz);
+        if (!selectedRef) return "";
+        return selectedRef.title || `問題 ${selectedRef.id}`;
+    }, [quizList, selectedQuiz]);
+
     // クイズ一覧を取得
     useEffect(() => {
         async function fetchQuizList() {
@@ -162,7 +168,7 @@ function View_answers() {
                             }}
                         >
                             <span style={{ fontWeight: "500", fontSize: "14px" }}>
-                                #{q.id} {q.title.length > 20 ? q.title.slice(0, 20) + "…" : q.title}
+                                #{q.id} {String(q.title || "").length > 20 ? String(q.title || "").slice(0, 20) + "…" : String(q.title || "")}
                             </span>
                             <span style={{
                                 fontSize: "12px",
@@ -182,7 +188,7 @@ function View_answers() {
             {selectedQuiz !== null && (
                 <div>
                     <h4 style={{ color: "#ffffff", fontWeight: "600", marginBottom: "var(--space-3)" }}>
-                        📝 問題 #{selectedQuiz} の回答一覧
+                        📝 {selectedQuizTitle ? `${selectedQuizTitle} の回答一覧` : `問題 ${selectedQuiz || ""} の回答一覧`}
                     </h4>
 
                     {loadingAnswers ? (

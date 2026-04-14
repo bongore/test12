@@ -100,18 +100,19 @@ function Simple_quiz(props) {
     const [isreward, setIsreward] = useState(true);
     const [ispayment, setIspayment] = useState(false);
 
-    const quizId = Number(props.quiz[0]);
-    const title = props.quiz[2];
-    const description = props.quiz[3];
-    const thumbnail = props.quiz[4];
-    const startTime = Number(props.quiz[5]);
-    const deadline = Number(props.quiz[6]);
-    const reward = Number(props.quiz[7]) / (10 ** 18);
-    const respondents = Number(props.quiz[8]);
-    const limit = Number(props.quiz[9]);
-    const status = Number(props.quiz[10]);
-    const isPaid = props.quiz[11];
-    const sourceAddress = props.quiz.sourceAddress || props.quiz[12] || "";
+    const quiz = Array.isArray(props.quiz) ? props.quiz : [];
+    const quizId = Number(quiz[0]);
+    const title = quiz[2] || "タイトル未設定";
+    const description = quiz[3] || "";
+    const thumbnail = quiz[4] || "";
+    const startTime = Number(quiz[5] || 0);
+    const deadline = Number(quiz[6] || 0);
+    const reward = Number(quiz[7] || 0) / (10 ** 18);
+    const respondents = Number(quiz[8] || 0);
+    const limit = Number(quiz[9] || 0);
+    const status = Number(quiz[10] || 0);
+    const isPaid = Boolean(quiz[11]);
+    const sourceAddress = quiz.sourceAddress || quiz[12] || "";
     const answerStorageKey = buildQuizStorageKey(quizId, sourceAddress);
     const currentEpoch = props.currentEpoch ?? Math.floor(Date.now() / 1000);
     const correctAnswer = props.correctAnswer || "";
@@ -135,6 +136,10 @@ function Simple_quiz(props) {
     const statusLabel = getStatusLabel(status);
     const badgeClass = getBadgeClass(status);
     const savedAnswer = localStorage.getItem(answerStorageKey);
+
+    if (!quiz.length || !Number.isFinite(quizId)) {
+        return null;
+    }
 
     const card = (
         <div className={`quiz-card glass-card ${statusClass} animate-slideUp`}>

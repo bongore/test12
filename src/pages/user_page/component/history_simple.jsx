@@ -14,6 +14,11 @@ function Convert_time(props) {
 
 function Simple_history(props) {
     console.log(props.history);
+    const owner = String(props.history?._owner || "");
+    const sender = String(props.history?._sender || "");
+    const recipient = String(props.history?._recipient || "");
+    const explanation = props.history?._explanation || "";
+    const value = Number(props.history?._value || 0) / 10 ** 18;
     return (
         // <Link to={"/answer_quiz/"+props.quiz[0].toNumber()} style={{ color: '#000' ,textDecoration: 'none'}}>
 
@@ -24,9 +29,9 @@ function Simple_history(props) {
                 <div className="transfer row">
                     <div className="col-5 left" style={{padding: "0", margin: "0", "text-align": "center"}}>
                         <div>from</div>
-                        <div>{props.history._owner.slice(0, 12)}</div>
+                        <div>{owner ? owner.slice(0, 12) : "-"}</div>
                         <div>recipient</div>
-                        <div>{props.history._sender.slice(0, 12)}</div>
+                        <div>{sender ? sender.slice(0, 12) : "-"}</div>
                     </div>
 
                     <div className="col-2 center" style={{padding: "0"}}>
@@ -34,8 +39,8 @@ function Simple_history(props) {
                     </div>
                     <div className="col-5 right" style={{padding: "0"}}>
                         <div>to</div>
-                        <div>{props.history._recipient.slice(0, 12)}</div>
-                        <div>{Number(props.history._value) / 10 ** 18}TFT</div>
+                        <div>{recipient ? recipient.slice(0, 12) : "-"}</div>
+                        <div>{value}TFT</div>
                     </div>
                 </div>
 
@@ -43,7 +48,7 @@ function Simple_history(props) {
                     <Convert_time seconds={Number(props.history.epoch_time)} />
                 </div>
                 <div className="reason" style={{padding: "0", "padding-top": "10px", margin: "0", textAlign: "left"}}>
-                    {props.history._explanation}
+                    {explanation}
                     <br />
                 </div>
             </div>

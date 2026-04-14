@@ -8,6 +8,7 @@ const ACTION_TYPES = {
     APP_SESSION_STARTED: "app_session_started",
     ROUTE_VIEWED: "route_viewed",
     ROUTE_FALLBACK_SHOWN: "route_fallback_shown",
+    ROUTE_RENDER_FAILED: "route_render_failed",
 
     LOGIN_PAGE_VIEWED: "login_page_viewed",
     LOGIN_ATTEMPT: "login_attempt",

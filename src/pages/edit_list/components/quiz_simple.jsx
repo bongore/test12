@@ -89,11 +89,11 @@ function Simple_quiz(props) {
     const contract = useMemo(() => new Contracts_MetaMask(), []);
     const [is_payment, setIs_payment] = useState(false);
 
-    const quiz = props.quiz;
+    const quiz = Array.isArray(props.quiz) ? props.quiz : [];
     const quizId = Number(quiz[QUIZ_INDEX.ID]);
-    const title = quiz[QUIZ_INDEX.TITLE];
-    const explanation = quiz[QUIZ_INDEX.EXPLANATION];
-    const thumbnail = quiz[QUIZ_INDEX.THUMBNAIL];
+    const title = quiz[QUIZ_INDEX.TITLE] || "タイトル未設定";
+    const explanation = quiz[QUIZ_INDEX.EXPLANATION] || "";
+    const thumbnail = quiz[QUIZ_INDEX.THUMBNAIL] || "";
     const reward = Number(quiz[QUIZ_INDEX.REWARD]) / (10 ** 18);
     const answerCount = Number(quiz[QUIZ_INDEX.ANSWER_COUNT]);
     const correctLimit = Number(quiz[QUIZ_INDEX.CORRECT_LIMIT]);
@@ -113,8 +113,13 @@ function Simple_quiz(props) {
     }
 
     useEffect(() => {
+        if (!Number.isFinite(quizId)) return;
         get_is_payment(quizId);
     }, [quizId]);
+
+    if (!quiz.length || !Number.isFinite(quizId)) {
+        return null;
+    }
 
     return (
         <div className={`edit-quiz-card glass-card ${statusInfo.glow} ${is_payment ? 'payment-warning' : ''}`}>

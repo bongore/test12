@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect } from "react";
+import { Component, Suspense, lazy, useEffect } from "react";
 import "./styles/design-tokens.css";
 import "./styles/animations.css";
 import { HashRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
@@ -52,31 +52,78 @@ function RouteLogger() {
     return null;
 }
 
+class RouteErrorBoundary extends Component {
+    constructor(props) {
+        super(props);
+        this.state = { hasError: false, errorMessage: "" };
+    }
+
+    static getDerivedStateFromError(error) {
+        return {
+            hasError: true,
+            errorMessage: error?.message || "画面の描画中にエラーが発生しました。",
+        };
+    }
+
+    componentDidCatch(error, errorInfo) {
+        console.error("Route rendering failed", error, errorInfo);
+        appendActivityLog(ACTION_TYPES.ROUTE_RENDER_FAILED, {
+            page: "route_error_boundary",
+            error: error?.message || "unknown_error",
+        });
+    }
+
+    render() {
+        if (this.state.hasError) {
+            return (
+                <main className="main-content">
+                    <div className="glass-card animate-fadeIn" style={{ padding: "var(--space-8)", marginTop: "var(--space-6)" }}>
+                        <h2 className="heading-lg" style={{ marginBottom: "var(--space-2)" }}>画面の表示に失敗しました</h2>
+                        <p style={{ marginBottom: "var(--space-4)", color: "var(--text-secondary)" }}>
+                            一時的な描画エラーを検知しました。再読み込みで復旧できるようにしています。
+                        </p>
+                        <p style={{ marginBottom: "var(--space-4)", color: "var(--text-secondary)" }}>
+                            詳細: {this.state.errorMessage}
+                        </p>
+                        <button className="btn-primary-custom" onClick={() => window.location.reload()}>
+                            再読み込み
+                        </button>
+                    </div>
+                </main>
+            );
+        }
+
+        return this.props.children;
+    }
+}
+
 function AppRoutes({ cont }) {
     return (
         <>
             <RouteLogger />
             <Nav_menu cont={cont} home={process.env.PUBLIC_URL} />
-            <Suspense fallback={<RouteFallback />}>
-                <main className="main-content">
-                    <Routes>
-                        <Route path="/login" element={<Login url="login" cont={cont} />} />
-                        <Route path="/dashboard" element={<Dashboard />} />
-                        <Route path="/ranking" element={<Ranking />} />
-                        <Route path="/notifications" element={<Notifications />} />
-                        <Route path="/user_page/:address" element={<User_page url="user_page" cont={cont} />} />
-                        <Route path="/create_quiz" element={<Create_quiz url="create_quiz" cont={cont} />} />
-                        <Route path="/list_quiz" element={<List_quiz url="list_quiz" cont={cont} />} />
-                        <Route path="/answer_quiz/:id" element={<Answer_quiz url="answer_quiz" cont={cont} />} />
-                        <Route path="/admin" element={<Admin_page url="admin" cont={cont} />} />
-                        <Route path="/edit_list" element={<Edit_list url="edit_list" cont={cont} />} />
-                        <Route path="/edit_quiz/:id" element={<Edit_quiz url="edit_quiz" cont={cont} />} />
-                        <Route path="/investment_page/:id" element={<Investment_page url="investment_page" cont={cont} />} />
-                        <Route path="/live" element={<Live_page url="live" cont={cont} />} />
-                        <Route path="/" element={<Navigate replace to="/dashboard" />} />
-                    </Routes>
-                </main>
-            </Suspense>
+            <RouteErrorBoundary>
+                <Suspense fallback={<RouteFallback />}>
+                    <main className="main-content">
+                        <Routes>
+                            <Route path="/login" element={<Login url="login" cont={cont} />} />
+                            <Route path="/dashboard" element={<Dashboard />} />
+                            <Route path="/ranking" element={<Ranking />} />
+                            <Route path="/notifications" element={<Notifications />} />
+                            <Route path="/user_page/:address" element={<User_page url="user_page" cont={cont} />} />
+                            <Route path="/create_quiz" element={<Create_quiz url="create_quiz" cont={cont} />} />
+                            <Route path="/list_quiz" element={<List_quiz url="list_quiz" cont={cont} />} />
+                            <Route path="/answer_quiz/:id" element={<Answer_quiz url="answer_quiz" cont={cont} />} />
+                            <Route path="/admin" element={<Admin_page url="admin" cont={cont} />} />
+                            <Route path="/edit_list" element={<Edit_list url="edit_list" cont={cont} />} />
+                            <Route path="/edit_quiz/:id" element={<Edit_quiz url="edit_quiz" cont={cont} />} />
+                            <Route path="/investment_page/:id" element={<Investment_page url="investment_page" cont={cont} />} />
+                            <Route path="/live" element={<Live_page url="live" cont={cont} />} />
+                            <Route path="/" element={<Navigate replace to="/dashboard" />} />
+                        </Routes>
+                    </main>
+                </Suspense>
+            </RouteErrorBoundary>
         </>
     );
 }

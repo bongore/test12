@@ -106,7 +106,7 @@ function Answer_type2(props) {
 }
 
 function Answer(props) {
-    const [answer, setAnswer] = useState();
+    const [answer, setAnswer] = useState("");
 
     let Contract = new Contracts_MetaMask();
     const id = props.id;
@@ -128,6 +128,7 @@ function Answer(props) {
         get_quiz();
     }, []);
 
+    const answerType = Number(quiz?.[13] ?? quiz?.answerType ?? 0);
     if (quiz) {
         return (
             <>
@@ -149,27 +150,26 @@ function Answer(props) {
                     </div>
 
                     {(() => {
-                        if (quiz[12].toString() == 0) {
+                        if (answerType === 0) {
                             return <Answer_type1 quiz={quiz} answer={answer} setAnswer={setAnswer} />;
                         }
                     })()}
                     {(() => {
-                        if (quiz[12].toString() == 1) {
+                        if (answerType === 1) {
                             return <Answer_type2 quiz={quiz} answer={answer} setAnswer={setAnswer} />;
                         }
                     })()}
 
-                    <div class="d-flex justify-content-end">
+                    <div className="d-flex justify-content-end">
                         <Button variant="primary" onClick={create_answer}>
                             回答
                         </Button>
                     </div>
-                    {quiz[12].toString()}
                 </div>
             </>
         );
     } else {
-        <></>;
+        return null;
     }
 }
 export default Answer;

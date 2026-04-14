@@ -47,6 +47,9 @@ function View_result(props) {
     const [csvdownloader, setCsvdownloader] = useState(false);
 
     const handle_export_csv = () => {
+        if (!Array.isArray(data_for_survey_users) || !data_for_survey_users.length || !Array.isArray(data_for_survey_quizs) || !data_for_survey_quizs.length) {
+            return;
+        }
         const users_data = [
             Object.keys(data_for_survey_users[0])
         ];
