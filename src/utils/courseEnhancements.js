@@ -193,6 +193,7 @@ function buildReviewList({ quizzes = [], address = "", practiceAttempts = [] }) 
         if (status === 0 || status === 1 || (latestPractice && !latestPractice.isCorrect)) {
             items.push({
                 quizId,
+                sourceAddress: quiz?.sourceAddress || quiz?.[12] || "",
                 title: quiz?.[2] || `問題 ${quizId}`,
                 reason:
                     status === 0

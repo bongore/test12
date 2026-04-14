@@ -19,6 +19,7 @@ function List_quiz_top(props) {
     const [loadError, setLoadError] = useState("");
     const containerRef = useRef(null);
     const targetRef = useRef(null);
+    const getQuizCacheKey = (quiz) => `${quiz?.sourceAddress || quiz?.[12] || ""}:${Number(quiz?.[0])}`;
 
     useEffect(() => {
         cont.get_quiz_lenght()
@@ -46,9 +47,9 @@ function List_quiz_top(props) {
 
     useEffect(() => {
         const expiredWithoutAnswer = quiz_list.filter((quiz) => {
-            const quizId = Number(quiz?.[0]);
+            const quizKey = getQuizCacheKey(quiz);
             const deadline = Number(quiz?.[6] || 0);
-            return deadline > 0 && currentEpoch > deadline && !correctAnswerMap[quizId];
+            return deadline > 0 && currentEpoch > deadline && !correctAnswerMap[quizKey];
         });
 
         if (!expiredWithoutAnswer.length) return;
@@ -59,13 +60,15 @@ function List_quiz_top(props) {
             const nextEntries = await Promise.all(
                 expiredWithoutAnswer.map(async (quiz) => {
                     const quizId = Number(quiz?.[0]);
-                    const localAnswer = getRegisteredCorrectAnswer(quizId);
+                    const sourceAddress = quiz?.sourceAddress || quiz?.[12] || "";
+                    const quizKey = getQuizCacheKey(quiz);
+                    const localAnswer = getRegisteredCorrectAnswer(quizId, sourceAddress);
                     if (localAnswer) {
-                        return [quizId, localAnswer];
+                        return [quizKey, localAnswer];
                     }
 
-                    const answer = await cont.get_revealed_correct_answer(quizId);
-                    return [quizId, answer];
+                    const answer = await cont.get_revealed_correct_answer(quizId, sourceAddress);
+                    return [quizKey, answer];
                 })
             );
 
@@ -121,12 +124,12 @@ function List_quiz_top(props) {
                         </div>
                     ) : null}
                     {quiz_list.map((quiz, index) => (
-                        <div key={`${Number(quiz?.[0] ?? index)}-${index}`}>
+                        <div key={`${quiz?.sourceAddress || quiz?.[12] || "default"}-${Number(quiz?.[0] ?? index)}-${index}`}>
                             <Simple_quiz
                                 quiz={quiz}
                                 canAnswerQuiz={access.canAnswerQuiz}
                                 currentEpoch={currentEpoch}
-                                correctAnswer={correctAnswerMap[Number(quiz?.[0])] || ""}
+                                correctAnswer={correctAnswerMap[getQuizCacheKey(quiz)] || ""}
                             />
                         </div>
                     ))}

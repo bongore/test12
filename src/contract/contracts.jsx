@@ -17,6 +17,7 @@ import {
     ttt_token_address,
     class_room_address,
     quiz_address,
+    legacy_quiz_addresses,
     tokenContract as token,
     tttTokenContract as tttToken,
     quizContract as quiz,
@@ -406,15 +407,70 @@ function toQuizSimpleArray(result) {
     ];
 }
 
+function withQuizSourceMetadata(quizArray, sourceAddress) {
+    const next = Array.isArray(quizArray) ? [...quizArray] : quizArray;
+    if (Array.isArray(next)) {
+        const sourceIndex = next.length <= 12 ? 12 : next.length;
+        next[sourceIndex] = sourceAddress;
+        next.sourceAddress = sourceAddress;
+    }
+    return next;
+}
+
 class Contracts_MetaMask {
     getAccessControlAddresses() {
-        return [class_room_address, quiz_address].filter(
+        return [class_room_address, quiz_address, ...(legacy_quiz_addresses || [])].filter(
             (address, index, list) => Boolean(address) && list.indexOf(address) === index
         );
     }
 
     getAccessControlAddress() {
         return this.getAccessControlAddresses()[0] || quiz_address;
+    }
+
+    normalizeQuizAddress(address = "") {
+        return this.normalizeAddress(address || quiz_address);
+    }
+
+    resolveQuizAddress(address = "") {
+        const normalized = this.normalizeQuizAddress(address);
+        const allQuizAddresses = [quiz_address, ...(legacy_quiz_addresses || [])].filter(Boolean);
+        return allQuizAddresses.find((item) => this.normalizeAddress(item) === normalized) || quiz_address;
+    }
+
+    getQuizReadAddresses() {
+        return [quiz_address, ...(legacy_quiz_addresses || [])].filter(
+            (address, index, list) => Boolean(address) && list.findIndex((item) => this.normalizeAddress(item) === this.normalizeAddress(address)) === index
+        );
+    }
+
+    async getQuizInventory() {
+        const addresses = this.getQuizReadAddresses();
+        const lengths = await Promise.allSettled(
+            addresses.map(async (address) => ({
+                address,
+                length: Number(await this.get_quiz_lenght(address)),
+            }))
+        );
+
+        const inventory = [];
+        lengths
+            .filter((result) => result.status === "fulfilled")
+            .map((result) => result.value)
+            .forEach(({ address, length }) => {
+                for (let id = length - 1; id >= 0; id -= 1) {
+                    inventory.push({ id, address });
+                }
+            });
+
+        return inventory;
+    }
+
+    getQuizWindowFromInventory(inventory, start, end) {
+        const total = Array.isArray(inventory) ? inventory.length : 0;
+        const safeStart = Math.max(0, Math.min(total, Number(start || 0)));
+        const safeEnd = Math.max(0, Math.min(total, Number(end || 0)));
+        return inventory.slice(total - safeStart, total - safeEnd);
     }
 
     async readAccessControlContract({ account, abi, functionName, args = [], preferTruthy = false, acceptResult } = {}) {
@@ -757,10 +813,26 @@ class Contracts_MetaMask {
             if (this.getEthereumProvider()) {
                 let account = await this.get_address();
                 console.log(token_address);
-                const res = account
-                    ? await quiz.read.get_user({ account, args: [address] })
-                    : await quiz.read.get_user({ args: [address] });
-                return [res[0], res[1], Number(res[2]), res[3]];
+                const sources = this.getQuizReadAddresses();
+                for (const source of sources) {
+                    try {
+                        const res = source === quiz_address
+                            ? (account ? await quiz.read.get_user({ account, args: [address] }) : await quiz.read.get_user({ args: [address] }))
+                            : await publicClient.readContract({
+                                account: account || undefined,
+                                address: source,
+                                abi: quiz_abi,
+                                functionName: "get_user",
+                                args: [address],
+                            });
+                        const normalized = [res[0], res[1], Number(res[2]), res[3]];
+                        if (normalized[0] || normalized[1] || Number(normalized[2]) > 0 || normalized[3]) {
+                            return normalized;
+                        }
+                    } catch (innerError) {
+                        console.log(innerError);
+                    }
+                }
             } else {
                 console.log("Ethereum object does not exist");
             }
@@ -770,7 +842,7 @@ class Contracts_MetaMask {
         return ["", "", 0, false];
     }
 
-    async approve(account, amount) {
+    async approve(account, amount, spenderAddress = quiz_address) {
         try {
             if (ethereum) {
                 console.log(amount);
@@ -780,7 +852,7 @@ class Contracts_MetaMask {
                         address: token_address,
                         abi: token_abi,
                         functionName: "approve",
-                        args: [quiz_address, amount],
+                        args: [this.resolveQuizAddress(spenderAddress), amount],
                     });
                 } catch (e) {
                     console.log(e);
@@ -793,7 +865,7 @@ class Contracts_MetaMask {
         }
     }
 
-    async investment_to_quiz(id, amount, answer, isNotPayingOut, numOfStudent, isNotAddingReward, students) {
+    async investment_to_quiz(id, amount, answer, isNotPayingOut, numOfStudent, isNotAddingReward, students, sourceAddress = "") {
         console.log([id, amount, isNotPayingOut, numOfStudent, isNotAddingReward]);
         let res = null;
         let res2 = null;
@@ -817,20 +889,21 @@ class Contracts_MetaMask {
         try {
             if (ethereum) {
                 let account = await this.get_address();
-                let approval = await token.read.allowance({ account, args: [account, quiz_address] });
+                const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
+                let approval = await token.read.allowance({ account, args: [account, targetQuizAddress] });
                 console.log(Number(approval));
                 console.log(amount * numOfStudent);
 
                 if (Number(approval) >= Number(amount * numOfStudent)) {
-                    hash = await this._investment_to_quiz(account, id, amount, numOfStudent);
+                    hash = await this._investment_to_quiz(account, id, amount, numOfStudent, targetQuizAddress);
                     if (hash) {
                         res = await publicClient.waitForTransactionReceipt({ hash });
                     }
                 } else {
-                    hash = await this.approve(account, amount * numOfStudent);
+                    hash = await this.approve(account, amount * numOfStudent, targetQuizAddress);
                     if (hash) {
                         res = await publicClient.waitForTransactionReceipt({ hash });
-                        hash = await this._investment_to_quiz(account, id, amount, numOfStudent);
+                        hash = await this._investment_to_quiz(account, id, amount, numOfStudent, targetQuizAddress);
                         console.log(hash);
                         if (hash) {
                             res = await publicClient.waitForTransactionReceipt({ hash });
@@ -842,26 +915,26 @@ class Contracts_MetaMask {
                     let addreses = sliceByNumber(students, 15);
                     console.log(addreses)
                     for (let i = 0; i < addreses.length; i++) {
-                        hash2 = await this._payment_of_reward(account, id, answer, addreses[i]);
+                        hash2 = await this._payment_of_reward(account, id, answer, addreses[i], targetQuizAddress);
                         if (hash2) {
                             res2 = await publicClient.waitForTransactionReceipt({ hash: hash2 });
                         }
                     }
                     if (is_not_adding_reward == false) {
-                        let reward = (await this.get_quiz_simple(id))[7];
+                        let reward = (await this.get_quiz_simple(id, targetQuizAddress))[7];
                         console.log(reward);
-                        approval = await token.read.allowance({ account, args: [account, quiz_address] });
+                        approval = await token.read.allowance({ account, args: [account, targetQuizAddress] });
                         console.log(approval);
                         if (Number(approval) >= Number(reward)) {
-                            hash = await this._adding_reward(account, id, reward);
+                            hash = await this._adding_reward(account, id, reward, targetQuizAddress);
                             if (hash) {
                                 res = await publicClient.waitForTransactionReceipt({ hash });
                             }
                         } else {
-                            hash = await this.approve(account, reward);
+                            hash = await this.approve(account, reward, targetQuizAddress);
                             if (hash) {
                                 res = res = await publicClient.waitForTransactionReceipt({ hash });
-                                hash = await this._adding_reward(account, id, reward);
+                                hash = await this._adding_reward(account, id, reward, targetQuizAddress);
                                 if (hash) {
                                     res = await publicClient.waitForTransactionReceipt({ hash });
                                 }
@@ -878,14 +951,14 @@ class Contracts_MetaMask {
         return { res, res2, hash, hash2 };
     }
 
-    async _investment_to_quiz(account, id, amount, numOfStudent) {
+    async _investment_to_quiz(account, id, amount, numOfStudent, sourceAddress = "") {
         console.log([account, id, amount, numOfStudent])
         try {
             if (ethereum) {
                 try {
                     return await this.writeContractDirect({
                         account,
-                        address: quiz_address,
+                        address: this.resolveQuizAddress(sourceAddress),
                         abi: quiz_abi,
                         functionName: "investment_to_quiz",
                         args: [id, amount.toString(), numOfStudent],
@@ -901,14 +974,14 @@ class Contracts_MetaMask {
         }
     }
 
-    async _payment_of_reward(account, id, answer, students) {
+    async _payment_of_reward(account, id, answer, students, sourceAddress = "") {
         console.log([account, id, answer, students]);
         try {
             if (ethereum) {
                 try {
                     return await this.writeContractDirect({
                         account,
-                        address: quiz_address,
+                        address: this.resolveQuizAddress(sourceAddress),
                         abi: quiz_abi,
                         functionName: "payment_of_reward",
                         args: [id, answer, students],
@@ -925,13 +998,13 @@ class Contracts_MetaMask {
         return ["", "", 0, false];
     }
 
-    async _payment_of_reward_manual(account, id, confirmAnswer, correctStudents, incorrectStudents, finalizePayment) {
+    async _payment_of_reward_manual(account, id, confirmAnswer, correctStudents, incorrectStudents, finalizePayment, sourceAddress = "") {
         try {
             if (ethereum) {
                 try {
                     return await this.writeContractDirect({
                         account,
-                        address: quiz_address,
+                        address: this.resolveQuizAddress(sourceAddress),
                         abi: [PAYMENT_OF_REWARD_MANUAL_ABI],
                         functionName: "payment_of_reward_manual",
                         args: [id, String(confirmAnswer || ""), correctStudents, incorrectStudents, Boolean(finalizePayment)],
@@ -947,14 +1020,14 @@ class Contracts_MetaMask {
         }
     }
 
-    async _adding_reward(account, id, reward) {
+    async _adding_reward(account, id, reward, sourceAddress = "") {
         console.log([account, id, reward]);
         try {
             if (ethereum) {
                 try {
                     return await this.writeContractDirect({
                         account,
-                        address: quiz_address,
+                        address: this.resolveQuizAddress(sourceAddress),
                         abi: quiz_abi,
                         functionName: "adding_reward",
                         args: [id],
@@ -970,7 +1043,7 @@ class Contracts_MetaMask {
         }
     }
 
-    async settle_quiz_rewards_manually(id, amount, confirmAnswer, correctStudents, incorrectStudents, isNotAddingReward) {
+    async settle_quiz_rewards_manually(id, amount, confirmAnswer, correctStudents, incorrectStudents, isNotAddingReward, sourceAddress = "") {
         let res = null;
         let payoutReceipts = [];
         let hash = null;
@@ -987,22 +1060,23 @@ class Contracts_MetaMask {
             }
 
             const account = await this.get_address();
+            const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
             if (!account) {
                 throw new Error("wallet_not_connected");
             }
 
             if (rewardPerStudent > 0 && normalizedCorrectStudents.length > 0) {
-                let approval = await token.read.allowance({ account, args: [account, quiz_address] });
+                let approval = await token.read.allowance({ account, args: [account, targetQuizAddress] });
                 const requiredAmount = rewardPerStudent * normalizedCorrectStudents.length;
 
                 if (Number(approval) < Number(requiredAmount)) {
-                    hash = await this.approve(account, requiredAmount);
+                    hash = await this.approve(account, requiredAmount, targetQuizAddress);
                     if (hash) {
                         res = await publicClient.waitForTransactionReceipt({ hash });
                     }
                 }
 
-                hash = await this._investment_to_quiz(account, id, rewardPerStudent, normalizedCorrectStudents.length);
+                hash = await this._investment_to_quiz(account, id, rewardPerStudent, normalizedCorrectStudents.length, targetQuizAddress);
                 if (hash) {
                     res = await publicClient.waitForTransactionReceipt({ hash });
                 }
@@ -1025,7 +1099,8 @@ class Contracts_MetaMask {
                         confirmAnswer,
                         correctChunk,
                         incorrectChunk,
-                        index === totalBatchCount - 1
+                        index === totalBatchCount - 1,
+                        targetQuizAddress
                     );
                     if (payoutHash) {
                         payoutReceipts.push(await publicClient.waitForTransactionReceipt({ hash: payoutHash }));
@@ -1034,15 +1109,15 @@ class Contracts_MetaMask {
             }
 
             if (isNotAddingReward === "false") {
-                let reward = (await this.get_quiz_simple(id))[7];
-                let approval = await token.read.allowance({ account, args: [account, quiz_address] });
+                let reward = (await this.get_quiz_simple(id, targetQuizAddress))[7];
+                let approval = await token.read.allowance({ account, args: [account, targetQuizAddress] });
                 if (Number(approval) < Number(reward)) {
-                    hash = await this.approve(account, reward);
+                    hash = await this.approve(account, reward, targetQuizAddress);
                     if (hash) {
                         res = await publicClient.waitForTransactionReceipt({ hash });
                     }
                 }
-                hash = await this._adding_reward(account, id, reward);
+                hash = await this._adding_reward(account, id, reward, targetQuizAddress);
                 if (hash) {
                     res = await publicClient.waitForTransactionReceipt({ hash });
                 }
@@ -1117,7 +1192,7 @@ class Contracts_MetaMask {
         }
     }
 
-    async edit_quiz(id, owner, title, explanation, thumbnail_url, content, reply_startline, reply_deadline, setShow) {
+    async edit_quiz(id, owner, title, explanation, thumbnail_url, content, reply_startline, reply_deadline, setShow, sourceAddress = "") {
         setShow(true);
         //console.log([id, owner, title, explanation, thumbnail_url, content, reply_startline, reply_deadline]);
         let res = null;
@@ -1127,7 +1202,7 @@ class Contracts_MetaMask {
                 let account = await this.get_address();
                 let approval = await token.read.allowance({ account, args: [account, quiz_address] });
 
-                hash = await this._edit_quiz(account, id, owner, title, explanation, thumbnail_url, content, reply_startline, reply_deadline);
+                hash = await this._edit_quiz(account, id, owner, title, explanation, thumbnail_url, content, reply_startline, reply_deadline, sourceAddress);
                 console.log(hash);
                 if (hash) {
                     res = await publicClient.waitForTransactionReceipt({ hash });
@@ -1146,7 +1221,7 @@ class Contracts_MetaMask {
         return res;
     }
 
-    async _edit_quiz(account, id, owner, title, explanation, thumbnail_url, content, reply_startline, reply_deadline) {
+    async _edit_quiz(account, id, owner, title, explanation, thumbnail_url, content, reply_startline, reply_deadline, sourceAddress = "") {
         const dateStartObj = new Date(reply_startline);
         const dateEndObj = new Date(reply_deadline);
 
@@ -1158,7 +1233,7 @@ class Contracts_MetaMask {
                 try {
                     return await this.writeContractDirect({
                         account,
-                        address: quiz_address,
+                        address: this.resolveQuizAddress(sourceAddress),
                         abi: quiz_abi,
                         functionName: "edit_quiz",
                         args: [id, owner, title, explanation, thumbnail_url, content, epochStartSeconds, epochEndSeconds],
@@ -1174,7 +1249,7 @@ class Contracts_MetaMask {
         }
     }
 
-    async create_answer(id, answer, setShow, setContent) {
+    async create_answer(id, answer, setShow, setContent, sourceAddress = "") {
         console.log(id, answer);
         try {
             if (ethereum) {
@@ -1182,13 +1257,13 @@ class Contracts_MetaMask {
 
                 setShow(true);
                 setContent("書き込み中...");
-                let hash = await this._save_answer(account, id, answer);
+                let hash = await this._save_answer(account, id, answer, sourceAddress);
 
                 if (hash) {
                     let res = await publicClient.waitForTransactionReceipt({ hash });
                     console.log(res);
                     // トランザクション成功後にのみローカルに保存
-                    localStorage.setItem(`quiz_${id}_answer`, answer);
+                    localStorage.setItem(`quiz_${this.normalizeQuizAddress(sourceAddress)}_${id}_answer`, answer);
                     return res;
                 } else {
                     // hash が取得できなかった = トランザクションが拒否された
@@ -1206,11 +1281,11 @@ class Contracts_MetaMask {
         }
     }
 
-    async _save_answer(account, id, answer) {
+    async _save_answer(account, id, answer, sourceAddress = "") {
         try {
             return await this.writeContractDirect({
                 account,
-                address: quiz_address,
+                address: this.resolveQuizAddress(sourceAddress),
                 abi: quiz_abi,
                 functionName: "save_answer",
                 args: [id, answer.toString()],
@@ -1220,11 +1295,11 @@ class Contracts_MetaMask {
         }
     }
 
-    async _post_answer(account, id, answer) {
+    async _post_answer(account, id, answer, sourceAddress = "") {
         try {
             return await this.writeContractDirect({
                 account,
-                address: quiz_address,
+                address: this.resolveQuizAddress(sourceAddress),
                 abi: quiz_abi,
                 functionName: "post_answer",
                 args: [id, answer.toString()],
@@ -1234,11 +1309,18 @@ class Contracts_MetaMask {
         }
     }
 
-    async get_quiz_all_data(id) {
+    async get_quiz_all_data(id, sourceAddress = "") {
         const [quizData, answerType, simpleData] = await Promise.all([
-            this.get_quiz(id),
-            quiz.read.get_quiz_answer_type({ args: [id] }),
-            this.get_quiz_simple(id),
+            this.get_quiz(id, sourceAddress),
+            this.resolveQuizAddress(sourceAddress) === quiz_address
+                ? quiz.read.get_quiz_answer_type({ args: [id] })
+                : publicClient.readContract({
+                    address: this.resolveQuizAddress(sourceAddress),
+                    abi: quiz_abi,
+                    functionName: "get_quiz_answer_type",
+                    args: [id],
+                }),
+            this.get_quiz_simple(id, sourceAddress),
         ]);
         return [
             Number(quizData?.[0] || id),
@@ -1258,42 +1340,78 @@ class Contracts_MetaMask {
         ];
     }
 
-    async get_quiz(id) {
+    async get_quiz(id, sourceAddress = "") {
+        const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
+        const targetQuizContract = targetQuizAddress === quiz_address ? quiz : null;
         const [answer_typr, res, res2, registeredCorrectAnswer] = await Promise.all([
-            quiz.read.get_quiz_answer_type({ args: [id] }),
-            quiz.read.get_quiz({ args: [id] }),
-            this.get_confirm_answer(id),
-            this.get_revealed_correct_answer(id),
+            targetQuizContract
+                ? targetQuizContract.read.get_quiz_answer_type({ args: [id] })
+                : publicClient.readContract({ address: targetQuizAddress, abi: quiz_abi, functionName: "get_quiz_answer_type", args: [id] }),
+            targetQuizContract
+                ? targetQuizContract.read.get_quiz({ args: [id] })
+                : publicClient.readContract({ address: targetQuizAddress, abi: quiz_abi, functionName: "get_quiz", args: [id] }),
+            this.get_confirm_answer(id, targetQuizAddress),
+            this.get_revealed_correct_answer(id, targetQuizAddress),
         ]);
         const normalizedQuiz = toQuizArray(res);
-        return [...normalizedQuiz, answer_typr, registeredCorrectAnswer, res2[1]];
+        return withQuizSourceMetadata([...normalizedQuiz, answer_typr, registeredCorrectAnswer, res2[1]], targetQuizAddress);
     }
 
-    async get_quiz_simple(id) {
+    async get_quiz_simple(id, sourceAddress = "") {
         try {
+            const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
             const account = await this.get_address();
-            if (account) {
-                return toQuizSimpleArray(await quiz.read.get_quiz_simple({ account, args: [id] }));
+            if (targetQuizAddress === quiz_address) {
+                if (account) {
+                    return withQuizSourceMetadata(toQuizSimpleArray(await quiz.read.get_quiz_simple({ account, args: [id] })), targetQuizAddress);
+                }
+                return withQuizSourceMetadata(toQuizSimpleArray(await quiz.read.get_quiz_simple({ args: [id] })), targetQuizAddress);
             }
-            return toQuizSimpleArray(await quiz.read.get_quiz_simple({ args: [id] }));
+            const result = await publicClient.readContract({
+                account: account || undefined,
+                address: targetQuizAddress,
+                abi: quiz_abi,
+                functionName: "get_quiz_simple",
+                args: [id],
+            });
+            return withQuizSourceMetadata(toQuizSimpleArray(result), targetQuizAddress);
         } catch (error) {
             console.log(error);
-            return [Number(id), "", "", "", "", 0, 0, 0, 0, 0, 0, false];
+            return withQuizSourceMetadata([Number(id), "", "", "", "", 0, 0, 0, 0, 0, 0, false], this.resolveQuizAddress(sourceAddress));
         }
     }
 
-    async get_is_payment(id) {
-        return await quiz.read.get_is_payment({ args: [id] });
+    async get_is_payment(id, sourceAddress = "") {
+        const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
+        if (targetQuizAddress === quiz_address) {
+            return await quiz.read.get_is_payment({ args: [id] });
+        }
+        return await publicClient.readContract({
+            address: targetQuizAddress,
+            abi: quiz_abi,
+            functionName: "get_is_payment",
+            args: [id],
+        });
     }
 
-    async get_confirm_answer(id) {
-        return await quiz.read.get_confirm_answer({ args: [id] });
+    async get_confirm_answer(id, sourceAddress = "") {
+        const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
+        if (targetQuizAddress === quiz_address) {
+            return await quiz.read.get_confirm_answer({ args: [id] });
+        }
+        return await publicClient.readContract({
+            address: targetQuizAddress,
+            abi: quiz_abi,
+            functionName: "get_confirm_answer",
+            args: [id],
+        });
     }
 
-    async get_revealed_correct_answer(id) {
+    async get_revealed_correct_answer(id, sourceAddress = "") {
+        const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
         try {
             const result = await publicClient.readContract({
-                address: quiz_address,
+                address: targetQuizAddress,
                 abi: [GET_REVEALED_CORRECT_ANSWER_ABI],
                 functionName: "get_revealed_correct_answer",
                 args: [Number(id)],
@@ -1308,7 +1426,7 @@ class Contracts_MetaMask {
         }
 
         try {
-            const [confirmAnswer, isPayment] = await this.get_confirm_answer(id);
+            const [confirmAnswer, isPayment] = await this.get_confirm_answer(id, targetQuizAddress);
             if (isPayment && confirmAnswer) {
                 return String(confirmAnswer);
             }
@@ -1316,29 +1434,14 @@ class Contracts_MetaMask {
             console.log(error);
         }
 
-        return getRegisteredCorrectAnswer(id);
+        return getRegisteredCorrectAnswer(id, targetQuizAddress);
     }
 
     async get_quiz_all_data_list(start, end) {
-        let account = await this.get_address();
-        const ids = [];
+        const inventory = await this.getQuizInventory();
+        const refs = this.getQuizWindowFromInventory(inventory, start, end);
 
-        console.log(start, end);
-        if (start <= end) {
-            for (let i = start; i < end; i++) {
-                ids.push(i);
-            }
-        } else {
-            for (let i = start - 1; i >= end; i--) {
-                ids.push(i);
-            }
-        }
-
-        const settled = await Promise.allSettled(
-            ids.map((id) => (
-                this.get_quiz_all_data(id)
-            ))
-        );
+        const settled = await Promise.allSettled(refs.map((ref) => this.get_quiz_all_data(ref.id, ref.address)));
 
         return settled
             .filter((result) => result.status === "fulfilled")
@@ -1348,36 +1451,49 @@ class Contracts_MetaMask {
     //startからendまでのクイズを取得
 
     async get_quiz_list(start, end) {
-        let account = await this.get_address();
-        const ids = [];
+        const inventory = await this.getQuizInventory();
+        const refs = this.getQuizWindowFromInventory(inventory, start, end);
 
-        console.log(start, end);
-        if (start <= end) {
-            for (let i = start; i < end; i++) {
-                ids.push(i);
-            }
-        } else {
-            for (let i = start - 1; i >= end; i--) {
-                ids.push(i);
-            }
-        }
+        const settled = await Promise.allSettled(refs.map((ref) => this.get_quiz_simple(ref.id, ref.address)));
 
+        return settled
+            .filter((result) => result.status === "fulfilled")
+            .map((result) => result.value);
+    }
+
+    async get_all_quiz_simple_list() {
+        const inventory = await this.getQuizInventory();
         const settled = await Promise.allSettled(
-            ids.map((id) => (
-                account
-                    ? quiz.read.get_quiz_simple({ account, args: [id] })
-                    : quiz.read.get_quiz_simple({ args: [id] })
-            ))
+            inventory.map((ref) => this.get_quiz_simple(ref.id, ref.address))
         );
 
         return settled
             .filter((result) => result.status === "fulfilled")
-            .map((result) => toQuizSimpleArray(result.value));
+            .map((result) => result.value);
     }
 
-    async get_quiz_lenght() {
+    async get_quiz_lenght(sourceAddress = "") {
         try {
-            return await quiz.read.get_quiz_length();
+            const targetQuizAddress = sourceAddress ? this.resolveQuizAddress(sourceAddress) : "";
+            if (targetQuizAddress) {
+                if (targetQuizAddress === quiz_address) {
+                    return await quiz.read.get_quiz_length();
+                }
+                return await publicClient.readContract({
+                    address: targetQuizAddress,
+                    abi: quiz_abi,
+                    functionName: "get_quiz_length",
+                    args: [],
+                });
+            }
+
+            const lengths = await Promise.allSettled(
+                this.getQuizReadAddresses().map(async (address) => Number(await this.get_quiz_lenght(address)))
+            );
+            return lengths.reduce((sum, result) => {
+                if (result.status !== "fulfilled") return sum;
+                return sum + Number(result.value || 0);
+            }, 0);
         } catch (error) {
             console.log(error);
             return 0;
@@ -2165,21 +2281,39 @@ class Contracts_MetaMask {
         return 0;
     }
 
-    async get_respondentCount_and_respondentLimit(id) {
+    async get_respondentCount_and_respondentLimit(id, sourceAddress = "") {
         try {
-            return await quiz.read.get_respondentCount_and_respondentLimit({ args: [id] });
+            const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
+            if (targetQuizAddress === quiz_address) {
+                return await quiz.read.get_respondentCount_and_respondentLimit({ args: [id] });
+            }
+            return await publicClient.readContract({
+                address: targetQuizAddress,
+                abi: quiz_abi,
+                functionName: "get_respondentCount_and_respondentLimit",
+                args: [id],
+            });
         } catch (error) {
             console.log(error);
-            const simple = await this.get_quiz_simple(id);
+            const simple = await this.get_quiz_simple(id, sourceAddress);
             return [Number(simple?.[8] || 0), Number(simple?.[9] || 0)];
         }
     }
     //ここから変更
-    async get_student_answer_hash(student, id) {
+    async get_student_answer_hash(student, id, sourceAddress = "") {
         try {
             if (ethereum) {
                 let account = await this.get_address();
-                let res = await quiz.read.get_student_answer_hash({ account, args: [student, id] });
+                const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
+                let res = targetQuizAddress === quiz_address
+                    ? await quiz.read.get_student_answer_hash({ account, args: [student, id] })
+                    : await publicClient.readContract({
+                        account,
+                        address: targetQuizAddress,
+                        abi: quiz_abi,
+                        functionName: "get_student_answer_hash",
+                        args: [student, id],
+                    });
                 return res;
             } else {
                 console.log("Ethereum object does not exists");
@@ -2189,13 +2323,14 @@ class Contracts_MetaMask {
         }
     }
 
-    async get_student_answer_detail(student, id) {
+    async get_student_answer_detail(student, id, sourceAddress = "") {
         try {
             if (ethereum) {
                 let account = await this.get_address();
+                const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
                 const result = await publicClient.readContract({
                     account,
-                    address: quiz_address,
+                    address: targetQuizAddress,
                     abi: [GET_STUDENT_ANSWER_DETAIL_ABI],
                     functionName: "get_student_answer_detail",
                     args: [Number(id), student],
@@ -2215,7 +2350,7 @@ class Contracts_MetaMask {
         } catch (err) {
             console.log(err);
             try {
-                const answerHash = await this.get_student_answer_hash(student, id);
+                const answerHash = await this.get_student_answer_hash(student, id, sourceAddress);
                 return {
                     answerText: answerHash ? `hash: ${String(answerHash).slice(0, 18)}...` : "",
                     state: 0,
@@ -2260,13 +2395,13 @@ class Contracts_MetaMask {
         return [];
     }
 
-    async get_students_answer_hash_list(students, id) {
+    async get_students_answer_hash_list(students, id, sourceAddress = "") {
         try {
             if (ethereum) {
                 let res = {};
                 console.log(students[1]);
                 for (let i = 0; i < students.length; i++) {
-                    res[students[i]] = await this.get_student_answer_hash(students[i], id);
+                    res[students[i]] = await this.get_student_answer_hash(students[i], id, sourceAddress);
                 }
                 return res;
             } else {
@@ -2300,16 +2435,11 @@ class Contracts_MetaMask {
     }
     async get_data_for_survey_quizs() {
         try {
-            const length = await this.get_quiz_lenght();
-            const rows = [];
-            for (let i = 0; i < Number(length || 0); i++) {
-                const quizData = await this.get_quiz_simple(i);
-                rows.push({
-                    reward: BigInt(Number(quizData?.[7] || 0)),
-                    respondent_count: Number(quizData?.[8] || 0),
-                });
-            }
-            return rows;
+            const quizList = await this.get_all_quiz_simple_list();
+            return (Array.isArray(quizList) ? quizList : []).map((quizData) => ({
+                reward: BigInt(Number(quizData?.[7] || 0)),
+                respondent_count: Number(quizData?.[8] || 0),
+            }));
         } catch (fallbackError) {
             console.log(fallbackError);
             return [];

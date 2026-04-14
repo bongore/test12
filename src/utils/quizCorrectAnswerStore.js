@@ -67,7 +67,12 @@ function getRegisteredCorrectAnswer(quizId, contractAddress = quiz_address) {
     return String(legacyMap[normalizedQuizId] || "");
 }
 
+function buildQuizStorageKey(quizId, contractAddress = quiz_address) {
+    return `quiz_${String(contractAddress || "").toLowerCase()}_${String(Number(quizId))}_answer`;
+}
+
 export {
+    buildQuizStorageKey,
     getRegisteredCorrectAnswer,
     setRegisteredCorrectAnswer,
 };

@@ -77,15 +77,7 @@ function User_page(props) {
             Set_history_sum(historyLength);
             now_numRef.current = historyLength;
 
-            const quizLength = Number(await cont.get_quiz_lenght());
-            const quizData = [];
-            for (let i = 0; i < quizLength; i += 1) {
-                try {
-                    quizData.push(await cont.get_quiz_simple(i));
-                } catch (error) {
-                    console.error("Failed to load quiz for review list", error);
-                }
-            }
+        const quizData = await cont.get_all_quiz_simple_list();
 
             const snapshot = getCourseEnhancementSnapshot();
             const ownLogs = snapshot.activityLogs.filter((log) => String(log.actor || log.address || "").toLowerCase() === String(address || "").toLowerCase());
@@ -163,7 +155,7 @@ function User_page(props) {
                             {reviewItems.map((item) => (
                                 <Link
                                     key={item.quizId}
-                                    to={`/answer_quiz/${item.quizId}?practice=1`}
+                                    to={`/answer_quiz/${item.quizId}?practice=1&c=${encodeURIComponent(item.sourceAddress || "")}`}
                                     className="glass-card"
                                     style={{ padding: "12px 16px", textDecoration: "none", color: "#fff" }}
                                 >

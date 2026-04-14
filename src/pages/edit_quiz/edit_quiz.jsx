@@ -1,7 +1,7 @@
 import { Contracts_MetaMask } from "../../contract/contracts";
 import Form from "react-bootstrap/Form";
 import { useState, useEffect, useMemo } from "react";
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import MDEditor from "@uiw/react-md-editor";
 import Wait_Modal from "../../contract/wait_Modal";
 import { ACTION_TYPES, appendActivityLog } from "../../utils/activityLog";
@@ -10,7 +10,9 @@ import "../create_quiz/create_quiz.css";
 
 function Edit_quiz() {
     const navigate = useNavigate();
+    const location = useLocation();
     const id = useParams()["id"];
+    const sourceAddress = new URLSearchParams(location.search).get("c") || "";
     const [owner, setOwner] = useState(null);
 
     const [title, setTitle] = useState("");
@@ -34,7 +36,7 @@ function Edit_quiz() {
     const edit_quiz = async () => {
         console.log(id, owner, title, explanation, thumbnail_url, content, reply_startline, reply_deadline);
         if (new Date(reply_startline).getTime() < new Date(reply_deadline).getTime()) {
-            await Contract.edit_quiz(id, owner, title, explanation, thumbnail_url, content, reply_startline, reply_deadline, setShow);
+            await Contract.edit_quiz(id, owner, title, explanation, thumbnail_url, content, reply_startline, reply_deadline, setShow, sourceAddress);
             appendActivityLog(ACTION_TYPES.ADMIN_EDIT_QUIZ, {
                 page: "edit_quiz",
                 quizId: id,
@@ -76,7 +78,7 @@ function Edit_quiz() {
 
         async function loadQuiz() {
             try {
-                const quiz = await Contract.get_quiz(id);
+                const quiz = await Contract.get_quiz(id, sourceAddress);
                 if (!active || !quiz) return;
                 setOwner(quiz[1]);
                 setTitle(quiz[2] || "");
@@ -98,7 +100,7 @@ function Edit_quiz() {
         return () => {
             active = false;
         };
-    }, [Contract, id]);
+    }, [Contract, id, sourceAddress]);
 
     if (access.isLoading || !isReady) {
         return <div className="quiz-form-page">読み込み中です...</div>;

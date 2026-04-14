@@ -38,22 +38,14 @@ function Course_operations_panel({ cont }) {
         let active = true;
         const load = async () => {
             try {
-                const [studentList, quizLength] = await Promise.all([
+                const [studentList, nextQuizzes] = await Promise.all([
                     cont?.get_student_list?.(),
-                    cont?.get_quiz_lenght?.(),
+                    cont?.get_all_quiz_simple_list?.(),
                 ]);
                 if (!active) return;
                 setStudents(Array.isArray(studentList) ? studentList : []);
-                const nextQuizzes = [];
-                for (let i = 0; i < Number(quizLength || 0); i += 1) {
-                    try {
-                        nextQuizzes.push(await cont.get_quiz_simple(i));
-                    } catch (error) {
-                        console.error("Failed to load quiz snapshot", error);
-                    }
-                }
                 if (!active) return;
-                setQuizzes(nextQuizzes);
+                setQuizzes(Array.isArray(nextQuizzes) ? nextQuizzes : []);
                 setSnapshot(getCourseEnhancementSnapshot());
             } catch (error) {
                 console.error("Failed to load course operations panel", error);

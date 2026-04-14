@@ -75,7 +75,7 @@ function Edit_list_top(props) {
             ) : null}
 
             {quiz_list.map((quiz, index) => (
-                <Simple_quiz key={`${Number(quiz?.[0] ?? index)}-${index}`} quiz={quiz} />
+                <Simple_quiz key={`${quiz?.sourceAddress || quiz?.[12] || "default"}-${Number(quiz?.[0] ?? index)}-${index}`} quiz={quiz} />
             ))}
 
             {!loadError && (

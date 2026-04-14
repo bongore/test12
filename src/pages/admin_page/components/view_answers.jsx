@@ -45,23 +45,15 @@ function View_answers() {
     useEffect(() => {
         async function fetchQuizList() {
             try {
-                const count = Number(await contract.get_quiz_lenght());
-                setQuizCount(count);
-
-                const list = [];
-                for (let i = 0; i < count; i++) {
-                    try {
-                        const q = await contract.get_quiz_simple(i);
-                        list.push({
-                            id: i,
-                            title: q[2] || `問題 ${i}`,
-                            respondents: Number(q[8]) || 0,
-                        });
-                    } catch (e) {
-                        list.push({ id: i, title: `問題 ${i}`, respondents: 0 });
-                    }
-                }
-                setQuizList(list);
+                const list = await contract.get_all_quiz_simple_list();
+                const normalized = (Array.isArray(list) ? list : []).map((q) => ({
+                    id: Number(q?.[0] || 0),
+                    title: q?.[2] || `問題 ${q?.[0] || 0}`,
+                    respondents: Number(q?.[8]) || 0,
+                    sourceAddress: q?.sourceAddress || q?.[12] || "",
+                }));
+                setQuizCount(normalized.length);
+                setQuizList(normalized);
             } catch (e) {
                 console.error("Failed to fetch quiz list", e);
             } finally {
@@ -72,13 +64,15 @@ function View_answers() {
     }, []);
 
     // 選択されたクイズの回答一覧を取得
-    const fetchAnswers = async (quizId) => {
-        setSelectedQuiz(quizId);
+    const fetchAnswers = async (quizRef) => {
+        const quizId = Number(quizRef?.id || 0);
+        const sourceAddress = quizRef?.sourceAddress || "";
+        setSelectedQuiz(`${sourceAddress}:${quizId}`);
         setLoadingAnswers(true);
         setAnswers(null);
         try {
             // クイズの詳細を取得（選択肢データ answer_data を含む）
-            const quizData = await contract.get_quiz(quizId);
+            const quizData = await contract.get_quiz(quizId, sourceAddress);
             // get_quiz の返り値: [id, owner, title, explanation, thumbnail_url, content, answer_data, ...]
             const answerData = quizData[6] || ""; // answer_data (カンマ区切りの選択肢)
             const answerOptions = answerData.split(",");
@@ -88,7 +82,7 @@ function View_answers() {
             const students = await contract.get_student_list();
             if (students && students.length > 0) {
                 // 各生徒の回答ハッシュを取得
-                const answerMap = await contract.get_students_answer_hash_list(students, quizId);
+                const answerMap = await contract.get_students_answer_hash_list(students, quizId, sourceAddress);
                 
                 const result = [];
                 for (const student of students) {
@@ -151,13 +145,13 @@ function View_answers() {
                 }}>
                     {quizList.map((q) => (
                         <button
-                            key={q.id}
-                            onClick={() => fetchAnswers(q.id)}
+                            key={`${q.sourceAddress || "default"}-${q.id}`}
+                            onClick={() => fetchAnswers(q)}
                             style={{
                                 padding: "12px 16px",
                                 borderRadius: "var(--radius-sm)",
-                                border: selectedQuiz === q.id ? "2px solid var(--accent-blue)" : "1px solid rgba(255,255,255,0.15)",
-                                background: selectedQuiz === q.id ? "rgba(30, 136, 229, 0.2)" : "rgba(255,255,255,0.05)",
+                                border: selectedQuiz === `${q.sourceAddress || ""}:${q.id}` ? "2px solid var(--accent-blue)" : "1px solid rgba(255,255,255,0.15)",
+                                background: selectedQuiz === `${q.sourceAddress || ""}:${q.id}` ? "rgba(30, 136, 229, 0.2)" : "rgba(255,255,255,0.05)",
                                 color: "#ffffff",
                                 cursor: "pointer",
                                 textAlign: "left",

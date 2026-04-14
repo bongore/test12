@@ -7,6 +7,7 @@ import Answer_select from "./components/answer_select";
 import Wait_Modal from "../../contract/wait_Modal";
 import { ACTION_TYPES, appendActivityLog } from "../../utils/activityLog";
 import { setRegisteredCorrectAnswer } from "../../utils/quizCorrectAnswerStore";
+import { quiz_address } from "../../contract/config";
 import "./create_quiz.css";
 
 function Create_quiz() {
@@ -46,7 +47,7 @@ function Create_quiz() {
     const create_quiz = async () => {
         if (correct !== "") {
             try {
-                const previousLength = Number(await Contract.get_quiz_lenght());
+                const previousLength = Number(await Contract.get_quiz_lenght(quiz_address));
                 const receipt = await Contract.create_quiz(
                     title,
                     explanation,
@@ -70,7 +71,7 @@ function Create_quiz() {
 
                 let createdQuizId = receipt?.logs?.[2]?.topics?.[2];
                 if (!createdQuizId) {
-                    const latestLength = Number(await Contract.get_quiz_lenght());
+                    const latestLength = Number(await Contract.get_quiz_lenght(quiz_address));
                     if (latestLength > previousLength) {
                         createdQuizId = String(latestLength - 1);
                     }
@@ -78,8 +79,8 @@ function Create_quiz() {
 
                 if (createdQuizId) {
                     const normalizedQuizId = BigInt(createdQuizId).toString();
-                    setRegisteredCorrectAnswer(normalizedQuizId, convertFullWidthNumbersToHalf(correct));
-                    navigate(`/answer_quiz/${normalizedQuizId}`);
+                    setRegisteredCorrectAnswer(normalizedQuizId, convertFullWidthNumbersToHalf(correct), quiz_address);
+                    navigate(`/answer_quiz/${normalizedQuizId}?c=${encodeURIComponent(quiz_address)}`);
                     return;
                 }
             } catch (error) {

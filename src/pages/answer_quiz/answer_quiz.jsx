@@ -15,6 +15,7 @@ import {
     saveDraft,
 } from "../../utils/activityLog";
 import { recordPracticeAttempt } from "../../utils/courseEnhancements";
+import { buildQuizStorageKey } from "../../utils/quizCorrectAnswerStore";
 import {
     QUIZ_INPUT_MODE_PLAIN,
     QUIZ_INPUT_MODE_REGEX,
@@ -149,8 +150,11 @@ function Answer_quiz() {
     const contract = useMemo(() => new Contracts_MetaMask(), []);
     const access = useAccessControl(contract);
     const id = useParams().id;
-    const isPracticeMode = new URLSearchParams(location.search).get("practice") === "1";
-    const draftKey = `quiz_answer_${id}`;
+    const searchParams = new URLSearchParams(location.search);
+    const sourceAddress = searchParams.get("c") || "";
+    const isPracticeMode = searchParams.get("practice") === "1";
+    const draftKey = `quiz_answer_${String(sourceAddress || "default").toLowerCase()}_${id}`;
+    const answerStorageKey = buildQuizStorageKey(id, sourceAddress);
     const pageOpenedAtRef = useRef(Date.now());
     const answerStartedAtRef = useRef(null);
     const textChangeCountRef = useRef(0);
@@ -213,19 +217,19 @@ function Answer_quiz() {
         });
 
         try {
-            const quizData = await contract.get_quiz(id);
-            const simpleQuizData = await contract.get_quiz_simple(id);
+            const quizData = await contract.get_quiz(id, sourceAddress);
+            const simpleQuizData = await contract.get_quiz_simple(id, sourceAddress);
             setQuiz(quizData);
             setSimpleQuiz(simpleQuizData);
 
             if (Number(simpleQuizData[10]) !== 0) {
-                const cachedAnswer = localStorage.getItem(`quiz_${id}_answer`) || "";
+                const cachedAnswer = localStorage.getItem(answerStorageKey) || "";
                 setSavedAnswerStr(cachedAnswer);
                 if (cachedAnswer) {
                     setAnswer(cachedAnswer);
                 }
             } else {
-                localStorage.removeItem(`quiz_${id}_answer`);
+                localStorage.removeItem(answerStorageKey);
                 setSavedAnswerStr("");
                 const draft = getDraft(draftKey);
                 if (draft) {
@@ -333,7 +337,7 @@ function Answer_quiz() {
         });
 
         try {
-            await contract.create_answer(id, finalAnswer, setShow, setContent);
+            await contract.create_answer(id, finalAnswer, setShow, setContent, sourceAddress);
             setSavedAnswerStr(finalAnswer);
             setAnswer(finalAnswer);
             clearDraft(draftKey);
@@ -385,7 +389,7 @@ function Answer_quiz() {
         setNow(Math.floor(Date.now() / 1000));
         // contract instance is intentionally recreated locally.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [access.canAnswerQuiz, access.isLoading, id]);
+    }, [access.canAnswerQuiz, access.isLoading, id, sourceAddress]);
 
     useEffect(() => {
         if (!answer || !simpleQuiz || Number(simpleQuiz[10]) !== 0) return;
@@ -415,9 +419,9 @@ function Answer_quiz() {
             quizId: id,
             rawStatus,
             derivedStatus: rawStatus,
-            hasLocalCachedAnswer: Boolean(localStorage.getItem(`quiz_${id}_answer`)),
+            hasLocalCachedAnswer: Boolean(localStorage.getItem(answerStorageKey)),
         });
-    }, [id, simpleQuiz]);
+    }, [answerStorageKey, id, simpleQuiz]);
 
     useEffect(() => {
         const timer = window.setInterval(() => {
@@ -477,7 +481,7 @@ function Answer_quiz() {
         );
     }
 
-    const localCachedAnswer = localStorage.getItem(`quiz_${id}_answer`);
+    const localCachedAnswer = localStorage.getItem(answerStorageKey);
     const rawStatus = Number(simpleQuiz[10]);
     const status = rawStatus;
     const deadlineEpoch = Number(quiz?.[9] || 0);

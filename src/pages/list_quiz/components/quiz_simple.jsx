@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { buildQuizStorageKey } from "../../../utils/quizCorrectAnswerStore";
 import "./quiz_simple.css";
 
 const QUIZ_STATUS = {
@@ -110,6 +111,8 @@ function Simple_quiz(props) {
     const limit = Number(props.quiz[9]);
     const status = Number(props.quiz[10]);
     const isPaid = props.quiz[11];
+    const sourceAddress = props.quiz.sourceAddress || props.quiz[12] || "";
+    const answerStorageKey = buildQuizStorageKey(quizId, sourceAddress);
     const currentEpoch = props.currentEpoch ?? Math.floor(Date.now() / 1000);
     const correctAnswer = props.correctAnswer || "";
     const scheduleLabel = currentEpoch < startTime ? "公開予約" : (currentEpoch > deadline ? "締切済み" : "公開中");
@@ -124,14 +127,14 @@ function Simple_quiz(props) {
 
     useEffect(() => {
         if (status === QUIZ_STATUS.UNANSWERED) {
-            localStorage.removeItem(`quiz_${quizId}_answer`);
+            localStorage.removeItem(answerStorageKey);
         }
-    }, [quizId, status]);
+    }, [answerStorageKey, quizId, status]);
 
     const statusClass = getStatusClass(status);
     const statusLabel = getStatusLabel(status);
     const badgeClass = getBadgeClass(status);
-    const savedAnswer = localStorage.getItem(`quiz_${quizId}_answer`);
+    const savedAnswer = localStorage.getItem(answerStorageKey);
 
     const card = (
         <div className={`quiz-card glass-card ${statusClass} animate-slideUp`}>
@@ -211,14 +214,14 @@ function Simple_quiz(props) {
                     {props.canAnswerQuiz && (
                         <div style={{ display: "flex", gap: "8px", marginTop: "var(--space-3)", flexWrap: "wrap" }}>
                             <Link
-                                to={`/answer_quiz/${quizId}`}
+                                to={`/answer_quiz/${quizId}?c=${encodeURIComponent(sourceAddress)}`}
                                 className="btn-primary-custom"
                                 style={{ textDecoration: "none", flex: 1, minWidth: "140px", textAlign: "center", padding: "10px 14px" }}
                             >
                                 本番で回答
                             </Link>
                             <Link
-                                to={`/answer_quiz/${quizId}?practice=1`}
+                                to={`/answer_quiz/${quizId}?practice=1&c=${encodeURIComponent(sourceAddress)}`}
                                 className="btn-secondary-custom"
                                 style={{ textDecoration: "none", flex: 1, minWidth: "140px", textAlign: "center", padding: "10px 14px" }}
                             >

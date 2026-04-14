@@ -26,8 +26,12 @@ function Quiz_list(props) {
             }
 
             props.Set_quiz_list((quiz_list) => {
-                const existingIds = new Set(quiz_list.map((item) => Number(item?.[0])));
-                const nextItems = add_quiz_list.filter((item) => !existingIds.has(Number(item?.[0])));
+                const existingIds = new Set(
+                    quiz_list.map((item) => `${item?.sourceAddress || item?.[12] || ""}:${Number(item?.[0])}`)
+                );
+                const nextItems = add_quiz_list.filter(
+                    (item) => !existingIds.has(`${item?.sourceAddress || item?.[12] || ""}:${Number(item?.[0])}`)
+                );
                 return [...quiz_list, ...nextItems];
             });
             props.setLoadError?.("");

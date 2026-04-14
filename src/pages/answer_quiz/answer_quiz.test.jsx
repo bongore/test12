@@ -131,7 +131,8 @@ describe("Answer_quiz practice mode", () => {
                 "1",
                 "A",
                 expect.any(Function),
-                expect.any(Function)
+                expect.any(Function),
+                ""
             );
         });
         await waitFor(() => {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { Contracts_MetaMask } from "../../contract/contracts";
 import { useAccessControl } from "../../utils/accessControl";
 import "./investment_page.css";
@@ -19,7 +19,9 @@ function formatAnswerState(state) {
 
 function Investment_to_quiz() {
     const navigate = useNavigate();
+    const location = useLocation();
     const { id } = useParams();
+    const sourceAddress = new URLSearchParams(location.search).get("c") || "";
 
     const [amount, setAmount] = useState(0);
     const [isNotPayingOut, setIsNotPayingOut] = useState("true");
@@ -52,7 +54,7 @@ function Investment_to_quiz() {
             const rows = await Promise.all(
                 (Array.isArray(students) ? students : []).map(async (student) => {
                     const [userName] = await Contract.get_user_data(student);
-                    const answerDetail = await Contract.get_student_answer_detail(student, id);
+                    const answerDetail = await Contract.get_student_answer_detail(student, id, sourceAddress);
                     return {
                         address: student,
                         name: userName || "",
@@ -107,8 +109,9 @@ function Investment_to_quiz() {
                     isNotPayingOut,
                     submittedStudentAddresses.length || studentRows.length,
                     isNotAddingReward,
-                    submittedStudentAddresses
-                );
+                        submittedStudentAddresses,
+                        sourceAddress
+                    );
             } else {
                 const correctStudents = studentRows
                     .filter((row) => row.submitted && gradingMap[row.address] === "correct")
@@ -131,7 +134,8 @@ function Investment_to_quiz() {
                             "true",
                             studentRows.length,
                             isNotAddingReward,
-                            []
+                            [],
+                            sourceAddress
                         );
                     }
                 } else {
@@ -141,7 +145,8 @@ function Investment_to_quiz() {
                         confirmAnswer,
                         correctStudents,
                         incorrectStudents,
-                        isNotAddingReward
+                        isNotAddingReward,
+                        sourceAddress
                     );
                 }
             }
@@ -156,7 +161,7 @@ function Investment_to_quiz() {
         loadStudentSubmissions();
         // quiz id changes when another quiz is selected.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [id]);
+    }, [id, sourceAddress]);
 
     if (access.isLoading) {
         return <div className="investment-page">権限を確認中です...</div>;

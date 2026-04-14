@@ -100,6 +100,7 @@ function Simple_quiz(props) {
     const status = Number(quiz[QUIZ_INDEX.STATUS]);
     const startTime = Number(quiz[QUIZ_INDEX.START_TIME]);
     const deadline = Number(quiz[QUIZ_INDEX.DEADLINE]);
+    const sourceAddress = quiz.sourceAddress || quiz[12] || "";
     const statusInfo = STATUS_MAP[status] || { label: "", className: "", glow: "" };
 
     async function get_is_payment(id) {
@@ -108,7 +109,7 @@ function Simple_quiz(props) {
             setIs_payment(localPaymentState);
             return;
         }
-        setIs_payment(await contract.get_is_payment(id));
+        setIs_payment(await contract.get_is_payment(id, sourceAddress));
     }
 
     useEffect(() => {
@@ -118,7 +119,7 @@ function Simple_quiz(props) {
     return (
         <div className={`edit-quiz-card glass-card ${statusInfo.glow} ${is_payment ? 'payment-warning' : ''}`}>
             <Link 
-                to={{ pathname: "/answer_quiz/" + quizId }}
+                to={{ pathname: `/answer_quiz/${quizId}?c=${encodeURIComponent(sourceAddress)}` }}
                 state={{ back_page: 0 }}
                 className="quiz-card-link"
             >
@@ -158,13 +159,13 @@ function Simple_quiz(props) {
             </Link>
             <div className="quiz-card-actions">
                 <Link 
-                    to={`/edit_quiz/${quizId}`} 
+                    to={`/edit_quiz/${quizId}?c=${encodeURIComponent(sourceAddress)}`} 
                     className="btn-edit"
                 >
                     ✏️ 編集
                 </Link>
                 <Link 
-                    to={`/investment_page/${quizId}`} 
+                    to={`/investment_page/${quizId}?c=${encodeURIComponent(sourceAddress)}`} 
                     className="btn-reward"
                 >
                     💰 報酬の追加
