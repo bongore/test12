@@ -23,6 +23,13 @@ function makeInternalId(prefix, index) {
     return `${prefix}-${String(index + 1).padStart(3, "0")}`;
 }
 
+function formatShortAddress(address = "") {
+    const normalized = String(address || "");
+    if (!normalized || normalized === "-") return "-";
+    if (normalized.length < 12) return normalized;
+    return `${normalized.slice(0, 6)}...${normalized.slice(-4)}`;
+}
+
 function buildActorDirectory(students, staffs) {
     const directory = {};
 
@@ -34,6 +41,7 @@ function buildActorDirectory(students, staffs) {
             internalId: index === 0 ? makeInternalId("ADMIN", 0) : makeInternalId("TEACHER", index - 1),
             address,
             normalizedAddress: normalized,
+            actorHint: formatShortAddress(address),
         };
     });
 
@@ -46,6 +54,7 @@ function buildActorDirectory(students, staffs) {
                 internalId: makeInternalId("STUDENT", index),
                 address,
                 normalizedAddress: key,
+                actorHint: formatShortAddress(address),
             };
         }
     });
@@ -66,6 +75,7 @@ function resolveActorMeta(log, directory) {
             internalId: `TEMP-${candidate.slice(-4).toUpperCase()}`,
             address: log.actor || log.address || "",
             normalizedAddress: candidate,
+            actorHint: `未登録ウォレット ${formatShortAddress(log.actor || log.address || "")}`,
         };
     }
 
@@ -77,6 +87,7 @@ function resolveActorMeta(log, directory) {
         internalId: `GUEST-${suffix || "LOCAL"}`,
         address: "-",
         normalizedAddress: "",
+        actorHint: "ウォレット未接続の操作",
     };
 }
 
@@ -123,6 +134,7 @@ function groupActorActivity(logs) {
             internalId: log.actorMeta.internalId,
             roleLabel: log.actorMeta.roleLabel,
             address: log.actorMeta.address,
+            actorHint: log.actorMeta.actorHint,
             count: 0,
             lastSeenAt: log.createdAt,
             categories: new Set(),
@@ -401,6 +413,7 @@ function Analytics_dashboard({ cont }) {
                         >
                             <div className="analytics-actor-title">{item.internalId}</div>
                             <div className="analytics-actor-meta">{item.roleLabel} / {item.count} 件</div>
+                            <div className="analytics-actor-meta">{item.actorHint || formatShortAddress(item.address)}</div>
                             <div className="analytics-actor-meta">{item.categories}</div>
                             <div className="analytics-actor-meta">{formatDateTime(item.lastSeenAt)}</div>
                         </button>
@@ -453,6 +466,7 @@ function Analytics_dashboard({ cont }) {
                                 <div className="analytics-detail-card"><div className="analytics-label">行動</div><div className="analytics-detail-value">{formatActionLabel(selectedLog.action)}</div></div>
                                 <div className="analytics-detail-card"><div className="analytics-label">識別番号</div><div className="analytics-detail-value">{selectedLog.actorMeta.internalId}</div></div>
                                 <div className="analytics-detail-card"><div className="analytics-label">権限</div><div className="analytics-detail-value">{selectedLog.actorMeta.roleLabel}</div></div>
+                                <div className="analytics-detail-card"><div className="analytics-label">識別補足</div><div className="analytics-detail-value">{selectedLog.actorMeta.actorHint || "-"}</div></div>
                                 <div className="analytics-detail-card"><div className="analytics-label">ウォレット</div><div className="analytics-detail-value analytics-text">{selectedLog.actorMeta.address}</div></div>
                                 <div className="analytics-detail-card"><div className="analytics-label">ページ</div><div className="analytics-detail-value">{selectedLog.page || "-"}</div></div>
                                 <div className="analytics-detail-card"><div className="analytics-label">対象ID</div><div className="analytics-detail-value">{selectedLog.quizId || "-"}</div></div>
