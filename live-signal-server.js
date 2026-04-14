@@ -265,6 +265,30 @@ function getReactionTotals(source = currentReactionSession?.reactionEvents) {
     return totals;
 }
 
+function buildReactionTimeline(events = []) {
+    const buckets = new Map();
+    for (const event of Array.isArray(events) ? events : []) {
+        if (!REACTION_KEYS.includes(event?.reaction)) continue;
+        const iso = String(event.at || "");
+        const bucketKey = iso ? iso.slice(0, 16) : "";
+        if (!bucketKey) continue;
+        if (!buckets.has(bucketKey)) {
+            buckets.set(bucketKey, {
+                time: bucketKey,
+                understood: 0,
+                repeat: 0,
+                slow: 0,
+                fast: 0,
+                total: 0,
+            });
+        }
+        const bucket = buckets.get(bucketKey);
+        bucket[event.reaction] += 1;
+        bucket.total += 1;
+    }
+    return Array.from(buckets.values()).sort((left, right) => String(left.time).localeCompare(String(right.time)));
+}
+
 function serializeReactionSession(session, clientId = "") {
     if (!session) return null;
     return {
@@ -276,6 +300,7 @@ function serializeReactionSession(session, clientId = "") {
         currentReaction: clientId ? (session.clientReactions.get(clientId) || "") : "",
         totalReactionCount: Array.isArray(session.reactionEvents) ? session.reactionEvents.length : 0,
         recentReactionEvents: Array.isArray(session.reactionEvents) ? session.reactionEvents.slice(-12) : [],
+        reactionTimeline: buildReactionTimeline(session.reactionEvents),
         messageCount: Array.isArray(session.messages) ? session.messages.length : 0,
     };
 }

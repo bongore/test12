@@ -1018,6 +1018,15 @@ function Live_page(props) {
                                                     ))}
                                                     <span>総押下: {session.totalReactionCount || 0}</span>
                                                 </div>
+                                                {Array.isArray(session.reactionTimeline) && session.reactionTimeline.length > 0 ? (
+                                                    <div className="board-session-reaction-values" style={{ marginTop: "8px", display: "grid", gap: "4px" }}>
+                                                        {session.reactionTimeline.slice(-5).map((bucket) => (
+                                                            <span key={`${session.id}_${bucket.time}`}>
+                                                                {formatSessionTime(bucket.time)} / わかった {bucket.understood} / もう一度 {bucket.repeat} / ゆっくり {bucket.slow} / 速い {bucket.fast} / 合計 {bucket.total}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                ) : null}
                                             </div>
                                         ))}
                                     </div>

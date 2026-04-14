@@ -94,6 +94,7 @@ function View_live_history() {
                                     <th>ゆっくり</th>
                                     <th>速い</th>
                                     <th>最近の押下ログ</th>
+                                    <th>時間帯ごとの集計</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -113,6 +114,14 @@ function View_live_history() {
                                                 : session.recentReactionEvents
                                                     .slice(-5)
                                                     .map((event) => `${formatDateTime(event.at)} ${event.displayName || "-"}: ${event.reaction}`)
+                                                    .join(" / ")}
+                                        </td>
+                                        <td className="log-message">
+                                            {(session.reactionTimeline || []).length === 0
+                                                ? "-"
+                                                : session.reactionTimeline
+                                                    .slice(-8)
+                                                    .map((bucket) => `${formatDateTime(bucket.time)} わかった${bucket.understood} もう一度${bucket.repeat} ゆっくり${bucket.slow} 速い${bucket.fast} 合計${bucket.total}`)
                                                     .join(" / ")}
                                         </td>
                                     </tr>
