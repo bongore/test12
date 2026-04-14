@@ -8,13 +8,8 @@ import Wait_Modal from "../../contract/wait_Modal";
 import { ACTION_TYPES, appendActivityLog } from "../../utils/activityLog";
 import { setRegisteredCorrectAnswer } from "../../utils/quizCorrectAnswerStore";
 import { quiz_address } from "../../contract/config";
+import { MAX_TFT_PER_LECTURE, MAX_TFT_TOTAL, QUIZ_RATE_OPTIONS, TOTAL_LECTURE_COUNT } from "../../utils/quizRewardRate";
 import "./create_quiz.css";
-
-const QUIZ_RATE_OPTIONS = [
-    { id: "light", point: 0.3, reward: 15, label: "0.3点 / 15TFT" },
-    { id: "middle", point: 0.6, reward: 30, label: "0.6点 / 30TFT" },
-    { id: "heavy", point: 1.2, reward: 60, label: "1.2点 / 60TFT" },
-];
 
 function Create_quiz() {
     const navigate = useNavigate();
@@ -166,7 +161,7 @@ function Create_quiz() {
                         <div style={{ color: "rgba(255,255,255,0.82)", lineHeight: 1.7 }}>
                             0.3点 × 2問、0.6点 × 2問、1.2点 × 1問
                             <br />
-                            1講義あたり最大 150TFT、全5回で最大 750TFT
+                            1講義あたり最大 {MAX_TFT_PER_LECTURE}TFT、全{TOTAL_LECTURE_COUNT}回で最大 {MAX_TFT_TOTAL}TFT
                         </div>
                     </div>
                 </div>

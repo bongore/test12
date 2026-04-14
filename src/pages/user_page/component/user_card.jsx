@@ -1,3 +1,5 @@
+import { convertTftToPoint } from "../../../utils/quizRewardRate";
+
 function User_card(props) {
     const isCurrentWallet = String(props.connectedAddress || "").toLowerCase() === String(props.address || "").toLowerCase();
     const registrationDate = props.registrationInfo?.addedAt
@@ -144,7 +146,7 @@ function User_card(props) {
                     <div className="user-stat-icon">S</div>
                     <div className="user-stat-info">
                         <span className="user-stat-label">獲得点数</span>
-                        <span className="user-stat-value">{Number(props.result) / 40}点</span>
+                        <span className="user-stat-value">{convertTftToPoint(props.result).toFixed(1)}点</span>
                     </div>
                 </div>
             </div>

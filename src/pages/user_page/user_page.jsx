@@ -8,6 +8,7 @@ import User_card from "./component/user_card";
 import { useRef } from "react";
 import { buildBadgeSet, buildReviewList, getCourseEnhancementSnapshot } from "../../utils/courseEnhancements";
 import { bootstrap_teacher_addresses } from "../../contract/config";
+import { MAX_TFT_PER_LECTURE, MAX_TFT_TOTAL, QUIZ_RATE_OPTIONS, TOTAL_LECTURE_COUNT, TFT_PER_POINT } from "../../utils/quizRewardRate";
 
 function normalizeAddress(address) {
     return String(address || "").toLowerCase();
@@ -121,6 +122,17 @@ function User_page(props) {
                     connectedAddress={connectedAddress}
                     cont={cont}
                 />
+
+                <div className="glass-card" style={{ padding: "var(--space-5)", marginBottom: "var(--space-5)" }}>
+                    <h2 className="heading-md" style={{ marginBottom: "var(--space-3)" }}>Web3小テストの配点レート</h2>
+                    <div style={{ color: "rgba(255,255,255,0.8)", lineHeight: 1.8 }}>
+                        {QUIZ_RATE_OPTIONS.map((item) => item.label).join(" / ")}
+                        <br />
+                        1点 = {TFT_PER_POINT}TFT
+                        <br />
+                        1講義あたり最大 {MAX_TFT_PER_LECTURE}TFT、全{TOTAL_LECTURE_COUNT}回で最大 {MAX_TFT_TOTAL}TFT
+                    </div>
+                </div>
 
                 {loadError ? (
                     <div className="glass-card" style={{ padding: "var(--space-5)", marginBottom: "var(--space-5)", color: "#fff" }}>

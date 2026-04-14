@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Contracts_MetaMask } from "../../contract/contracts";
 import { getAnnouncements, subscribeAnnouncements } from "../../utils/courseEnhancements";
 import { useAccessControl } from "../../utils/accessControl";
+import { convertTftToPoint } from "../../utils/quizRewardRate";
 import "./dashboard.css";
 
 function Dashboard() {
@@ -60,6 +61,7 @@ function Dashboard() {
 
     const answeredCount = userData ? userData[2] : 0;
     const score = userData ? Number(userData[2]) / (10 ** 18) : 0;
+    const pointScore = convertTftToPoint(score);
 
     if (loading) {
         return (
@@ -129,9 +131,9 @@ function Dashboard() {
                 <div className="stat-card yellow">
                     <div className="stat-card-icon">⭐</div>
                     <div className="stat-card-value">
-                        {score > 0 ? score.toFixed(1) : "0"}
+                        {pointScore > 0 ? pointScore.toFixed(1) : "0"}
                     </div>
-                    <div className="stat-card-label">獲得スコア</div>
+                    <div className="stat-card-label">獲得点数</div>
                 </div>
             </div>
 
