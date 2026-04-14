@@ -27,6 +27,7 @@ let activeBroadcast = null;
 let pinnedNotice = null;
 let reactionSessionHistory = [];
 let boardSessionHistory = [];
+let deletedBoardMessagesBySession = {};
 
 function createDefaultReactions() {
     return {
@@ -88,11 +89,24 @@ function serializeBoardSessionForStorage(session) {
     return {
         ...session,
         messages: Array.isArray(session.messages)
-            ? session.messages.map((message) => ({
-                ...message,
-                likedBy: Array.from(message.likedBy || []),
-            }))
+            ? session.messages.map((message) => serializeBoardMessageForStorage(message))
             : [],
+    };
+}
+
+function serializeBoardMessageForStorage(message) {
+    if (!message) return null;
+    return {
+        ...message,
+        likedBy: Array.from(message.likedBy || []),
+    };
+}
+
+function reviveBoardMessage(message) {
+    if (!message) return null;
+    return {
+        ...message,
+        likedBy: new Set(Array.isArray(message.likedBy) ? message.likedBy : []),
     };
 }
 
@@ -104,10 +118,7 @@ function reviveBoardSession(session, fallbackLabel = "現在の授業") {
         startedAt: session.startedAt || new Date().toISOString(),
         endedAt: session.endedAt || "",
         messages: Array.isArray(session.messages)
-            ? session.messages.map((message) => ({
-                ...message,
-                likedBy: new Set(Array.isArray(message.likedBy) ? message.likedBy : []),
-            }))
+            ? session.messages.map((message) => reviveBoardMessage(message))
             : [],
     };
 }
@@ -120,6 +131,15 @@ function persistState() {
             boardSessionHistory: boardSessionHistory.map((session) => serializeBoardSessionForStorage(session)),
             currentReactionSession: serializeReactionSessionForStorage(currentReactionSession),
             currentBoardSession: serializeBoardSessionForStorage(currentBoardSession),
+            deletedBoardMessagesBySession: Object.fromEntries(
+                Object.entries(deletedBoardMessagesBySession).map(([sessionId, entries]) => [
+                    sessionId,
+                    (Array.isArray(entries) ? entries : []).map((entry) => ({
+                        ...entry,
+                        message: serializeBoardMessageForStorage(entry.message),
+                    })),
+                ])
+            ),
         };
         fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(payload, null, 2), "utf8");
     } catch (error) {
@@ -142,6 +162,17 @@ function loadPersistedState() {
             : [];
         currentReactionSession = reviveReactionSession(payload?.currentReactionSession, "現在の授業");
         currentBoardSession = reviveBoardSession(payload?.currentBoardSession, "現在の授業");
+        deletedBoardMessagesBySession = Object.fromEntries(
+            Object.entries(payload?.deletedBoardMessagesBySession || {}).map(([sessionId, entries]) => [
+                String(sessionId),
+                (Array.isArray(entries) ? entries : [])
+                    .map((entry) => ({
+                        ...entry,
+                        message: reviveBoardMessage(entry.message),
+                    }))
+                    .filter((entry) => entry.message),
+            ])
+        );
     } catch (error) {
         console.error("Failed to load persisted live board state", error);
     }
@@ -291,6 +322,22 @@ function getSessionMessages(sessionId = "") {
     return archivedSession?.messages || [];
 }
 
+function rememberDeletedBoardMessage(sessionId, message, index) {
+    const normalizedSessionId = String(sessionId || "");
+    if (!normalizedSessionId || !message) return;
+    if (!deletedBoardMessagesBySession[normalizedSessionId]) {
+        deletedBoardMessagesBySession[normalizedSessionId] = [];
+    }
+    deletedBoardMessagesBySession[normalizedSessionId].push({
+        message,
+        index: Number(index),
+        deletedAt: new Date().toISOString(),
+    });
+    if (deletedBoardMessagesBySession[normalizedSessionId].length > 30) {
+        deletedBoardMessagesBySession[normalizedSessionId].splice(0, deletedBoardMessagesBySession[normalizedSessionId].length - 30);
+    }
+}
+
 function sendPresence(clientId) {
     const client = clients.get(clientId);
     if (!client) return;
@@ -356,18 +403,44 @@ function deleteBoardMessage(sessionId, messageId) {
     if (!normalizedSessionId || !normalizedMessageId) return false;
 
     if (String(currentBoardSession?.id || "") === normalizedSessionId) {
-        const beforeCount = currentBoardSession.messages.length;
-        currentBoardSession.messages = currentBoardSession.messages.filter((item) => String(item.id) !== normalizedMessageId);
-        if (currentBoardSession.messages.length !== beforeCount) persistState();
-        return currentBoardSession.messages.length !== beforeCount;
+        const targetIndex = currentBoardSession.messages.findIndex((item) => String(item.id) === normalizedMessageId);
+        if (targetIndex === -1) return false;
+        const [deletedMessage] = currentBoardSession.messages.splice(targetIndex, 1);
+        rememberDeletedBoardMessage(normalizedSessionId, deletedMessage, targetIndex);
+        persistState();
+        return true;
     }
 
     const session = boardSessionHistory.find((item) => String(item.id) === normalizedSessionId);
     if (!session) return false;
-    const beforeCount = session.messages.length;
-    session.messages = session.messages.filter((item) => String(item.id) !== normalizedMessageId);
-    if (session.messages.length !== beforeCount) persistState();
-    return session.messages.length !== beforeCount;
+    const targetIndex = session.messages.findIndex((item) => String(item.id) === normalizedMessageId);
+    if (targetIndex === -1) return false;
+    const [deletedMessage] = session.messages.splice(targetIndex, 1);
+    rememberDeletedBoardMessage(normalizedSessionId, deletedMessage, targetIndex);
+    persistState();
+    return true;
+}
+
+function restoreBoardMessage(sessionId) {
+    const normalizedSessionId = String(sessionId || "");
+    const deletedEntries = deletedBoardMessagesBySession[normalizedSessionId];
+    if (!normalizedSessionId || !Array.isArray(deletedEntries) || deletedEntries.length === 0) return null;
+
+    const restoredEntry = deletedEntries.pop();
+    if (deletedEntries.length === 0) {
+        delete deletedBoardMessagesBySession[normalizedSessionId];
+    }
+
+    const targetMessages = String(currentBoardSession?.id || "") === normalizedSessionId
+        ? currentBoardSession.messages
+        : boardSessionHistory.find((item) => String(item.id) === normalizedSessionId)?.messages;
+
+    if (!Array.isArray(targetMessages) || !restoredEntry?.message) return null;
+
+    const insertIndex = Math.max(0, Math.min(Number(restoredEntry.index || 0), targetMessages.length));
+    targetMessages.splice(insertIndex, 0, restoredEntry.message);
+    persistState();
+    return restoredEntry.message;
 }
 
 loadPersistedState();
@@ -565,8 +638,37 @@ wss.on("connection", (ws) => {
                 sessionId: String(message.sessionId || ""),
                 messageId: String(message.messageId || ""),
             });
+            broadcast({
+                type: "board-session-messages",
+                sessionId: String(message.sessionId || ""),
+                messages: getSessionMessages(message.sessionId).map(serializeBoardMessage),
+            });
             client.lastHeartbeatAt = Date.now();
             break;
+
+        case "board-restore-message": {
+            if (client.role !== "staff") return;
+            const restoredMessage = restoreBoardMessage(message.sessionId);
+            if (!restoredMessage) {
+                safeSend(ws, {
+                    type: "board-restore-failed",
+                    sessionId: String(message.sessionId || ""),
+                });
+                return;
+            }
+            broadcast({
+                type: "board-message-restored",
+                sessionId: String(message.sessionId || ""),
+                message: serializeBoardMessage(restoredMessage),
+            });
+            broadcast({
+                type: "board-session-messages",
+                sessionId: String(message.sessionId || ""),
+                messages: getSessionMessages(message.sessionId).map(serializeBoardMessage),
+            });
+            client.lastHeartbeatAt = Date.now();
+            break;
+        }
 
         case "board-view-session":
             safeSend(ws, {

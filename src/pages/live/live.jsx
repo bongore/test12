@@ -188,6 +188,7 @@ function Live_page(props) {
     const [boardSessionLabel, setBoardSessionLabel] = useState("");
     const [reactionSessionLabel, setReactionSessionLabel] = useState("");
     const [teacherNoticeDraft, setTeacherNoticeDraft] = useState("");
+    const [isRestoringBoardMessage, setIsRestoringBoardMessage] = useState(false);
     const [likedQuestionIds, setLikedQuestionIds] = useState([]);
     const [announcements, setAnnouncements] = useState(() => getAnnouncements().slice(0, 5));
     const wsRef = useRef(null);
@@ -510,6 +511,22 @@ function Live_page(props) {
         }
     };
 
+    const handleRestoreBoardMessage = () => {
+        if (!isTeacher || isRestoringBoardMessage) return;
+        const targetSessionId = String(selectedBoardSessionId || boardSession?.id || "");
+        if (!targetSessionId) return;
+
+        setIsRestoringBoardMessage(true);
+        const sent = sendSocketMessage({
+            type: "board-restore-message",
+            sessionId: targetSessionId,
+        });
+        if (!sent) {
+            setIsRestoringBoardMessage(false);
+            alert("掲示板サーバーに接続できていないため、削除コメントを復元できません。");
+        }
+    };
+
     const toggleReactionHistorySelection = (sessionId) => {
         const normalizedId = String(sessionId || "");
         setSelectedReactionHistoryIds((current) => (
@@ -612,11 +629,13 @@ function Live_page(props) {
                 socket.onclose = () => {
                     setSignalStatus("disconnected");
                     setBoardNotice("掲示板サーバーとの接続が切れました。しばらく待って再読み込みしてください。");
+                    setIsRestoringBoardMessage(false);
                 };
 
                 socket.onerror = () => {
                     setSignalStatus("error");
                     setBoardNotice("掲示板サーバーに接続できていません。少し待ってから再度お試しください。");
+                    setIsRestoringBoardMessage(false);
                 };
 
                 socket.onmessage = (event) => {
@@ -697,6 +716,14 @@ function Live_page(props) {
                                 ? message.messages.map(normalizeBoardMessage)
                                 : [],
                         }));
+                        if (String(message.sessionId || "") === String(boardSession?.id || "")) {
+                            const nextMessages = Array.isArray(message.messages)
+                                ? message.messages.map(normalizeBoardMessage)
+                                : [];
+                            setMessages(nextMessages);
+                            const latestSuperchat = [...nextMessages].reverse().find((item) => item.type === "superchat") || null;
+                            setPinnedSuperchat(latestSuperchat);
+                        }
                         break;
                     case "board-message-deleted":
                         if (String(message.sessionId || "") === String(boardSession?.id || "")) {
@@ -713,6 +740,29 @@ function Live_page(props) {
                         if (String(pinnedSuperchat?.id || "") === String(message.messageId || "")) {
                             setPinnedSuperchat(null);
                         }
+                        break;
+                    case "board-message-restored": {
+                        const restoredMessage = normalizeBoardMessage(message.message);
+                        if (String(message.sessionId || "") === String(boardSession?.id || "")) {
+                            setMessages((current) => upsertMessage(current, restoredMessage));
+                        }
+                        setSessionMessages((current) => {
+                            const targetSessionId = String(message.sessionId || "");
+                            const existing = current[targetSessionId] || [];
+                            return {
+                                ...current,
+                                [targetSessionId]: upsertMessage(existing, restoredMessage),
+                            };
+                        });
+                        if (restoredMessage.type === "superchat") {
+                            setPinnedSuperchat(restoredMessage);
+                        }
+                        setIsRestoringBoardMessage(false);
+                        break;
+                    }
+                    case "board-restore-failed":
+                        setIsRestoringBoardMessage(false);
+                        alert("復元できる削除コメントがありません。");
                         break;
                     case "message-blocked":
                         appendBoardLog({
@@ -1114,9 +1164,19 @@ function Live_page(props) {
                                                                         <option key={session.id} value={session.id}>
                                                                             {session.label} / {session.messageCount}件
                                                                         </option>
-                                                                    ))}
+                                                                ))}
                                                                 </select>
                                                             </div>
+                                                        </div>
+                                                        <div className="board-chat-restore-row">
+                                                            <button
+                                                                type="button"
+                                                                className="btn btn-secondary"
+                                                                onClick={handleRestoreBoardMessage}
+                                                                disabled={isRestoringBoardMessage}
+                                                            >
+                                                                {isRestoringBoardMessage ? "復元中..." : "直前の削除を元に戻す"}
+                                                            </button>
                                                         </div>
                                                     </div>
                                                 ) : null}

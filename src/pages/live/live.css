@@ -231,6 +231,11 @@
     font-weight: 700;
 }
 
+.board-chat-restore-row {
+    display: flex;
+    justify-content: flex-start;
+}
+
 .board-chat-toolbar-toggle {
     border: 1px solid rgba(0, 212, 255, 0.24);
     background: rgba(0, 212, 255, 0.16);
