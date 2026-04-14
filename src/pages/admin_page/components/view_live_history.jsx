@@ -88,10 +88,12 @@ function View_live_history() {
                                     <th>授業名</th>
                                     <th>開始</th>
                                     <th>終了</th>
+                                    <th>総押下</th>
                                     <th>わかった</th>
                                     <th>もう一度</th>
                                     <th>ゆっくり</th>
                                     <th>速い</th>
+                                    <th>最近の押下ログ</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -100,10 +102,19 @@ function View_live_history() {
                                         <td>{session.label || "-"}</td>
                                         <td>{formatDateTime(session.startedAt)}</td>
                                         <td>{formatDateTime(session.endedAt)}</td>
+                                        <td>{session.totalReactionCount || 0}</td>
                                         <td>{session.reactions?.understood || 0}</td>
                                         <td>{session.reactions?.repeat || 0}</td>
                                         <td>{session.reactions?.slow || 0}</td>
                                         <td>{session.reactions?.fast || 0}</td>
+                                        <td className="log-message">
+                                            {(session.recentReactionEvents || []).length === 0
+                                                ? "-"
+                                                : session.recentReactionEvents
+                                                    .slice(-5)
+                                                    .map((event) => `${formatDateTime(event.at)} ${event.displayName || "-"}: ${event.reaction}`)
+                                                    .join(" / ")}
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>

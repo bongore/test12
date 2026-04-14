@@ -45,6 +45,7 @@ function createReactionSession(label = "") {
         startedAt: new Date().toISOString(),
         endedAt: "",
         clientReactions: new Map(),
+        reactionEvents: [],
         messages: [],
     };
 }
@@ -68,6 +69,7 @@ function serializeReactionSessionForStorage(session) {
     return {
         ...session,
         clientReactions: Array.from((session.clientReactions || new Map()).entries()),
+        reactionEvents: Array.isArray(session.reactionEvents) ? session.reactionEvents : [],
         messages: Array.isArray(session.messages) ? session.messages : [],
     };
 }
@@ -80,6 +82,7 @@ function reviveReactionSession(session, fallbackLabel = "現在の授業") {
         startedAt: session.startedAt || new Date().toISOString(),
         endedAt: session.endedAt || "",
         clientReactions: new Map(Array.isArray(session.clientReactions) ? session.clientReactions : []),
+        reactionEvents: Array.isArray(session.reactionEvents) ? session.reactionEvents : [],
         messages: Array.isArray(session.messages) ? session.messages : [],
     };
 }
@@ -243,8 +246,17 @@ function serializeBoardMessage(message) {
     };
 }
 
-function getReactionTotals(source = currentReactionSession?.clientReactions) {
+function getReactionTotals(source = currentReactionSession?.reactionEvents) {
     const totals = createDefaultReactions();
+    if (Array.isArray(source)) {
+        for (const event of source) {
+            if (REACTION_KEYS.includes(event?.reaction)) {
+                totals[event.reaction] += 1;
+            }
+        }
+        return totals;
+    }
+
     for (const reaction of (source || new Map()).values()) {
         if (REACTION_KEYS.includes(reaction)) {
             totals[reaction] += 1;
@@ -260,8 +272,10 @@ function serializeReactionSession(session, clientId = "") {
         label: session.label,
         startedAt: session.startedAt,
         endedAt: session.endedAt || "",
-        reactions: getReactionTotals(session.clientReactions),
+        reactions: getReactionTotals(session.reactionEvents),
         currentReaction: clientId ? (session.clientReactions.get(clientId) || "") : "",
+        totalReactionCount: Array.isArray(session.reactionEvents) ? session.reactionEvents.length : 0,
+        recentReactionEvents: Array.isArray(session.reactionEvents) ? session.reactionEvents.slice(-12) : [],
         messageCount: Array.isArray(session.messages) ? session.messages.length : 0,
     };
 }
@@ -576,6 +590,16 @@ wss.on("connection", (ws) => {
         case "board-reaction":
             if (!REACTION_KEYS.includes(message.reaction)) return;
             currentReactionSession.clientReactions.set(clientId, message.reaction);
+            currentReactionSession.reactionEvents.push({
+                reaction: message.reaction,
+                at: new Date().toISOString(),
+                clientId,
+                address: client.address || "",
+                displayName: client.displayName || getDisplayName(client),
+            });
+            if (currentReactionSession.reactionEvents.length > 500) {
+                currentReactionSession.reactionEvents.splice(0, currentReactionSession.reactionEvents.length - 500);
+            }
             persistState();
             notifyReactions(clientId);
             client.lastHeartbeatAt = Date.now();
@@ -584,6 +608,7 @@ wss.on("connection", (ws) => {
         case "board-reset-reactions":
             if (client.role !== "staff") return;
             currentReactionSession.clientReactions.clear();
+            currentReactionSession.reactionEvents = [];
             persistState();
             notifyReactions();
             client.lastHeartbeatAt = Date.now();

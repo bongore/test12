@@ -920,6 +920,9 @@ function Live_page(props) {
                                 <li>不適切なコメントやスパムは自動でブロックされます。</li>
                                 <li>質問モードで送ると、重要な質問として整理されます。</li>
                                 <li>多くの人が気になる質問は支持ボタンで上に集められます。</li>
+                                <li>講義中いつでもOKです。気づいたタイミングで押してください。</li>
+                                <li>新しい概念や用語の説明の後、演習前後にも積極的に使えます。</li>
+                                <li>教員は集計結果と押下時刻を見て、授業ペースを調整します。</li>
                             </ul>
                         </div>
 
@@ -1013,6 +1016,7 @@ function Live_page(props) {
                                                     {REACTION_OPTIONS.map((item) => (
                                                         <span key={item.key}>{item.label}: {session.reactions?.[item.key] || 0}</span>
                                                     ))}
+                                                    <span>総押下: {session.totalReactionCount || 0}</span>
                                                 </div>
                                             </div>
                                         ))}
@@ -1297,7 +1301,7 @@ function Live_page(props) {
                                 <div>
                                     <h3 className="board-panel-title" style={{ marginBottom: "4px" }}>理解度リアクション</h3>
                                     <p className="board-panel-text">
-                                        {reactionSessionDisplayLabel} / 開始 {formatSessionTime(reactionSession?.startedAt)}
+                                        {reactionSessionDisplayLabel} / 開始 {formatSessionTime(reactionSession?.startedAt)} / 総押下 {reactionSession?.totalReactionCount || 0}
                                     </p>
                                 </div>
                                 {isTeacher ? (
