@@ -124,7 +124,7 @@ function Simple_quiz(props) {
     return (
         <div className={`edit-quiz-card glass-card ${statusInfo.glow} ${is_payment ? 'payment-warning' : ''}`}>
             <Link 
-                to={{ pathname: `/answer_quiz/${quizId}?c=${encodeURIComponent(sourceAddress)}` }}
+                to={`/answer_quiz/${quizId}?c=${encodeURIComponent(sourceAddress)}`}
                 state={{ back_page: 0 }}
                 className="quiz-card-link"
             >
