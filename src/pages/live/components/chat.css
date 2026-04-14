@@ -40,7 +40,8 @@
     font-weight: 600;
     margin-right: 6px;
     font-size: 13px;
-    color: rgba(255, 255, 255, 0.7); /* 少し薄める */
+    color: #dff7ff;
+    text-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
 }
 
 .chat-user-button {
@@ -59,6 +60,16 @@
 .chat-user-button:not(:disabled):hover {
     color: #ffffff;
     text-decoration: underline;
+}
+
+.chat-message .chat-user-button {
+    font-weight: 700;
+}
+
+.chat-superchat .chat-user-button,
+.chat-superchat .superchat-user {
+    color: #fff7d6;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
 .chat-address-panel {
