@@ -27,11 +27,13 @@ function buildActorDirectory(students, staffs) {
     const directory = {};
 
     staffs.forEach((address, index) => {
+        const normalized = normalizeAddress(address);
         directory[normalizeAddress(address)] = {
-            role: "staff",
-            roleLabel: "先生 / TA",
-            internalId: makeInternalId("STAFF", index),
+            role: index === 0 ? "admin" : "teacher",
+            roleLabel: index === 0 ? "管理者" : "教員",
+            internalId: index === 0 ? makeInternalId("ADMIN", 0) : makeInternalId("TEACHER", index - 1),
             address,
+            normalizedAddress: normalized,
         };
     });
 
@@ -39,10 +41,11 @@ function buildActorDirectory(students, staffs) {
         const key = normalizeAddress(address);
         if (!directory[key]) {
             directory[key] = {
-                role: "user",
-                roleLabel: "ユーザー",
-                internalId: makeInternalId("USER", index),
+                role: "student",
+                roleLabel: "学生",
+                internalId: makeInternalId("STUDENT", index),
                 address,
+                normalizedAddress: key,
             };
         }
     });
@@ -58,10 +61,11 @@ function resolveActorMeta(log, directory) {
 
     if (candidate) {
         return {
-            role: "user",
-            roleLabel: "ユーザー",
-            internalId: `USER-TEMP-${candidate.slice(-4).toUpperCase()}`,
+            role: "temporary",
+            roleLabel: "一時ユーザー",
+            internalId: `TEMP-${candidate.slice(-4).toUpperCase()}`,
             address: log.actor || log.address || "",
+            normalizedAddress: candidate,
         };
     }
 
@@ -72,6 +76,7 @@ function resolveActorMeta(log, directory) {
         roleLabel: "未接続",
         internalId: `GUEST-${suffix || "LOCAL"}`,
         address: "-",
+        normalizedAddress: "",
     };
 }
 
@@ -178,11 +183,17 @@ function Analytics_dashboard({ cont }) {
 
     const actorDirectory = useMemo(() => buildActorDirectory(students, staffs), [students, staffs]);
 
-    const enrichedLogs = useMemo(() => logs.map((log) => ({
-        ...log,
-        actorMeta: resolveActorMeta(log, actorDirectory),
-        category: deriveCategory(log.action),
-    })), [logs, actorDirectory]);
+    const enrichedLogs = useMemo(() => logs
+        .map((log) => ({
+            ...log,
+            actorMeta: resolveActorMeta(log, actorDirectory),
+            category: deriveCategory(log.action),
+        }))
+        .filter((log) => (
+            log.actorMeta
+            && log.action !== ACTION_TYPES.LIVE_DUMMY_MESSAGE_EMITTED
+            && log.action !== ACTION_TYPES.LIVE_DUMMY_TOGGLE_CHANGED
+        )), [logs, actorDirectory]);
 
     const summary = useMemo(() => {
         const loginSuccess = enrichedLogs.filter((log) => log.action === ACTION_TYPES.LOGIN_SUCCESS).length;
@@ -353,8 +364,10 @@ function Analytics_dashboard({ cont }) {
                 </select>
                 <select className="form-control" value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}>
                     <option value="all">すべての権限</option>
-                    <option value="user">ユーザー</option>
-                    <option value="staff">先生 / TA</option>
+                    <option value="admin">管理者</option>
+                    <option value="teacher">教員</option>
+                    <option value="student">学生</option>
+                    <option value="temporary">一時ユーザー</option>
                     <option value="guest">未接続</option>
                 </select>
                 <select className="form-control" value={actorFilter} onChange={(event) => setActorFilter(event.target.value)}>
