@@ -15,6 +15,24 @@ function getReactionHistorySnapshot() {
     }
 }
 
+function downloadTextFile(filename, content, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
+
+function escapeCsv(value) {
+    const normalized = String(value ?? "");
+    if (!/[",\n]/.test(normalized)) return normalized;
+    return `"${normalized.replace(/"/g, "\"\"")}"`;
+}
+
 function View_live_history() {
     const [logs, setLogs] = useState(() => getBoardLogs());
     const [reactionHistory, setReactionHistory] = useState(() => getReactionHistorySnapshot());
@@ -61,6 +79,49 @@ function View_live_history() {
     const superchatCount = logs.filter((item) => item.type === "superchat" && item.status === "visible").length;
     const questionCount = logs.filter((item) => item.messageKind === "question" && item.status === "visible").length;
 
+    const exportBoardRows = useMemo(() => (
+        filteredLogs.map((item) => ({
+            createdAt: formatDateTime(item.createdAt),
+            status: item.status === "blocked" ? "ブロック" : "表示済み",
+            type: item.type === "superchat" ? "スーパーチャット" : "コメント",
+            messageKind: item.messageKind === "question" ? "質問" : "通常",
+            user: item.isAnonymous ? "匿名質問" : (item.user || "-"),
+            amount: item.type === "superchat" ? `${item.amount || 0} TTT` : "-",
+            likeCount: item.likeCount || 0,
+            text: item.text || "-",
+            reason: item.reason || "-",
+            categories: item.categories?.join(", ") || "-",
+        }))
+    ), [filteredLogs]);
+
+    const handleExportBoardJson = () => {
+        downloadTextFile(
+            "board_moderation_logs.json",
+            JSON.stringify(exportBoardRows, null, 2),
+            "application/json;charset=utf-8"
+        );
+    };
+
+    const handleExportBoardCsv = () => {
+        const rows = [
+            ["時刻", "状態", "種類", "投稿形式", "ユーザー", "金額", "支持", "本文", "理由", "カテゴリ"],
+            ...exportBoardRows.map((row) => [
+                row.createdAt,
+                row.status,
+                row.type,
+                row.messageKind,
+                row.user,
+                row.amount,
+                row.likeCount,
+                row.text,
+                row.reason,
+                row.categories,
+            ]),
+        ];
+        const csv = rows.map((row) => row.map(escapeCsv).join(",")).join("\n");
+        downloadTextFile("board_moderation_logs.csv", csv, "text/csv;charset=utf-8");
+    };
+
     return (
         <div className="log-section">
             <h3 className="section-title">掲示板監視</h3>
@@ -74,6 +135,11 @@ function View_live_history() {
                 <div className="log-summary-card"><div className="log-summary-label">ブロック</div><div className="log-summary-value">{blockedCount}</div></div>
                 <div className="log-summary-card"><div className="log-summary-label">スーパーチャット</div><div className="log-summary-value">{superchatCount}</div></div>
                 <div className="log-summary-card"><div className="log-summary-label">質問</div><div className="log-summary-value">{questionCount}</div></div>
+            </div>
+
+            <div className="csv-download-area" style={{ marginTop: 0, marginBottom: "16px" }}>
+                <button className="btn-action" onClick={handleExportBoardCsv}>📤 掲示板監視を CSV 出力</button>
+                <button className="btn-action" onClick={handleExportBoardJson}>📤 掲示板監視を JSON 出力</button>
             </div>
 
             <div className="glass-card" style={{ padding: "16px", marginBottom: "16px" }}>

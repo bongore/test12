@@ -2,6 +2,24 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Contracts_MetaMask } from "../../../contract/contracts";
 import { keccak256, toHex, encodePacked } from "viem";
 
+function downloadTextFile(filename, content, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
+
+function escapeCsv(value) {
+    const normalized = String(value ?? "");
+    if (!/[",\n]/.test(normalized)) return normalized;
+    return `"${normalized.replace(/"/g, "\"\"")}"`;
+}
+
 /**
  * 回答ハッシュ(bytes32)から、選択肢リスト(answer_data)を照合して元の回答文字列を復元する。
  * スマートコントラクト側では keccak256(abi.encodePacked(_answer)) でハッシュを保存しているため、
@@ -46,6 +64,45 @@ function View_answers() {
         if (!selectedRef) return "";
         return selectedRef.title || `問題 ${selectedRef.id}`;
     }, [quizList, selectedQuiz]);
+
+    const exportAnswerRows = useMemo(() => (
+        (answers || []).map((item, index) => ({
+            no: index + 1,
+            quizId: selectedQuiz ? selectedQuiz.split(":").slice(-1)[0] : "",
+            quizTitle: selectedQuizTitle || "",
+            walletAddress: item.address || "",
+            answer: item.answer || "未回答",
+            answerHash: item.hash || "",
+        }))
+    ), [answers, selectedQuiz, selectedQuizTitle]);
+
+    const handleExportAnswersJson = () => {
+        downloadTextFile(
+            `answers_${selectedQuizTitle || "quiz"}.json`,
+            JSON.stringify(exportAnswerRows, null, 2),
+            "application/json;charset=utf-8"
+        );
+    };
+
+    const handleExportAnswersCsv = () => {
+        const rows = [
+            ["No", "Quiz ID", "Quiz Title", "Wallet Address", "Answer", "Answer Hash"],
+            ...exportAnswerRows.map((row) => [
+                row.no,
+                row.quizId,
+                row.quizTitle,
+                row.walletAddress,
+                row.answer,
+                row.answerHash,
+            ]),
+        ];
+        const csv = rows.map((row) => row.map(escapeCsv).join(",")).join("\n");
+        downloadTextFile(
+            `answers_${selectedQuizTitle || "quiz"}.csv`,
+            csv,
+            "text/csv;charset=utf-8"
+        );
+    };
 
     // クイズ一覧を取得
     useEffect(() => {
@@ -197,6 +254,10 @@ function View_answers() {
                         </div>
                     ) : answers && answers.length > 0 ? (
                         <div className="results-table-wrap">
+                            <div className="csv-download-area" style={{ marginTop: 0, marginBottom: "16px" }}>
+                                <button className="btn-action" onClick={handleExportAnswersCsv}>📤 回答一覧を CSV 出力</button>
+                                <button className="btn-action" onClick={handleExportAnswersJson}>📤 回答一覧を JSON 出力</button>
+                            </div>
                             <table className="results-table">
                                 <thead>
                                     <tr>
