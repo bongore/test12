@@ -1328,6 +1328,19 @@ function Live_page(props) {
                                     </div>
                                 ) : null}
                             </div>
+                            {!isTeacher ? (
+                                <div className="reaction-guide-card">
+                                    <div className="reaction-guide-title">押すタイミング</div>
+                                    <div className="reaction-guide-grid">
+                                        <div className="reaction-guide-item">講義中いつでもOK<br />ボタンを押すだけです</div>
+                                        <div className="reaction-guide-item">新しい概念や用語の<br />説明の後</div>
+                                        <div className="reaction-guide-item">演習問題に<br />取り組む前</div>
+                                        <div className="reaction-guide-item">演習問題の解説を<br />聞いた後</div>
+                                        <div className="reaction-guide-item">教員が集計結果を見て<br />ペースを調整します</div>
+                                        <div className="reaction-guide-item">授業の妨げにならないので<br />積極的に使いましょう</div>
+                                    </div>
+                                </div>
+                            ) : null}
                             <div className="reaction-grid">
                                 {REACTION_OPTIONS.map((item) => (
                                     <button
