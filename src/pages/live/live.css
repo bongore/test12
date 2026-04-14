@@ -644,6 +644,18 @@
     border: 1px solid rgba(255, 255, 255, 0.07);
 }
 
+.reaction-timeline-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) minmax(220px, 0.9fr);
+    gap: 12px;
+    align-items: start;
+}
+
+.reaction-timeline-main {
+    display: grid;
+    gap: 6px;
+}
+
 .reaction-timeline-time {
     font-size: 12px;
     font-weight: 800;
@@ -656,6 +668,21 @@
     flex-wrap: wrap;
     color: var(--text-primary);
     font-size: 13px;
+}
+
+.reaction-timeline-memo {
+    display: grid;
+    gap: 6px;
+}
+
+.reaction-timeline-memo-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.reaction-timeline-memo-input {
+    min-width: 0;
 }
 
 @media screen and (max-width: 960px) {
@@ -677,6 +704,10 @@
 
     .reaction-guide-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .reaction-timeline-row {
+        grid-template-columns: 1fr;
     }
 }
 
@@ -754,6 +785,10 @@
     }
 
     .reaction-guide-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .reaction-timeline-row {
         grid-template-columns: 1fr;
     }
 }

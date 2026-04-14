@@ -38,11 +38,11 @@ const REACTION_TIMING_GUIDE = [
     "新しい概念や用語の説明の後",
     "演習問題に取り組む前",
     "演習問題の解説を聞いた後",
-    "教員が集計結果を見てペースを調整します",
     "授業の妨げにならないので積極的に使いましょう!",
 ];
 const REACTION_HISTORY_KEY = "board_reaction_history_snapshot_v1";
 const REACTION_HISTORY_DELETED_IDS_KEY = "board_reaction_history_deleted_ids_v1";
+const REACTION_TIMELINE_MEMO_KEY = "board_reaction_timeline_memos_v1";
 
 function createDefaultReactions() {
     return {
@@ -70,6 +70,16 @@ function persistDeletedReactionHistoryIds(ids) {
 function filterDeletedReactionHistory(history, deletedIds) {
     const deletedIdSet = new Set((deletedIds || []).map((id) => String(id)));
     return (Array.isArray(history) ? history : []).filter((session) => !deletedIdSet.has(String(session?.id || "")));
+}
+
+function getReactionTimelineMemos() {
+    try {
+        const raw = localStorage.getItem(REACTION_TIMELINE_MEMO_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (error) {
+        return {};
+    }
 }
 
 function formatSessionLabel(session) {
@@ -197,6 +207,7 @@ function Live_page(props) {
     const [reactionSessionLabel, setReactionSessionLabel] = useState("");
     const [teacherNoticeDraft, setTeacherNoticeDraft] = useState("");
     const [isRestoringBoardMessage, setIsRestoringBoardMessage] = useState(false);
+    const [reactionTimelineMemos, setReactionTimelineMemos] = useState(() => getReactionTimelineMemos());
     const [likedQuestionIds, setLikedQuestionIds] = useState([]);
     const [announcements, setAnnouncements] = useState(() => getAnnouncements().slice(0, 5));
     const wsRef = useRef(null);
@@ -266,6 +277,20 @@ function Live_page(props) {
         if (!socket || socket.readyState !== WebSocket.OPEN) return false;
         socket.send(JSON.stringify(payload));
         return true;
+    };
+
+    const getReactionMemoKey = (sessionId, bucketTime) => `${String(sessionId || "current")}::${String(bucketTime || "")}`;
+
+    const updateReactionTimelineMemo = (sessionId, bucketTime, value) => {
+        const memoKey = getReactionMemoKey(sessionId, bucketTime);
+        setReactionTimelineMemos((current) => {
+            const next = {
+                ...current,
+                [memoKey]: value,
+            };
+            localStorage.setItem(REACTION_TIMELINE_MEMO_KEY, JSON.stringify(next));
+            return next;
+        });
     };
 
     const syncBoardState = (boardState) => {
@@ -1366,13 +1391,27 @@ function Live_page(props) {
                                             <div className="reaction-timeline-list">
                                                 {currentReactionTimeline.map((bucket) => (
                                                     <div key={`${reactionSession?.id || "current"}_${bucket.time}`} className="reaction-timeline-item">
-                                                        <div className="reaction-timeline-time">{formatSessionTime(bucket.time)}</div>
-                                                        <div className="reaction-timeline-values">
-                                                            <span>わかった {bucket.understood}</span>
-                                                            <span>もう一度 {bucket.repeat}</span>
-                                                            <span>ゆっくり {bucket.slow}</span>
-                                                            <span>速い {bucket.fast}</span>
-                                                            <span>合計 {bucket.total}</span>
+                                                        <div className="reaction-timeline-row">
+                                                            <div className="reaction-timeline-main">
+                                                                <div className="reaction-timeline-time">{formatSessionTime(bucket.time)}</div>
+                                                                <div className="reaction-timeline-values">
+                                                                    <span>わかった {bucket.understood}</span>
+                                                                    <span>もう一度 {bucket.repeat}</span>
+                                                                    <span>ゆっくり {bucket.slow}</span>
+                                                                    <span>速い {bucket.fast}</span>
+                                                                    <span>合計 {bucket.total}</span>
+                                                                </div>
+                                                            </div>
+                                                            <div className="reaction-timeline-memo">
+                                                                <label className="reaction-timeline-memo-label">メモ</label>
+                                                                <input
+                                                                    type="text"
+                                                                    className="form-control-custom reaction-timeline-memo-input"
+                                                                    value={reactionTimelineMemos[getReactionMemoKey(reactionSession?.id || "current", bucket.time)] || ""}
+                                                                    onChange={(event) => updateReactionTimelineMemo(reactionSession?.id || "current", bucket.time, event.target.value)}
+                                                                    placeholder="この時点の様子をメモ"
+                                                                />
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 ))}
