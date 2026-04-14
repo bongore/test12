@@ -125,6 +125,27 @@ function formatCategoryLabel(category) {
     }
 }
 
+const HIDDEN_ANALYTICS_ACTIONS = new Set([
+    ACTION_TYPES.ROUTE_FALLBACK_SHOWN,
+    ACTION_TYPES.ANSWER_PATTERN_VALIDATION,
+    ACTION_TYPES.ANSWER_DRAFT_RESTORED,
+    ACTION_TYPES.ANSWER_DRAFT_SAVED,
+    ACTION_TYPES.ANSWER_DRAFT_CLEARED,
+    ACTION_TYPES.LIVE_AUTH_CHECK_STARTED,
+    ACTION_TYPES.LIVE_AUTH_CHECK,
+    ACTION_TYPES.LIVE_DUMMY_MESSAGE_EMITTED,
+    ACTION_TYPES.LIVE_DUMMY_TOGGLE_CHANGED,
+    ACTION_TYPES.LIVE_CAMERA_TOGGLE_CLICKED,
+    ACTION_TYPES.LIVE_CAMERA_STARTED,
+    ACTION_TYPES.LIVE_CAMERA_STOPPED,
+    ACTION_TYPES.LIVE_CAMERA_FAILED,
+    ACTION_TYPES.LIVE_PINNED_SUPERCHAT_CHANGED,
+    ACTION_TYPES.LIVE_CHAT_INPUT_CHANGED,
+    ACTION_TYPES.LIVE_CHAT_DRAFT_SAVED,
+    ACTION_TYPES.LIVE_CHAT_DRAFT_CLEARED,
+    ACTION_TYPES.PERFORMANCE_SAMPLE,
+]);
+
 function groupActorActivity(logs) {
     const map = new Map();
 
@@ -203,8 +224,7 @@ function Analytics_dashboard({ cont }) {
         }))
         .filter((log) => (
             log.actorMeta
-            && log.action !== ACTION_TYPES.LIVE_DUMMY_MESSAGE_EMITTED
-            && log.action !== ACTION_TYPES.LIVE_DUMMY_TOGGLE_CHANGED
+            && !HIDDEN_ANALYTICS_ACTIONS.has(log.action)
         )), [logs, actorDirectory]);
 
     const summary = useMemo(() => {
@@ -213,7 +233,8 @@ function Analytics_dashboard({ cont }) {
         const liveMessages = enrichedLogs.filter((log) => (
             log.action === ACTION_TYPES.LIVE_MESSAGE_SENT
             || log.action === ACTION_TYPES.LIVE_SUPERCHAT_SENT
-            || log.action === ACTION_TYPES.LIVE_DUMMY_MESSAGE_EMITTED
+            || log.action === ACTION_TYPES.LIVE_QUESTION_LIKED
+            || log.action === ACTION_TYPES.LIVE_ANNOUNCEMENT_PUBLISHED
         )).length;
         const quizLoads = enrichedLogs
             .filter((log) => log.action === ACTION_TYPES.QUIZ_LOAD_SUCCESS && typeof log.durationMs === "number")
