@@ -208,6 +208,7 @@ function serializeBoardMessage(message) {
         isQuestion: message.isQuestion,
         isAnonymous: message.isAnonymous,
         likeCount: message.likedBy.size,
+        senderAddress: message.senderAddress || "",
     };
 }
 
@@ -469,6 +470,7 @@ wss.on("connection", (ws) => {
                 isQuestion: Boolean(message.isQuestion),
                 isAnonymous: Boolean(message.isAnonymous),
                 likedBy: new Set(),
+                senderAddress: message.senderAddress || client.address || "",
             };
 
             currentBoardSession.messages.push(nextMessage);

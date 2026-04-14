@@ -142,6 +142,7 @@ function normalizeBoardMessage(message) {
         likeCount: Number(message.likeCount || 0),
         recipientLabel: message.recipientLabel || "",
         recipientAddress: message.recipientAddress || "",
+        senderAddress: message.senderAddress || "",
     };
 }
 
@@ -327,6 +328,7 @@ function Live_page(props) {
             isAnonymous: Boolean(options.isAnonymous),
             recipientLabel: type === "superchat" ? (superchatRecipient?.label || "教員側") : "",
             recipientAddress: type === "superchat" ? (superchatRecipient?.address || options.recipientAddress || "") : "",
+            senderAddress: access.address || "",
         };
 
         const sent = sendSocketMessage(payload);

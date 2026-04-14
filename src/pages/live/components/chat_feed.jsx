@@ -1,7 +1,9 @@
-import React from "react";
+import React, { useState } from "react";
 import "./chat.css";
 
 function Chat_feed({ messages, onQuestionLike, likedQuestionIds, canModerate = false, onDeleteMessage }) {
+    const [openedAddressMessageId, setOpenedAddressMessageId] = useState("");
+
     // 金額に応じたスーパーチャットのカラークラスを取得
     const getSuperchatColorClass = (amount) => {
         if (amount >= 1000) return "superchat-red";
@@ -9,6 +11,10 @@ function Chat_feed({ messages, onQuestionLike, likedQuestionIds, canModerate = f
         if (amount >= 100) return "superchat-orange";
         if (amount >= 50) return "superchat-green";
         return "superchat-blue";
+    };
+
+    const toggleAddress = (messageId) => {
+        setOpenedAddressMessageId((current) => (current === messageId ? "" : messageId));
     };
 
     return (
@@ -45,7 +51,15 @@ function Chat_feed({ messages, onQuestionLike, likedQuestionIds, canModerate = f
                     {msg.type === "superchat" && (
                         <div className="superchat-header">
                             <span className="superchat-amount">{msg.amount} TTT</span>
-                            <span className="superchat-user">{msg.user}</span>
+                            <button
+                                type="button"
+                                className="chat-user-button superchat-user"
+                                onClick={() => toggleAddress(msg.id)}
+                                disabled={!msg.senderAddress}
+                                title={msg.senderAddress ? "タップで送信者アドレスを表示" : ""}
+                            >
+                                {msg.user}
+                            </button>
                             {msg.recipientLabel ? (
                                 <span className="superchat-user">→ {msg.recipientLabel}</span>
                             ) : null}
@@ -53,10 +67,24 @@ function Chat_feed({ messages, onQuestionLike, likedQuestionIds, canModerate = f
                     )}
                     <div className="chat-message-content">
                         {msg.type !== "superchat" && (
-                            <span className="chat-user text-muted">{msg.user}: </span>
+                            <button
+                                type="button"
+                                className="chat-user-button chat-user text-muted"
+                                onClick={() => toggleAddress(msg.id)}
+                                disabled={!msg.senderAddress}
+                                title={msg.senderAddress ? "タップで送信者アドレスを表示" : ""}
+                            >
+                                {msg.user}:
+                            </button>
                         )}
                         <span className="chat-text" style={{ color: "#ffffff", opacity: 0.9 }}>{msg.text}</span>
                     </div>
+                    {openedAddressMessageId === msg.id && msg.senderAddress ? (
+                        <div className="chat-address-panel">
+                            <span className="chat-address-label">送信者アドレス</span>
+                            <span className="chat-address-value">{msg.senderAddress}</span>
+                        </div>
+                    ) : null}
                 </div>
             ))}
         </div>
