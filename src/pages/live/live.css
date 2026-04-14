@@ -675,6 +675,21 @@
     gap: 6px;
 }
 
+.reaction-timeline-delete {
+    justify-self: end;
+    border: 1px solid rgba(255, 132, 132, 0.55);
+    background: rgba(120, 24, 24, 0.35);
+    color: #ffd9d9;
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.reaction-timeline-delete:hover {
+    background: rgba(160, 36, 36, 0.5);
+}
+
 .reaction-timeline-memo-label {
     font-size: 12px;
     font-weight: 700;

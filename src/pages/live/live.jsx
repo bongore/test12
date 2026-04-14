@@ -53,6 +53,32 @@ function createDefaultReactions() {
     };
 }
 
+function removeTimelineBucketFromSession(session, bucketTime) {
+    if (!session || !bucketTime) return session;
+    const normalizedBucketTime = String(bucketTime).slice(0, 16);
+    const nextEvents = Array.isArray(session.reactionEvents)
+        ? session.reactionEvents.filter((event) => String(event?.at || "").slice(0, 16) !== normalizedBucketTime)
+        : [];
+    const nextTimeline = Array.isArray(session.reactionTimeline)
+        ? session.reactionTimeline.filter((bucket) => String(bucket?.time || "").slice(0, 16) !== normalizedBucketTime)
+        : [];
+
+    const nextReactions = createDefaultReactions();
+    nextEvents.forEach((event) => {
+        if (REACTION_KEYS.includes(event?.reaction)) {
+            nextReactions[event.reaction] += 1;
+        }
+    });
+
+    return {
+        ...session,
+        reactionEvents: nextEvents,
+        reactionTimeline: nextTimeline,
+        reactions: nextReactions,
+        totalReactionCount: nextEvents.length,
+    };
+}
+
 function getDeletedReactionHistoryIds() {
     try {
         const raw = localStorage.getItem(REACTION_HISTORY_DELETED_IDS_KEY);
@@ -595,6 +621,31 @@ function Live_page(props) {
         if (!sent) {
             alert("掲示板サーバーに接続できていないため、この端末の履歴からのみ削除しました。");
         }
+    };
+
+    const handleDeleteReactionTimelineBucket = (bucketTime) => {
+        if (!isTeacher || !bucketTime) return;
+
+        const sent = sendSocketMessage({
+            type: "board-delete-reaction-timeline-bucket",
+            bucketTime,
+        });
+        if (!sent) {
+            alert("掲示板サーバーに接続できていないため、押下タイムラインを削除できません。");
+            return;
+        }
+
+        const sessionId = reactionSession?.id || "current";
+        const memoKey = getReactionMemoKey(sessionId, bucketTime);
+
+        setReactionTimelineMemos((current) => {
+            if (!(memoKey in current)) return current;
+            const next = { ...current };
+            delete next[memoKey];
+            localStorage.setItem(REACTION_TIMELINE_MEMO_KEY, JSON.stringify(next));
+            return next;
+        });
+        setReactionSession((current) => removeTimelineBucketFromSession(current, bucketTime));
     };
 
     useEffect(() => {
@@ -1403,6 +1454,13 @@ function Live_page(props) {
                                                                 </div>
                                                             </div>
                                                             <div className="reaction-timeline-memo">
+                                                                <button
+                                                                    type="button"
+                                                                    className="reaction-timeline-delete"
+                                                                    onClick={() => handleDeleteReactionTimelineBucket(bucket.time)}
+                                                                >
+                                                                    この時刻を削除
+                                                                </button>
                                                                 <label className="reaction-timeline-memo-label">メモ</label>
                                                                 <input
                                                                     type="text"

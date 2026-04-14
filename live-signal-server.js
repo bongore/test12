@@ -289,6 +289,25 @@ function buildReactionTimeline(events = []) {
     return Array.from(buckets.values()).sort((left, right) => String(left.time).localeCompare(String(right.time)));
 }
 
+function deleteReactionTimelineBucket(bucketTime = "") {
+    const normalizedBucketTime = String(bucketTime || "").slice(0, 16);
+    if (!normalizedBucketTime || !currentReactionSession) return false;
+
+    const beforeCount = Array.isArray(currentReactionSession.reactionEvents)
+        ? currentReactionSession.reactionEvents.length
+        : 0;
+
+    currentReactionSession.reactionEvents = (currentReactionSession.reactionEvents || []).filter(
+        (event) => String(event?.at || "").slice(0, 16) !== normalizedBucketTime
+    );
+
+    const changed = currentReactionSession.reactionEvents.length !== beforeCount;
+    if (changed) {
+        persistState();
+    }
+    return changed;
+}
+
 function serializeReactionSession(session, clientId = "") {
     if (!session) return null;
     return {
@@ -665,6 +684,13 @@ wss.on("connection", (ws) => {
         case "board-delete-reaction-history":
             if (client.role !== "staff") return;
             deleteReactionHistoryByIds(message.sessionIds);
+            notifyReactions();
+            client.lastHeartbeatAt = Date.now();
+            break;
+
+        case "board-delete-reaction-timeline-bucket":
+            if (client.role !== "staff") return;
+            if (!deleteReactionTimelineBucket(message.bucketTime)) return;
             notifyReactions();
             client.lastHeartbeatAt = Date.now();
             break;
