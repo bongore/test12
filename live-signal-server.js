@@ -1,5 +1,7 @@
 const http = require("http");
 const WebSocket = require("ws");
+const fs = require("fs");
+const path = require("path");
 
 const PORT = Number(process.env.PORT || process.env.LIVE_SIGNAL_PORT || 3001);
 const HEARTBEAT_TIMEOUT_MS = 180 * 1000;
@@ -7,6 +9,7 @@ const MAX_BOARD_MESSAGES = 200;
 const MAX_REACTION_HISTORY = 20;
 const BLOCKED_MESSAGE_PATTERNS = [/ばか/i, /あほ/i, /死ね/i, /殺す/i, /くそ/i, /fuck/i, /shit/i, /bitch/i, /(.)\1{7,}/];
 const REACTION_KEYS = ["understood", "repeat", "slow", "fast"];
+const STATE_FILE_PATH = path.join(__dirname, ".live-board-state.json");
 
 const server = http.createServer((req, res) => {
     res.writeHead(200, {
@@ -58,6 +61,91 @@ function createBoardSession(label = "") {
 }
 
 let currentBoardSession = createBoardSession("現在の授業");
+
+function serializeReactionSessionForStorage(session) {
+    if (!session) return null;
+    return {
+        ...session,
+        clientReactions: Array.from((session.clientReactions || new Map()).entries()),
+        messages: Array.isArray(session.messages) ? session.messages : [],
+    };
+}
+
+function reviveReactionSession(session, fallbackLabel = "現在の授業") {
+    if (!session) return createReactionSession(fallbackLabel);
+    return {
+        id: session.id || `reaction_session_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+        label: String(session.label || "").trim() || fallbackLabel,
+        startedAt: session.startedAt || new Date().toISOString(),
+        endedAt: session.endedAt || "",
+        clientReactions: new Map(Array.isArray(session.clientReactions) ? session.clientReactions : []),
+        messages: Array.isArray(session.messages) ? session.messages : [],
+    };
+}
+
+function serializeBoardSessionForStorage(session) {
+    if (!session) return null;
+    return {
+        ...session,
+        messages: Array.isArray(session.messages)
+            ? session.messages.map((message) => ({
+                ...message,
+                likedBy: Array.from(message.likedBy || []),
+            }))
+            : [],
+    };
+}
+
+function reviveBoardSession(session, fallbackLabel = "現在の授業") {
+    if (!session) return createBoardSession(fallbackLabel);
+    return {
+        id: session.id || `board_session_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+        label: String(session.label || "").trim() || fallbackLabel,
+        startedAt: session.startedAt || new Date().toISOString(),
+        endedAt: session.endedAt || "",
+        messages: Array.isArray(session.messages)
+            ? session.messages.map((message) => ({
+                ...message,
+                likedBy: new Set(Array.isArray(message.likedBy) ? message.likedBy : []),
+            }))
+            : [],
+    };
+}
+
+function persistState() {
+    try {
+        const payload = {
+            pinnedNotice,
+            reactionSessionHistory: reactionSessionHistory.map((session) => serializeReactionSessionForStorage(session)),
+            boardSessionHistory: boardSessionHistory.map((session) => serializeBoardSessionForStorage(session)),
+            currentReactionSession: serializeReactionSessionForStorage(currentReactionSession),
+            currentBoardSession: serializeBoardSessionForStorage(currentBoardSession),
+        };
+        fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(payload, null, 2), "utf8");
+    } catch (error) {
+        console.error("Failed to persist live board state", error);
+    }
+}
+
+function loadPersistedState() {
+    try {
+        if (!fs.existsSync(STATE_FILE_PATH)) return;
+        const raw = fs.readFileSync(STATE_FILE_PATH, "utf8");
+        if (!raw) return;
+        const payload = JSON.parse(raw);
+        pinnedNotice = payload?.pinnedNotice || null;
+        reactionSessionHistory = Array.isArray(payload?.reactionSessionHistory)
+            ? payload.reactionSessionHistory.map((session) => reviveReactionSession(session, "過去の授業"))
+            : [];
+        boardSessionHistory = Array.isArray(payload?.boardSessionHistory)
+            ? payload.boardSessionHistory.map((session) => reviveBoardSession(session, "過去の授業"))
+            : [];
+        currentReactionSession = reviveReactionSession(payload?.currentReactionSession, "現在の授業");
+        currentBoardSession = reviveBoardSession(payload?.currentBoardSession, "現在の授業");
+    } catch (error) {
+        console.error("Failed to load persisted live board state", error);
+    }
+}
 
 function safeSend(ws, payload) {
     if (ws.readyState === 1) {
@@ -166,6 +254,7 @@ function archiveCurrentReactionSession() {
     if (reactionSessionHistory.length > MAX_REACTION_HISTORY) {
         reactionSessionHistory.splice(MAX_REACTION_HISTORY);
     }
+    persistState();
 }
 
 function archiveCurrentBoardSession() {
@@ -177,6 +266,7 @@ function archiveCurrentBoardSession() {
     if (boardSessionHistory.length > MAX_REACTION_HISTORY) {
         boardSessionHistory.splice(MAX_REACTION_HISTORY);
     }
+    persistState();
 }
 
 function getBoardState(clientId = "") {
@@ -249,12 +339,14 @@ function deleteReactionHistoryByIds(ids) {
     const targetIds = new Set((Array.isArray(ids) ? ids : []).map((id) => String(id)));
     if (targetIds.size === 0) return;
     reactionSessionHistory = reactionSessionHistory.filter((session) => !targetIds.has(String(session.id)));
+    persistState();
 }
 
 function deleteBoardHistoryByIds(ids) {
     const targetIds = new Set((Array.isArray(ids) ? ids : []).map((id) => String(id)));
     if (targetIds.size === 0) return;
     boardSessionHistory = boardSessionHistory.filter((session) => !targetIds.has(String(session.id)));
+    persistState();
 }
 
 function deleteBoardMessage(sessionId, messageId) {
@@ -265,6 +357,7 @@ function deleteBoardMessage(sessionId, messageId) {
     if (String(currentBoardSession?.id || "") === normalizedSessionId) {
         const beforeCount = currentBoardSession.messages.length;
         currentBoardSession.messages = currentBoardSession.messages.filter((item) => String(item.id) !== normalizedMessageId);
+        if (currentBoardSession.messages.length !== beforeCount) persistState();
         return currentBoardSession.messages.length !== beforeCount;
     }
 
@@ -272,8 +365,11 @@ function deleteBoardMessage(sessionId, messageId) {
     if (!session) return false;
     const beforeCount = session.messages.length;
     session.messages = session.messages.filter((item) => String(item.id) !== normalizedMessageId);
+    if (session.messages.length !== beforeCount) persistState();
     return session.messages.length !== beforeCount;
 }
+
+loadPersistedState();
 
 function handleDisconnect(clientId) {
     const client = clients.get(clientId);
@@ -379,6 +475,7 @@ wss.on("connection", (ws) => {
             if (currentBoardSession.messages.length > MAX_BOARD_MESSAGES) {
                 currentBoardSession.messages.splice(0, currentBoardSession.messages.length - MAX_BOARD_MESSAGES);
             }
+            persistState();
 
             broadcast({
                 type: "chat-message",
@@ -404,6 +501,7 @@ wss.on("connection", (ws) => {
         case "board-reaction":
             if (!REACTION_KEYS.includes(message.reaction)) return;
             currentReactionSession.clientReactions.set(clientId, message.reaction);
+            persistState();
             notifyReactions(clientId);
             client.lastHeartbeatAt = Date.now();
             break;
@@ -411,6 +509,7 @@ wss.on("connection", (ws) => {
         case "board-reset-reactions":
             if (client.role !== "staff") return;
             currentReactionSession.clientReactions.clear();
+            persistState();
             notifyReactions();
             client.lastHeartbeatAt = Date.now();
             break;
@@ -419,6 +518,7 @@ wss.on("connection", (ws) => {
             if (client.role !== "staff") return;
             archiveCurrentReactionSession();
             currentReactionSession = createReactionSession(message.label || "");
+            persistState();
             notifyReactions();
             client.lastHeartbeatAt = Date.now();
             break;
@@ -427,6 +527,7 @@ wss.on("connection", (ws) => {
             if (client.role !== "staff") return;
             archiveCurrentBoardSession();
             currentBoardSession = createBoardSession(message.label || "");
+            persistState();
             broadcast({
                 type: "board-session-updated",
                 boardSession: serializeBoardSession(currentBoardSession),
@@ -482,6 +583,7 @@ wss.on("connection", (ws) => {
                 user: client.displayName || getDisplayName(client),
                 timestamp: new Date().toLocaleTimeString("ja-JP"),
             };
+            persistState();
             notifyPinnedNotice();
             client.lastHeartbeatAt = Date.now();
             break;
@@ -489,6 +591,7 @@ wss.on("connection", (ws) => {
         case "board-clear-pinned-notice":
             if (client.role !== "staff") return;
             pinnedNotice = null;
+            persistState();
             notifyPinnedNotice();
             client.lastHeartbeatAt = Date.now();
             break;
