@@ -69,7 +69,7 @@ function Chat_feed({ messages, onQuestionLike, likedQuestionIds, canModerate = f
                         {msg.type !== "superchat" && (
                             <button
                                 type="button"
-                                className="chat-user-button chat-user text-muted"
+                                className="chat-user-button chat-user"
                                 onClick={() => toggleAddress(msg.id)}
                                 disabled={!msg.senderAddress}
                                 title={msg.senderAddress ? "タップで送信者アドレスを表示" : ""}
