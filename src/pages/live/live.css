@@ -605,6 +605,59 @@
     border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.reaction-guide-card.is-teacher {
+    display: grid;
+    gap: 14px;
+}
+
+.reaction-timeline-card {
+    display: grid;
+    gap: 10px;
+    padding: 14px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.reaction-timeline-title {
+    font-size: 13px;
+    font-weight: 800;
+    color: #ffffff;
+}
+
+.reaction-timeline-empty {
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.reaction-timeline-list {
+    display: grid;
+    gap: 8px;
+}
+
+.reaction-timeline-item {
+    display: grid;
+    gap: 6px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.reaction-timeline-time {
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--accent-cyan);
+}
+
+.reaction-timeline-values {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
 @media screen and (max-width: 960px) {
     .board-layout {
         grid-template-columns: 1fr;

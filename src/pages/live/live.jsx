@@ -33,6 +33,14 @@ const REACTION_OPTIONS = [
     { key: "slow", label: "ゆっくり" },
     { key: "fast", label: "速い" },
 ];
+const REACTION_TIMING_GUIDE = [
+    "講義中いつでもOK（ボタンを押すだけ!）",
+    "新しい概念や用語の説明の後",
+    "演習問題に取り組む前",
+    "演習問題の解説を聞いた後",
+    "教員が集計結果を見てペースを調整します",
+    "授業の妨げにならないので積極的に使いましょう!",
+];
 const REACTION_HISTORY_KEY = "board_reaction_history_snapshot_v1";
 const REACTION_HISTORY_DELETED_IDS_KEY = "board_reaction_history_deleted_ids_v1";
 
@@ -247,6 +255,10 @@ function Live_page(props) {
     const selectedBoardSession = useMemo(
         () => boardSessionOptions.find((session) => session.id === selectedBoardSessionId) || boardSessionOptions[0] || null,
         [boardSessionOptions, selectedBoardSessionId]
+    );
+    const currentReactionTimeline = useMemo(
+        () => Array.isArray(reactionSession?.reactionTimeline) ? reactionSession.reactionTimeline.slice(-8).reverse() : [],
+        [reactionSession]
     );
 
     const sendSocketMessage = (payload) => {
@@ -1332,12 +1344,40 @@ function Live_page(props) {
                                 <div className="reaction-guide-card">
                                     <div className="reaction-guide-title">押すタイミング</div>
                                     <div className="reaction-guide-grid">
-                                        <div className="reaction-guide-item">講義中いつでもOK<br />ボタンを押すだけです</div>
-                                        <div className="reaction-guide-item">新しい概念や用語の<br />説明の後</div>
-                                        <div className="reaction-guide-item">演習問題に<br />取り組む前</div>
-                                        <div className="reaction-guide-item">演習問題の解説を<br />聞いた後</div>
-                                        <div className="reaction-guide-item">教員が集計結果を見て<br />ペースを調整します</div>
-                                        <div className="reaction-guide-item">授業の妨げにならないので<br />積極的に使いましょう</div>
+                                        {REACTION_TIMING_GUIDE.map((item) => (
+                                            <div key={item} className="reaction-guide-item">{item}</div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ) : null}
+                            {isTeacher ? (
+                                <div className="reaction-guide-card is-teacher">
+                                    <div className="reaction-guide-title">押下タイミングの見方</div>
+                                    <div className="reaction-guide-grid">
+                                        {REACTION_TIMING_GUIDE.map((item) => (
+                                            <div key={item} className="reaction-guide-item">{item}</div>
+                                        ))}
+                                    </div>
+                                    <div className="reaction-timeline-card">
+                                        <div className="reaction-timeline-title">現在の授業の押下タイムライン</div>
+                                        {currentReactionTimeline.length === 0 ? (
+                                            <div className="reaction-timeline-empty">まだリアクションはありません。</div>
+                                        ) : (
+                                            <div className="reaction-timeline-list">
+                                                {currentReactionTimeline.map((bucket) => (
+                                                    <div key={`${reactionSession?.id || "current"}_${bucket.time}`} className="reaction-timeline-item">
+                                                        <div className="reaction-timeline-time">{formatSessionTime(bucket.time)}</div>
+                                                        <div className="reaction-timeline-values">
+                                                            <span>わかった {bucket.understood}</span>
+                                                            <span>もう一度 {bucket.repeat}</span>
+                                                            <span>ゆっくり {bucket.slow}</span>
+                                                            <span>速い {bucket.fast}</span>
+                                                            <span>合計 {bucket.total}</span>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             ) : null}
