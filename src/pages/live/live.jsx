@@ -969,7 +969,7 @@ function Live_page(props) {
                         <div className="board-kicker">Lecture Board</div>
                         <h2 className="heading-lg board-title">講義掲示板</h2>
                         <p className="board-description">
-                            動画共有は使わず、講義中のコメント、質問、理解度リアクションをまとめる画面です。
+                            講義中のコメント、質問、理解度リアクションをまとめる画面です。
                         </p>
                     </div>
                     <div className="board-status-group">
