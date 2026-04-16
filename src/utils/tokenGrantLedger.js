@@ -77,6 +77,31 @@ async function persistGrantRecordToServer(address, assetKey, payload = {}) {
     return ledger;
 }
 
+async function removeGrantRecordFromServer(address, assetKey) {
+    const response = await fetchLiveSignalJson("/token-grants", {
+        method: "POST",
+        body: JSON.stringify({
+            address: normalizeAddress(address),
+            assetKey,
+            remove: true,
+        }),
+    });
+    const serverLedger = response?.ledger && typeof response.ledger === "object" ? response.ledger : {};
+    const ledger = mergeGrantLedger(readGrantLedger(), serverLedger);
+    const normalizedAddress = normalizeAddress(address);
+    if (ledger[normalizedAddress] && !ledger[normalizedAddress][assetKey]) {
+        const nextStatus = { ...ledger[normalizedAddress] };
+        delete nextStatus[assetKey];
+        if (Object.keys(nextStatus).length === 0) {
+            delete ledger[normalizedAddress];
+        } else {
+            ledger[normalizedAddress] = nextStatus;
+        }
+    }
+    writeGrantLedger(ledger);
+    return ledger;
+}
+
 function hasGrantedToken(address, assetKey) {
     const status = getAddressGrantStatus(address);
     return Boolean(status?.[assetKey]?.confirmed && status?.[assetKey]?.grantedAt);
@@ -102,6 +127,25 @@ function markGrantedToken(address, assetKey, payload = {}) {
     return ledger[normalizedAddress];
 }
 
+function clearGrantedToken(address, assetKey) {
+    const ledger = readGrantLedger();
+    const normalizedAddress = normalizeAddress(address);
+    const current = ledger[normalizedAddress];
+    if (!current || !current[assetKey]) return ledger;
+
+    const nextStatus = { ...current };
+    delete nextStatus[assetKey];
+
+    if (Object.keys(nextStatus).length === 0) {
+        delete ledger[normalizedAddress];
+    } else {
+        ledger[normalizedAddress] = nextStatus;
+    }
+
+    writeGrantLedger(ledger);
+    return ledger;
+}
+
 function getGrantLedgerEntries() {
     const ledger = readGrantLedger();
     return Object.entries(ledger).map(([address, status]) => ({
@@ -116,8 +160,10 @@ export {
     getAddressGrantStatus,
     hasGrantedToken,
     markGrantedToken,
+    clearGrantedToken,
     getGrantLedgerEntries,
     syncGrantLedgerFromServer,
     persistGrantRecordToServer,
+    removeGrantRecordFromServer,
     mergeGrantLedger,
 };

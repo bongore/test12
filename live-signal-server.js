@@ -60,6 +60,21 @@ const server = http.createServer((req, res) => {
                     return;
                 }
 
+                if (body?.remove) {
+                    const currentStatus = tokenGrantLedger[address] || {};
+                    const nextStatus = { ...currentStatus };
+                    delete nextStatus[assetKey];
+
+                    if (Object.keys(nextStatus).length === 0) {
+                        delete tokenGrantLedger[address];
+                    } else {
+                        tokenGrantLedger[address] = nextStatus;
+                    }
+                    persistState();
+                    writeJson(res, 200, { ok: true, ledger: tokenGrantLedger });
+                    return;
+                }
+
                 tokenGrantLedger[address] = {
                     ...(tokenGrantLedger[address] || {}),
                     [assetKey]: {
@@ -67,6 +82,7 @@ const server = http.createServer((req, res) => {
                         amount: body?.payload?.amount ?? null,
                         txHash: body?.payload?.txHash || "",
                         source: body?.payload?.source || "",
+                        confirmed: body?.payload?.confirmed !== false,
                     },
                 };
                 persistState();

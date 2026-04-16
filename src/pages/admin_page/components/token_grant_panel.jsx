@@ -2,11 +2,13 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Form } from "react-bootstrap";
 import { ACTION_TYPES, appendActivityLog } from "../../../utils/activityLog";
 import {
+    clearGrantedToken,
     getAddressGrantStatus,
     getGrantLedgerEntries,
     hasGrantedToken,
     markGrantedToken,
     persistGrantRecordToServer,
+    removeGrantRecordFromServer,
     syncGrantLedgerFromServer,
     TOKEN_GRANT_KEYS,
 } from "../../../utils/tokenGrantLedger";
@@ -33,6 +35,14 @@ function formatDateTime(value) {
 function shortenHash(value = "") {
     if (!value || value.length < 14) return value || "-";
     return `${value.slice(0, 10)}...${value.slice(-6)}`;
+}
+
+function getSelectedAssetTargets(polAmount, tftAmount, tttAmount) {
+    return [
+        { enabled: Number(polAmount || 0) > 0, assetKey: TOKEN_GRANT_KEYS.POL, amount: Number(polAmount || 0), label: "POL" },
+        { enabled: Number(tftAmount || 0) > 0, assetKey: TOKEN_GRANT_KEYS.TFT, amount: Number(tftAmount || 0), label: "TFT" },
+        { enabled: Number(tttAmount || 0) > 0, assetKey: TOKEN_GRANT_KEYS.TTT, amount: Number(tttAmount || 0), label: "TTT" },
+    ];
 }
 
 function Token_grant_panel(props) {
@@ -132,11 +142,7 @@ function Token_grant_panel(props) {
         setIsSubmitting(true);
         try {
             for (const address of normalizedTargets) {
-                const targets = [
-                    { enabled: Number(polAmount || 0) > 0, assetKey: TOKEN_GRANT_KEYS.POL, amount: Number(polAmount || 0) },
-                    { enabled: Number(tftAmount || 0) > 0, assetKey: TOKEN_GRANT_KEYS.TFT, amount: Number(tftAmount || 0) },
-                    { enabled: Number(tttAmount || 0) > 0, assetKey: TOKEN_GRANT_KEYS.TTT, amount: Number(tttAmount || 0) },
-                ];
+                const targets = getSelectedAssetTargets(polAmount, tftAmount, tttAmount);
 
                 for (const target of targets) {
                     if (!target.enabled || hasGrantedToken(address, target.assetKey)) continue;
@@ -158,6 +164,64 @@ function Token_grant_panel(props) {
         } catch (error) {
             console.error("Failed to mark addresses as granted", error);
             alert("既付与登録に失敗しました。");
+        } finally {
+            setIsSubmitting(false);
+        }
+    }
+
+    async function clearAlreadyGrantedMarks(addresses, sourceLabel) {
+        const synced = await refreshGrantLedger();
+        if (!synced) {
+            alert("付与履歴を同期できないため、既付与解除も停止しました。少し待ってから再試行してください。");
+            return;
+        }
+
+        const normalizedTargets = props.cont.normalizeAddressList(addresses);
+        if (normalizedTargets.length === 0) {
+            alert("対象アドレスを入力または選択してください。");
+            return;
+        }
+
+        const targets = getSelectedAssetTargets(polAmount, tftAmount, tttAmount).filter((target) => target.enabled);
+        if (targets.length === 0) {
+            alert("解除したい資産の数量を 0 より大きくしてください。");
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            let removedCount = 0;
+
+            for (const address of normalizedTargets) {
+                const status = getAddressGrantStatus(address);
+                for (const target of targets) {
+                    const currentRecord = status?.[target.assetKey];
+                    if (!currentRecord) continue;
+
+                    clearGrantedToken(address, target.assetKey);
+                    await removeGrantRecordFromServer(address, target.assetKey);
+                    removedCount += 1;
+                }
+            }
+
+            await refreshGrantLedger();
+            alert(
+                removedCount > 0
+                    ? `${removedCount}件の既付与登録を解除しました。必要ならこのあと改めて送金できます。`
+                    : "解除できる既付与登録はありませんでした。"
+            );
+
+            appendActivityLog(ACTION_TYPES.ADMIN_GRANT_TOKENS, {
+                page: "admin",
+                source: `${sourceLabel}_clear_manual_mark`,
+                recipientCount: normalizedTargets.length,
+                polAmount: Number(polAmount || 0),
+                tftAmount: Number(tftAmount || 0),
+                tttAmount: Number(tttAmount || 0),
+            });
+        } catch (error) {
+            console.error("Failed to clear already granted marks", error);
+            alert("既付与登録の解除に失敗しました。");
         } finally {
             setIsSubmitting(false);
         }
@@ -355,6 +419,9 @@ function Token_grant_panel(props) {
                     <div className="token-grant-card-desc">
                         初期値は 1 POL / 50 TFT / 1000 TTT です。必要に応じて数を変更できます。
                     </div>
+                    <div className="token-grant-card-desc" style={{ color: "#ffd8a8" }}>
+                        「既付与登録」は送金ではなく、過去にすでに配布済みだった学生を二重送金対象から外すための印です。間違えた場合はあとで解除できます。
+                    </div>
                     <div className="token-grant-inputs">
                         <Form.Group style={{ textAlign: "left" }}>
                             <Form.Label>POL</Form.Label>
@@ -400,6 +467,9 @@ function Token_grant_panel(props) {
                         <button className="btn-action token-grant-secondary-btn" type="button" disabled={isSubmitting} onClick={() => markAddressesAsAlreadyGranted([singleAddress], "single")}>
                             既付与として登録
                         </button>
+                        <button className="btn-action token-grant-secondary-btn" type="button" disabled={isSubmitting} onClick={() => clearAlreadyGrantedMarks([singleAddress], "single")}>
+                            既付与登録を解除
+                        </button>
                     </div>
                 </div>
             </div>
@@ -424,6 +494,9 @@ function Token_grant_panel(props) {
                     <button className="btn-action token-grant-secondary-btn" type="button" disabled={isSubmitting} onClick={() => markAddressesAsAlreadyGranted(typedAddresses, "bulk_input")}>
                         入力済みアドレスを既付与登録
                     </button>
+                    <button className="btn-action token-grant-secondary-btn" type="button" disabled={isSubmitting} onClick={() => clearAlreadyGrantedMarks(typedAddresses, "bulk_input")}>
+                        入力済みアドレスの既付与解除
+                    </button>
                 </div>
             </div>
 
@@ -444,6 +517,9 @@ function Token_grant_panel(props) {
                     </button>
                     <button className="btn-action token-grant-secondary-btn" type="button" disabled={isSubmitting} onClick={() => markAddressesAsAlreadyGranted(selectedStudents, "bulk_selected")}>
                         選択した学生を既付与登録
+                    </button>
+                    <button className="btn-action token-grant-secondary-btn" type="button" disabled={isSubmitting} onClick={() => clearAlreadyGrantedMarks(selectedStudents, "bulk_selected")}>
+                        選択した学生の既付与解除
                     </button>
                 </div>
                 <div className="token-grant-student-list">
