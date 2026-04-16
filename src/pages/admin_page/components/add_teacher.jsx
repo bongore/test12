@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Form } from "react-bootstrap";
 import { ACTION_TYPES, appendActivityLog } from "../../../utils/activityLog";
 
@@ -11,6 +11,31 @@ function Add_teacher(props) {
     const [teachers, setTeachers] = useState([]);
     const [students, setStudents] = useState([]);
     const [submitError, setSubmitError] = useState("");
+    const normalizedAddress = useMemo(
+        () => props.cont.normalizeAddressList([addTeacher.trim()])[0] || "",
+        [addTeacher, props.cont]
+    );
+    const duplicateDetail = useMemo(() => {
+        if (!normalizedAddress) return null;
+        const normalized = props.cont.normalizeAddress(normalizedAddress);
+        const teacherIndex = (teachers || []).findIndex((item) => props.cont.normalizeAddress(item) === normalized);
+        if (teacherIndex >= 0) {
+            return {
+                address: normalizedAddress,
+                roleLabel: "教員",
+                internalId: formatInternalId("STAFF", teacherIndex),
+            };
+        }
+        const studentIndex = (students || []).findIndex((item) => props.cont.normalizeAddress(item) === normalized);
+        if (studentIndex >= 0) {
+            return {
+                address: normalizedAddress,
+                roleLabel: "学生",
+                internalId: formatInternalId("USER", studentIndex),
+            };
+        }
+        return null;
+    }, [normalizedAddress, teachers, students, props.cont]);
 
     async function loadTeachers() {
         try {
@@ -30,7 +55,6 @@ function Add_teacher(props) {
     async function add_teacher() {
         if (!addTeacher.trim()) return;
         try {
-            const normalizedAddress = props.cont.normalizeAddressList([addTeacher.trim()])[0];
             if (!normalizedAddress) {
                 setSubmitError("有効なウォレットアドレスを入力してください。");
                 return;
@@ -76,6 +100,21 @@ function Add_teacher(props) {
                     />
                 </Form.Group>
             </Form>
+
+            {duplicateDetail && (
+                <div className="address-list" style={{ marginBottom: "var(--space-4)" }}>
+                    <div className="address-list-title">このアドレスはすでに登録済みです</div>
+                    <div className="address-item">
+                        <div className="address-item-id">{duplicateDetail.internalId}</div>
+                        <div>
+                            <div>{duplicateDetail.address}</div>
+                            <div style={{ color: "var(--text-secondary)", fontSize: "var(--font-size-xs)" }}>
+                                既登録: {duplicateDetail.roleLabel}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {submitError && (
                 <div className="address-item" style={{ borderLeftColor: "#ff7b72", color: "#ffd7d7", marginBottom: "var(--space-4)" }}>

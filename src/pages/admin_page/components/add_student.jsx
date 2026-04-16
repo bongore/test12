@@ -27,6 +27,33 @@ function Add_students(props) {
         () => normalizedCandidates.filter((item) => registeredAddressSet.has(props.cont.normalizeAddress(item))),
         [normalizedCandidates, registeredAddressSet, props.cont]
     );
+    const duplicateRegisteredDetails = useMemo(
+        () => duplicateRegisteredAddresses.map((address) => {
+            const normalized = props.cont.normalizeAddress(address);
+            const teacherIndex = (teachers || []).findIndex((item) => props.cont.normalizeAddress(item) === normalized);
+            if (teacherIndex >= 0) {
+                return {
+                    address,
+                    roleLabel: "教員",
+                    internalId: formatInternalId("STAFF", teacherIndex),
+                };
+            }
+            const studentIndex = (students || []).findIndex((item) => props.cont.normalizeAddress(item) === normalized);
+            if (studentIndex >= 0) {
+                return {
+                    address,
+                    roleLabel: "学生",
+                    internalId: formatInternalId("USER", studentIndex),
+                };
+            }
+            return {
+                address,
+                roleLabel: "登録済みユーザー",
+                internalId: "-",
+            };
+        }),
+        [duplicateRegisteredAddresses, teachers, students, props.cont]
+    );
     const newStudentTargets = useMemo(
         () => normalizedCandidates.filter((item) => !registeredAddressSet.has(props.cont.normalizeAddress(item))),
         [normalizedCandidates, registeredAddressSet, props.cont]
@@ -101,8 +128,16 @@ function Add_students(props) {
             {duplicateRegisteredAddresses.length > 0 && (
                 <div className="address-list" style={{ marginTop: "var(--space-4)" }}>
                     <div className="address-list-title">既登録のため追加しないアドレス ({duplicateRegisteredAddresses.length}件)</div>
-                    {duplicateRegisteredAddresses.map((item, index) => (
-                        <div key={`${item}-duplicate-${index}`} className="address-item">{item}</div>
+                    {duplicateRegisteredDetails.map((item, index) => (
+                        <div key={`${item.address}-duplicate-${index}`} className="address-item">
+                            <div className="address-item-id">{item.internalId}</div>
+                            <div>
+                                <div>{item.address}</div>
+                                <div style={{ color: "var(--text-secondary)", fontSize: "var(--font-size-xs)" }}>
+                                    既登録: {item.roleLabel}
+                                </div>
+                            </div>
+                        </div>
                     ))}
                 </div>
             )}
