@@ -117,6 +117,54 @@
   padding: 0;
 }
 
+.token-grant-status-list {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+}
+
+.token-grant-status-badge {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: var(--font-weight-medium);
+}
+
+.token-grant-status-badge.granted {
+  background: rgba(52, 211, 153, 0.16);
+  color: #b7ffdf;
+  border: 1px solid rgba(52, 211, 153, 0.28);
+}
+
+.token-grant-status-badge.pending {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.token-grant-ledger-list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.token-grant-ledger-item {
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.token-grant-ledger-address {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+  word-break: break-all;
+}
+
 .admin-tab-btn {
   flex: 1;
   padding: var(--space-3) var(--space-4);

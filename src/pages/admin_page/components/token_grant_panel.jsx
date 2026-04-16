@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Form } from "react-bootstrap";
 import { ACTION_TYPES, appendActivityLog } from "../../../utils/activityLog";
+import { getAddressGrantStatus, getGrantLedgerEntries, hasGrantedToken, markGrantedToken, TOKEN_GRANT_KEYS } from "../../../utils/tokenGrantLedger";
 
 function normalizeAddressLines(rawValue) {
     return rawValue
@@ -18,8 +19,13 @@ function Token_grant_panel(props) {
     const [tftAmount, setTftAmount] = useState("50");
     const [tttAmount, setTttAmount] = useState("1000");
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [grantLedgerEntries, setGrantLedgerEntries] = useState([]);
 
     const typedAddresses = useMemo(() => normalizeAddressLines(bulkAddresses), [bulkAddresses]);
+
+    function refreshGrantLedger() {
+        setGrantLedgerEntries(getGrantLedgerEntries());
+    }
 
     async function loadStudents() {
         try {
@@ -33,6 +39,7 @@ function Token_grant_panel(props) {
 
     useEffect(() => {
         loadStudents();
+        refreshGrantLedger();
     }, [props.cont]);
 
     function toggleStudent(address) {
@@ -49,36 +56,98 @@ function Token_grant_panel(props) {
         setTttAmount("1000");
     }
 
-    async function grantToAddresses(addresses, sourceLabel) {
+    function buildGrantPlan(addresses) {
         const normalizedTargets = props.cont.normalizeAddressList(addresses);
+        const requestedAmounts = {
+            POL: Number(polAmount || 0),
+            TFT: Number(tftAmount || 0),
+            TTT: Number(tttAmount || 0),
+        };
+
+        const plan = normalizedTargets.map((address) => {
+            const status = getAddressGrantStatus(address);
+            return {
+                address,
+                status,
+                shouldGrant: {
+                    POL: requestedAmounts.POL > 0 && !hasGrantedToken(address, TOKEN_GRANT_KEYS.POL),
+                    TFT: requestedAmounts.TFT > 0 && !hasGrantedToken(address, TOKEN_GRANT_KEYS.TFT),
+                    TTT: requestedAmounts.TTT > 0 && !hasGrantedToken(address, TOKEN_GRANT_KEYS.TTT),
+                },
+            };
+        });
+
+        return {
+            requestedAmounts,
+            normalizedTargets,
+            plan,
+        };
+    }
+
+    async function grantToAddresses(addresses, sourceLabel) {
+        const { requestedAmounts, normalizedTargets, plan } = buildGrantPlan(addresses);
         if (normalizedTargets.length === 0) {
             alert("付与先アドレスを入力または選択してください。");
             return;
         }
 
+        const grantableTargets = plan.filter((item) => item.shouldGrant.POL || item.shouldGrant.TFT || item.shouldGrant.TTT);
+        if (grantableTargets.length === 0) {
+            alert("選択した学生には、指定した POL / TFT / TTT はすでに付与済みです。二重送金は行いません。");
+            return;
+        }
+
         setIsSubmitting(true);
         try {
-            const result = await props.cont.grantStudentStarterTokens(normalizedTargets, {
-                pol: polAmount,
-                tft: tftAmount,
-                ttt: tttAmount,
-            });
+            const results = [];
+
+            for (const item of grantableTargets) {
+                const recipientResults = await props.cont.grantStudentStarterTokens([item.address], {
+                    pol: item.shouldGrant.POL ? requestedAmounts.POL : 0,
+                    tft: item.shouldGrant.TFT ? requestedAmounts.TFT : 0,
+                    ttt: item.shouldGrant.TTT ? requestedAmounts.TTT : 0,
+                });
+                results.push(...recipientResults);
+
+                recipientResults.forEach((result) => {
+                    const assetKey =
+                        result.asset === "POL"
+                            ? TOKEN_GRANT_KEYS.POL
+                            : result.asset === "TFT"
+                                ? TOKEN_GRANT_KEYS.TFT
+                                : TOKEN_GRANT_KEYS.TTT;
+
+                    markGrantedToken(item.address, assetKey, {
+                        amount: result.amount,
+                        txHash: result.hash,
+                        source: sourceLabel,
+                    });
+                });
+            }
 
             appendActivityLog(ACTION_TYPES.ADMIN_GRANT_TOKENS, {
                 page: "admin",
                 source: sourceLabel,
-                recipientCount: normalizedTargets.length,
-                polAmount: Number(polAmount || 0),
-                tftAmount: Number(tftAmount || 0),
-                tttAmount: Number(tttAmount || 0),
+                recipientCount: grantableTargets.length,
+                skippedCount: normalizedTargets.length - grantableTargets.length,
+                polAmount: requestedAmounts.POL,
+                tftAmount: requestedAmounts.TFT,
+                tttAmount: requestedAmounts.TTT,
             });
 
+            refreshGrantLedger();
+
+            const skippedTargets = plan
+                .filter((item) => !item.shouldGrant.POL && !item.shouldGrant.TFT && !item.shouldGrant.TTT)
+                .map((item) => item.address);
+
             alert(
-                `${normalizedTargets.length}件に付与しました。\n`
-                + `POL: ${polAmount || 0}\n`
-                + `TFT: ${tftAmount || 0}\n`
-                + `TTT: ${tttAmount || 0}\n`
-                + `処理件数: ${result.length}`
+                `${grantableTargets.length}件に付与しました。\n`
+                + `POL: ${requestedAmounts.POL}\n`
+                + `TFT: ${requestedAmounts.TFT}\n`
+                + `TTT: ${requestedAmounts.TTT}\n`
+                + `処理件数: ${results.length}`
+                + (skippedTargets.length > 0 ? `\n未送金（付与済み）: ${skippedTargets.length}件` : "")
             );
         } catch (error) {
             console.error("Failed to grant tokens", error);
@@ -86,6 +155,29 @@ function Token_grant_panel(props) {
         } finally {
             setIsSubmitting(false);
         }
+    }
+
+    function renderGrantStatus(address) {
+        const status = getAddressGrantStatus(address);
+        const labels = [
+            { key: TOKEN_GRANT_KEYS.POL, label: "POL" },
+            { key: TOKEN_GRANT_KEYS.TFT, label: "TFT" },
+            { key: TOKEN_GRANT_KEYS.TTT, label: "TTT" },
+        ];
+
+        return (
+            <div className="token-grant-status-list">
+                {labels.map((item) => {
+                    const record = status?.[item.key];
+                    return (
+                        <div key={item.key} className={`token-grant-status-badge ${record ? "granted" : "pending"}`}>
+                            <span>{item.label}</span>
+                            <span>{record ? `付与済み${record.amount ? ` ${record.amount}` : ""}` : "未付与"}</span>
+                        </div>
+                    );
+                })}
+            </div>
+        );
     }
 
     return (
@@ -182,20 +274,42 @@ function Token_grant_panel(props) {
                         <div className="address-item">登録済み学生はまだありません。</div>
                     ) : (
                         students.map((student, index) => (
-                            <label key={`${student}-${index}`} className="token-grant-student-item">
+                            <div key={`${student}-${index}`} className="token-grant-student-item">
                                 <input
                                     type="checkbox"
                                     checked={selectedStudents.includes(student)}
                                     onChange={() => toggleStudent(student)}
                                 />
-                                <button
-                                    type="button"
-                                    className="token-grant-address-btn"
-                                    onClick={() => setSingleAddress(student)}
-                                >
-                                    {student}
-                                </button>
-                            </label>
+                                <div>
+                                    <button
+                                        type="button"
+                                        className="token-grant-address-btn"
+                                        onClick={() => setSingleAddress(student)}
+                                    >
+                                        {student}
+                                    </button>
+                                    {renderGrantStatus(student)}
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+
+            <div className="token-grant-card" style={{ marginTop: "var(--space-6)" }}>
+                <div className="token-grant-card-title">付与状況の一覧</div>
+                <div className="token-grant-card-desc">
+                    何を誰に付与済みか、まだ付与していないかをここで確認できます。付与済みのものは次回送金時に自動でスキップします。
+                </div>
+                <div className="token-grant-ledger-list">
+                    {grantLedgerEntries.length === 0 ? (
+                        <div className="address-item">まだ付与履歴はありません。</div>
+                    ) : (
+                        grantLedgerEntries.map((entry) => (
+                            <div key={entry.address} className="token-grant-ledger-item">
+                                <div className="token-grant-ledger-address">{entry.address}</div>
+                                {renderGrantStatus(entry.address)}
+                            </div>
                         ))
                     )}
                 </div>
