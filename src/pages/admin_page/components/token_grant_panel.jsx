@@ -18,6 +18,10 @@ import {
 const AMOY_EXPLORER_TX_BASE = "https://amoy.polygonscan.com/tx/";
 const AMOY_EXPLORER_ADDRESS_BASE = "https://amoy.polygonscan.com/address/";
 
+function formatInternalId(prefix, index) {
+    return `${prefix}-${String(index + 1).padStart(3, "0")}`;
+}
+
 function normalizeAddressLines(rawValue) {
     return rawValue
         .split(/\r?\n/)
