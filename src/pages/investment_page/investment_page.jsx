@@ -166,8 +166,12 @@ function Investment_to_quiz() {
                 incorrectCount,
                 submittedCount,
                 approvalTx: executionResult?.res?.transactionHash || executionResult?.res?.hash || "",
+                approvalStatus: executionResult?.res?.status || "",
                 payoutTxs: Array.isArray(executionResult?.payoutReceipts)
-                    ? executionResult.payoutReceipts.map((item) => item?.transactionHash || item?.hash).filter(Boolean)
+                    ? executionResult.payoutReceipts.map((item) => ({
+                        hash: item?.transactionHash || item?.hash || "",
+                        status: item?.status || "",
+                    })).filter((item) => item.hash)
                     : [],
                 bonusTx: executionResult?.hash || "",
             });
@@ -399,15 +403,17 @@ function Investment_to_quiz() {
                                     <a href={`https://amoy.polygonscan.com/tx/${executionSummary.approvalTx}`} target="_blank" rel="noreferrer">
                                         {formatTxHash(executionSummary.approvalTx)}
                                     </a>
+                                    {" "}
+                                    ({executionSummary.approvalStatus === "success" ? "成功" : executionSummary.approvalStatus || "確認待ち"})
                                 </div>
                             )}
                             {executionSummary.payoutTxs.length > 0 && (
                                 <div>
                                     報酬反映Tx:
                                     <div style={{ display: "grid", gap: "6px", marginTop: "6px" }}>
-                                        {executionSummary.payoutTxs.map((hash) => (
-                                            <a key={hash} href={`https://amoy.polygonscan.com/tx/${hash}`} target="_blank" rel="noreferrer">
-                                                {formatTxHash(hash)}
+                                        {executionSummary.payoutTxs.map((item) => (
+                                            <a key={item.hash} href={`https://amoy.polygonscan.com/tx/${item.hash}`} target="_blank" rel="noreferrer">
+                                                {formatTxHash(item.hash)} ({item.status === "success" ? "成功" : item.status || "確認待ち"})
                                             </a>
                                         ))}
                                     </div>

@@ -2640,8 +2640,15 @@ class Contracts_MetaMask {
             value,
             chain: amoy,
         });
-        await publicClient.waitForTransactionReceipt({ hash });
-        return hash;
+        const receipt = await publicClient.waitForTransactionReceipt({ hash });
+        return {
+            hash,
+            recipient,
+            amount: Number(amountPol || 0),
+            asset: "POL",
+            confirmed: receipt?.status === "success",
+            receipt,
+        };
     }
 
     async transferErc20Token(tokenContractAddress, recipientAddress, amount, symbol = "TOKEN", decimals = 18) {
@@ -2664,12 +2671,15 @@ class Contracts_MetaMask {
             functionName: "transfer",
             args: [recipient, value],
         });
-        await publicClient.waitForTransactionReceipt({ hash });
+        const receipt = await publicClient.waitForTransactionReceipt({ hash });
         return {
             hash,
             symbol,
             amount,
             recipient,
+            asset: symbol,
+            confirmed: receipt?.status === "success",
+            receipt,
         };
     }
 
@@ -2686,23 +2696,23 @@ class Contracts_MetaMask {
 
         for (const recipient of recipients) {
             if (polAmount > 0) {
-                const hash = await this.transferNativePol(recipient, polAmount);
-                if (hash) {
-                    results.push({ recipient, asset: "POL", amount: polAmount, hash });
+                const transferResult = await this.transferNativePol(recipient, polAmount);
+                if (transferResult?.confirmed) {
+                    results.push(transferResult);
                 }
             }
 
             if (tftAmount > 0) {
                 const transferResult = await this.transferErc20Token(token_address, recipient, tftAmount, "TFT");
-                if (transferResult?.hash) {
-                    results.push({ recipient, asset: "TFT", amount: tftAmount, hash: transferResult.hash });
+                if (transferResult?.confirmed) {
+                    results.push(transferResult);
                 }
             }
 
             if (tttAmount > 0) {
                 const transferResult = await this.transferErc20Token(ttt_token_address, recipient, tttAmount, "TTT");
-                if (transferResult?.hash) {
-                    results.push({ recipient, asset: "TTT", amount: tttAmount, hash: transferResult.hash });
+                if (transferResult?.confirmed) {
+                    results.push(transferResult);
                 }
             }
         }

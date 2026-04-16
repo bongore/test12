@@ -56,7 +56,7 @@ async function persistGrantRecordToServer(address, assetKey, payload = {}) {
 
 function hasGrantedToken(address, assetKey) {
     const status = getAddressGrantStatus(address);
-    return Boolean(status?.[assetKey]?.grantedAt);
+    return Boolean(status?.[assetKey]?.confirmed && status?.[assetKey]?.grantedAt);
 }
 
 function markGrantedToken(address, assetKey, payload = {}) {
@@ -71,6 +71,7 @@ function markGrantedToken(address, assetKey, payload = {}) {
             amount: payload.amount ?? null,
             txHash: payload.txHash || "",
             source: payload.source || "",
+            confirmed: payload.confirmed !== false,
         },
     };
 

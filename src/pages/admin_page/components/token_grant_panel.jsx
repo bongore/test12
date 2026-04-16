@@ -149,10 +149,13 @@ function Token_grant_panel(props) {
                         amount: result.amount,
                         txHash: result.hash,
                         source: sourceLabel,
+                        confirmed: result.confirmed !== false,
                     };
 
-                    markGrantedToken(item.address, assetKey, payload);
-                    await persistGrantRecordToServer(item.address, assetKey, payload);
+                    if (result.confirmed !== false) {
+                        markGrantedToken(item.address, assetKey, payload);
+                        await persistGrantRecordToServer(item.address, assetKey, payload);
+                    }
                 }
             }
 
