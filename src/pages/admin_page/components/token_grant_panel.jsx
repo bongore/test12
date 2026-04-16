@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Form } from "react-bootstrap";
 import { ACTION_TYPES, appendActivityLog } from "../../../utils/activityLog";
-import { getAddressGrantStatus, getGrantLedgerEntries, hasGrantedToken, markGrantedToken, TOKEN_GRANT_KEYS } from "../../../utils/tokenGrantLedger";
+import { getAddressGrantStatus, getGrantLedgerEntries, hasGrantedToken, markGrantedToken, persistGrantRecordToServer, syncGrantLedgerFromServer, TOKEN_GRANT_KEYS } from "../../../utils/tokenGrantLedger";
 
 function normalizeAddressLines(rawValue) {
     return rawValue
@@ -23,7 +23,12 @@ function Token_grant_panel(props) {
 
     const typedAddresses = useMemo(() => normalizeAddressLines(bulkAddresses), [bulkAddresses]);
 
-    function refreshGrantLedger() {
+    async function refreshGrantLedger() {
+        try {
+            await syncGrantLedgerFromServer();
+        } catch (error) {
+            console.error("Failed to sync token grant ledger", error);
+        }
         setGrantLedgerEntries(getGrantLedgerEntries());
     }
 
@@ -85,6 +90,7 @@ function Token_grant_panel(props) {
     }
 
     async function grantToAddresses(addresses, sourceLabel) {
+        await refreshGrantLedger();
         const { requestedAmounts, normalizedTargets, plan } = buildGrantPlan(addresses);
         if (normalizedTargets.length === 0) {
             alert("付与先アドレスを入力または選択してください。");
@@ -122,6 +128,14 @@ function Token_grant_panel(props) {
                         txHash: result.hash,
                         source: sourceLabel,
                     });
+                    persistGrantRecordToServer(item.address, assetKey, {
+                        grantedAt: new Date().toISOString(),
+                        amount: result.amount,
+                        txHash: result.hash,
+                        source: sourceLabel,
+                    }).catch((error) => {
+                        console.error("Failed to persist token grant record to server", error);
+                    });
                 });
             }
 
@@ -135,7 +149,7 @@ function Token_grant_panel(props) {
                 tttAmount: requestedAmounts.TTT,
             });
 
-            refreshGrantLedger();
+            await refreshGrantLedger();
 
             const skippedTargets = plan
                 .filter((item) => !item.shouldGrant.POL && !item.shouldGrant.TFT && !item.shouldGrant.TTT)

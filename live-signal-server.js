@@ -10,13 +10,75 @@ const MAX_REACTION_HISTORY = 20;
 const BLOCKED_MESSAGE_PATTERNS = [/ばか/i, /あほ/i, /死ね/i, /殺す/i, /くそ/i, /fuck/i, /shit/i, /bitch/i, /(.)\1{7,}/];
 const REACTION_KEYS = ["understood", "repeat", "slow", "fast"];
 const STATE_FILE_PATH = path.join(__dirname, ".live-board-state.json");
+let tokenGrantLedger = {};
 
-const server = http.createServer((req, res) => {
-    res.writeHead(200, {
+function writeJson(res, statusCode, payload) {
+    res.writeHead(statusCode, {
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
     });
-    res.end(JSON.stringify({ ok: true, service: "live-signal-server" }));
+    res.end(JSON.stringify(payload));
+}
+
+function readRequestBody(req) {
+    return new Promise((resolve, reject) => {
+        let raw = "";
+        req.on("data", (chunk) => {
+            raw += chunk;
+        });
+        req.on("end", () => {
+            try {
+                resolve(raw ? JSON.parse(raw) : {});
+            } catch (error) {
+                reject(error);
+            }
+        });
+        req.on("error", reject);
+    });
+}
+
+const server = http.createServer((req, res) => {
+    if (req.method === "OPTIONS") {
+        writeJson(res, 200, { ok: true });
+        return;
+    }
+
+    if (req.url === "/token-grants" && req.method === "GET") {
+        writeJson(res, 200, { ok: true, ledger: tokenGrantLedger });
+        return;
+    }
+
+    if (req.url === "/token-grants" && req.method === "POST") {
+        readRequestBody(req)
+            .then((body) => {
+                const address = String(body?.address || "").toLowerCase();
+                const assetKey = String(body?.assetKey || "").trim();
+                if (!address || !assetKey) {
+                    writeJson(res, 400, { ok: false, error: "invalid_payload" });
+                    return;
+                }
+
+                tokenGrantLedger[address] = {
+                    ...(tokenGrantLedger[address] || {}),
+                    [assetKey]: {
+                        grantedAt: body?.payload?.grantedAt || new Date().toISOString(),
+                        amount: body?.payload?.amount ?? null,
+                        txHash: body?.payload?.txHash || "",
+                        source: body?.payload?.source || "",
+                    },
+                };
+                persistState();
+                writeJson(res, 200, { ok: true, ledger: tokenGrantLedger });
+            })
+            .catch(() => {
+                writeJson(res, 400, { ok: false, error: "invalid_json" });
+            });
+        return;
+    }
+
+    writeJson(res, 200, { ok: true, service: "live-signal-server" });
 });
 
 const wss = new WebSocket.Server({ server });
@@ -134,6 +196,7 @@ function persistState() {
             boardSessionHistory: boardSessionHistory.map((session) => serializeBoardSessionForStorage(session)),
             currentReactionSession: serializeReactionSessionForStorage(currentReactionSession),
             currentBoardSession: serializeBoardSessionForStorage(currentBoardSession),
+            tokenGrantLedger,
             deletedBoardMessagesBySession: Object.fromEntries(
                 Object.entries(deletedBoardMessagesBySession).map(([sessionId, entries]) => [
                     sessionId,
@@ -165,6 +228,7 @@ function loadPersistedState() {
             : [];
         currentReactionSession = reviveReactionSession(payload?.currentReactionSession, "現在の授業");
         currentBoardSession = reviveBoardSession(payload?.currentBoardSession, "現在の授業");
+        tokenGrantLedger = payload?.tokenGrantLedger && typeof payload.tokenGrantLedger === "object" ? payload.tokenGrantLedger : {};
         deletedBoardMessagesBySession = Object.fromEntries(
             Object.entries(payload?.deletedBoardMessagesBySession || {}).map(([sessionId, entries]) => [
                 String(sessionId),

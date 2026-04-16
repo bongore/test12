@@ -1,3 +1,5 @@
+import { fetchLiveSignalJson } from "./liveSignalApi";
+
 const STORAGE_KEY = "web3_quiz_token_grant_ledger_v1";
 
 const TOKEN_GRANT_KEYS = {
@@ -29,6 +31,27 @@ function normalizeAddress(address) {
 function getAddressGrantStatus(address) {
     const ledger = readGrantLedger();
     return ledger[normalizeAddress(address)] || {};
+}
+
+async function syncGrantLedgerFromServer() {
+    const response = await fetchLiveSignalJson("/token-grants", { method: "GET" });
+    const ledger = response?.ledger && typeof response.ledger === "object" ? response.ledger : {};
+    writeGrantLedger(ledger);
+    return ledger;
+}
+
+async function persistGrantRecordToServer(address, assetKey, payload = {}) {
+    const response = await fetchLiveSignalJson("/token-grants", {
+        method: "POST",
+        body: JSON.stringify({
+            address: normalizeAddress(address),
+            assetKey,
+            payload,
+        }),
+    });
+    const ledger = response?.ledger && typeof response.ledger === "object" ? response.ledger : readGrantLedger();
+    writeGrantLedger(ledger);
+    return ledger;
 }
 
 function hasGrantedToken(address, assetKey) {
@@ -70,4 +93,6 @@ export {
     hasGrantedToken,
     markGrantedToken,
     getGrantLedgerEntries,
+    syncGrantLedgerFromServer,
+    persistGrantRecordToServer,
 };
