@@ -70,6 +70,7 @@ const ACTION_TYPES = {
     ADMIN_ADD_STUDENT: "admin_add_student",
     ADMIN_ADD_TEACHER: "admin_add_teacher",
     ADMIN_CREATE_QUIZ: "admin_create_quiz",
+    ADMIN_GRANT_TOKENS: "admin_grant_tokens",
     ADMIN_EDIT_QUIZ: "admin_edit_quiz",
     ADMIN_TA_HELPER_VIEWED: "admin_ta_helper_viewed",
 };
@@ -256,6 +257,7 @@ function formatActionLabel(action) {
         case ACTION_TYPES.ADMIN_ADD_STUDENT: return "学生追加";
         case ACTION_TYPES.ADMIN_ADD_TEACHER: return "教員追加";
         case ACTION_TYPES.ADMIN_CREATE_QUIZ: return "クイズ作成";
+        case ACTION_TYPES.ADMIN_GRANT_TOKENS: return "トークン付与";
         case ACTION_TYPES.ADMIN_EDIT_QUIZ: return "クイズ編集";
         case ACTION_TYPES.ADMIN_TA_HELPER_VIEWED: return "TA補助画面表示";
         default: return action || "-";

@@ -5,7 +5,7 @@
  * This file contains the Contracts_MetaMask class with all blockchain interaction methods.
  */
 /* global BigInt */
-import { getAddress as checksumAddress } from "viem";
+import { getAddress as checksumAddress, parseEther, parseUnits } from "viem";
 import {
     ethereum,
     walletClient,
@@ -2605,6 +2605,109 @@ class Contracts_MetaMask {
             console.error("Superchat transaction failed:", err);
             throw err;
         }
+    }
+
+    normalizeAddressList(addresses = []) {
+        const uniqueAddresses = [];
+        addresses.forEach((item) => {
+            try {
+                const normalized = checksumAddress(String(item || "").trim());
+                if (!uniqueAddresses.some((current) => this.normalizeAddress(current) === this.normalizeAddress(normalized))) {
+                    uniqueAddresses.push(normalized);
+                }
+            } catch (error) {
+            }
+        });
+        return uniqueAddresses;
+    }
+
+    async transferNativePol(recipientAddress, amountPol) {
+        const provider = this.getEthereumProvider();
+        if (!provider || !walletClient) {
+            throw new Error("ethereum_not_found");
+        }
+
+        const account = await this.get_address();
+        const recipient = checksumAddress(String(recipientAddress || "").trim());
+        const value = parseEther(String(amountPol || 0));
+        if (value <= 0n) {
+            return null;
+        }
+
+        const hash = await walletClient.sendTransaction({
+            account,
+            to: recipient,
+            value,
+            chain: amoy,
+        });
+        await publicClient.waitForTransactionReceipt({ hash });
+        return hash;
+    }
+
+    async transferErc20Token(tokenContractAddress, recipientAddress, amount, symbol = "TOKEN", decimals = 18) {
+        const provider = this.getEthereumProvider();
+        if (!provider || !walletClient) {
+            throw new Error("ethereum_not_found");
+        }
+
+        const account = await this.get_address();
+        const recipient = checksumAddress(String(recipientAddress || "").trim());
+        const value = parseUnits(String(amount || 0), decimals);
+        if (value <= 0n) {
+            return null;
+        }
+
+        const hash = await this.writeContractDirect({
+            account,
+            address: tokenContractAddress,
+            abi: token_abi,
+            functionName: "transfer",
+            args: [recipient, value],
+        });
+        await publicClient.waitForTransactionReceipt({ hash });
+        return {
+            hash,
+            symbol,
+            amount,
+            recipient,
+        };
+    }
+
+    async grantStudentStarterTokens(addresses, amounts = {}) {
+        const recipients = this.normalizeAddressList(addresses);
+        if (recipients.length === 0) {
+            throw new Error("recipient_not_found");
+        }
+
+        const polAmount = Number(amounts.pol || 0);
+        const tftAmount = Number(amounts.tft || 0);
+        const tttAmount = Number(amounts.ttt || 0);
+        const results = [];
+
+        for (const recipient of recipients) {
+            if (polAmount > 0) {
+                const hash = await this.transferNativePol(recipient, polAmount);
+                if (hash) {
+                    results.push({ recipient, asset: "POL", amount: polAmount, hash });
+                }
+            }
+
+            if (tftAmount > 0) {
+                const transferResult = await this.transferErc20Token(token_address, recipient, tftAmount, "TFT");
+                if (transferResult?.hash) {
+                    results.push({ recipient, asset: "TFT", amount: tftAmount, hash: transferResult.hash });
+                }
+            }
+
+            if (tttAmount > 0) {
+                const transferResult = await this.transferErc20Token(ttt_token_address, recipient, tttAmount, "TTT");
+                if (transferResult?.hash) {
+                    results.push({ recipient, asset: "TTT", amount: tttAmount, hash: transferResult.hash });
+                }
+            }
+        }
+
+        return results;
     }
 }
 

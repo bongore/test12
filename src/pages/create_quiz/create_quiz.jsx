@@ -8,7 +8,7 @@ import Wait_Modal from "../../contract/wait_Modal";
 import { ACTION_TYPES, appendActivityLog } from "../../utils/activityLog";
 import { setRegisteredCorrectAnswer } from "../../utils/quizCorrectAnswerStore";
 import { quiz_address } from "../../contract/config";
-import { MAX_TFT_PER_LECTURE, MAX_TFT_TOTAL, QUIZ_RATE_OPTIONS, TOTAL_LECTURE_COUNT } from "../../utils/quizRewardRate";
+import { MAX_TFT_PER_LECTURE, MAX_TFT_TOTAL, QUIZ_RATE_OPTIONS, TOTAL_LECTURE_COUNT, convertTftToPoint, TFT_PER_POINT } from "../../utils/quizRewardRate";
 import "./create_quiz.css";
 
 function Create_quiz() {
@@ -22,6 +22,7 @@ function Create_quiz() {
     const [answer_data, setAnswer_data] = useState([]);
     const [correct, setCorrect] = useState("");
     const [scoreTier, setScoreTier] = useState(QUIZ_RATE_OPTIONS[0].id);
+    const [isManualReward, setIsManualReward] = useState(false);
     const [reply_startline, setReply_startline] = useState(
         new Date()
             .toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })
@@ -136,6 +137,26 @@ function Create_quiz() {
         const nextRate = QUIZ_RATE_OPTIONS.find((item) => item.id === nextTier) || QUIZ_RATE_OPTIONS[0];
         setScoreTier(nextRate.id);
         setReward(nextRate.reward);
+        setIsManualReward(false);
+    };
+
+    const handleManualModeToggle = (checked) => {
+        setIsManualReward(checked);
+        if (!checked) {
+            const nextRate = QUIZ_RATE_OPTIONS.find((item) => item.id === scoreTier) || QUIZ_RATE_OPTIONS[0];
+            setScoreTier(nextRate.id);
+            setReward(nextRate.reward);
+        }
+    };
+
+    const handleManualRewardChange = (value) => {
+        const normalizedValue = Number(String(value || "").replace(/[^\d.]/g, ""));
+        const nextReward = Number.isFinite(normalizedValue) ? normalizedValue : 0;
+        setReward(nextReward);
+        setIsManualReward(true);
+
+        const matchedRate = QUIZ_RATE_OPTIONS.find((item) => Number(item.reward) === Number(nextReward));
+        setScoreTier(matchedRate ? matchedRate.id : "custom");
     };
 
     return (
@@ -236,7 +257,7 @@ function Create_quiz() {
                         <Form.Label>🎯 配点とTFTレート</Form.Label>
                         <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginTop: "8px" }}>
                             {QUIZ_RATE_OPTIONS.map((option) => {
-                                const selected = option.id === scoreTier;
+                                const selected = !isManualReward && option.id === scoreTier;
                                 return (
                                     <button
                                         key={option.id}
@@ -261,6 +282,32 @@ function Create_quiz() {
                                 );
                             })}
                         </div>
+                        <div style={{ marginTop: "16px" }}>
+                            <Form.Check
+                                type="switch"
+                                id="manual-reward-switch"
+                                label="TFT報酬を手動で入力する"
+                                checked={isManualReward}
+                                onChange={(event) => handleManualModeToggle(event.target.checked)}
+                                style={{ color: "#fff", marginBottom: "12px" }}
+                            />
+                            {isManualReward && (
+                                <Form.Group style={{ maxWidth: "320px" }}>
+                                    <Form.Label style={{ color: "#fff" }}>手動入力の報酬（TFT）</Form.Label>
+                                    <Form.Control
+                                        type="number"
+                                        min="0"
+                                        step="1"
+                                        value={reward}
+                                        onChange={(event) => handleManualRewardChange(event.target.value)}
+                                        placeholder="例: 45"
+                                    />
+                                    <div style={{ marginTop: "8px", fontSize: "13px", color: "rgba(255,255,255,0.72)" }}>
+                                        現在の換算目安: {convertTftToPoint(reward).toFixed(2)} 点（1点 = {TFT_PER_POINT} TFT）
+                                    </div>
+                                </Form.Group>
+                            )}
+                        </div>
                     </Form.Group>
 
                     <div
@@ -277,7 +324,7 @@ function Create_quiz() {
                     >
                         <div>
                             <div style={{ fontSize: "13px", color: "rgba(255,255,255,0.72)" }}>今回の配点</div>
-                            <div style={{ fontWeight: 700 }}>{selectedRate.point} 点</div>
+                            <div style={{ fontWeight: 700 }}>{(isManualReward ? convertTftToPoint(reward) : selectedRate.point).toFixed(2)} 点</div>
                         </div>
                         <div>
                             <div style={{ fontSize: "13px", color: "rgba(255,255,255,0.72)" }}>今回の報酬</div>
