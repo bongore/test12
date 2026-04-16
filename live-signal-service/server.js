@@ -12,6 +12,41 @@ const REACTION_KEYS = ["understood", "repeat", "slow", "fast"];
 const STATE_FILE_PATH = path.join(__dirname, ".live-board-state.json");
 let tokenGrantLedger = {};
 
+function inferGrantHistoryType(source = "", isRemove = false) {
+    if (isRemove) return "clear";
+    if (String(source || "").includes("manual_mark")) return "manual_mark";
+    return "grant";
+}
+
+function normalizeHistoryEntry(entry = {}) {
+    return {
+        type: entry?.type || inferGrantHistoryType(entry?.source, entry?.active === false),
+        at: entry?.at || entry?.grantedAt || new Date().toISOString(),
+        amount: entry?.amount ?? null,
+        txHash: entry?.txHash || "",
+        source: entry?.source || "",
+        confirmed: entry?.confirmed !== false,
+        active: entry?.active !== false,
+    };
+}
+
+function normalizeGrantRecord(record = null) {
+    if (!record || typeof record !== "object") return null;
+    const history = Array.isArray(record.history) && record.history.length > 0
+        ? record.history.map((entry) => normalizeHistoryEntry(entry))
+        : [normalizeHistoryEntry(record)];
+
+    return {
+        grantedAt: record.grantedAt || history[history.length - 1]?.at || "",
+        amount: record.amount ?? null,
+        txHash: record.txHash || "",
+        source: record.source || "",
+        confirmed: record.confirmed !== false,
+        active: record.active !== false,
+        history,
+    };
+}
+
 function writeJson(res, statusCode, payload) {
     res.writeHead(statusCode, {
         "Content-Type": "application/json",
@@ -61,28 +96,57 @@ const server = http.createServer((req, res) => {
                 }
 
                 if (body?.remove) {
-                    const currentStatus = tokenGrantLedger[address] || {};
-                    const nextStatus = { ...currentStatus };
-                    delete nextStatus[assetKey];
-
-                    if (Object.keys(nextStatus).length === 0) {
-                        delete tokenGrantLedger[address];
-                    } else {
-                        tokenGrantLedger[address] = nextStatus;
+                    const currentRecord = normalizeGrantRecord(tokenGrantLedger[address]?.[assetKey]);
+                    if (!currentRecord) {
+                        writeJson(res, 200, { ok: true, ledger: tokenGrantLedger });
+                        return;
                     }
+                    const nextEntry = normalizeHistoryEntry({
+                        type: "clear",
+                        at: body?.payload?.grantedAt || new Date().toISOString(),
+                        amount: body?.payload?.amount ?? currentRecord.amount ?? null,
+                        txHash: "",
+                        source: body?.payload?.source || "manual_clear",
+                        confirmed: true,
+                        active: false,
+                    });
+                    tokenGrantLedger[address] = {
+                        ...(tokenGrantLedger[address] || {}),
+                        [assetKey]: {
+                            grantedAt: nextEntry.at,
+                            amount: currentRecord.amount ?? null,
+                            txHash: currentRecord.txHash || "",
+                            source: nextEntry.source,
+                            confirmed: true,
+                            active: false,
+                            history: [...(currentRecord.history || []), nextEntry],
+                        },
+                    };
                     persistState();
                     writeJson(res, 200, { ok: true, ledger: tokenGrantLedger });
                     return;
                 }
 
+                const currentRecord = normalizeGrantRecord(tokenGrantLedger[address]?.[assetKey]);
+                const nextEntry = normalizeHistoryEntry({
+                    type: inferGrantHistoryType(body?.payload?.source, false),
+                    at: body?.payload?.grantedAt || new Date().toISOString(),
+                    amount: body?.payload?.amount ?? null,
+                    txHash: body?.payload?.txHash || "",
+                    source: body?.payload?.source || "",
+                    confirmed: body?.payload?.confirmed !== false,
+                    active: true,
+                });
                 tokenGrantLedger[address] = {
                     ...(tokenGrantLedger[address] || {}),
                     [assetKey]: {
-                        grantedAt: body?.payload?.grantedAt || new Date().toISOString(),
-                        amount: body?.payload?.amount ?? null,
-                        txHash: body?.payload?.txHash || "",
-                        source: body?.payload?.source || "",
-                        confirmed: body?.payload?.confirmed !== false,
+                        grantedAt: nextEntry.at,
+                        amount: nextEntry.amount,
+                        txHash: nextEntry.txHash || currentRecord?.txHash || "",
+                        source: nextEntry.source,
+                        confirmed: nextEntry.confirmed,
+                        active: true,
+                        history: [...(currentRecord?.history || []), nextEntry],
                     },
                 };
                 persistState();

@@ -6,7 +6,9 @@ import {
     getAddressGrantStatus,
     getGrantLedgerEntries,
     hasGrantedToken,
+    isGrantActive,
     markGrantedToken,
+    normalizeGrantRecord,
     persistGrantRecordToServer,
     removeGrantRecordFromServer,
     syncGrantLedgerFromServer,
@@ -55,6 +57,10 @@ function isManualMarkedRecord(record) {
     return String(record?.source || "").includes("manual_mark");
 }
 
+function hasManualMarkHistory(record) {
+    return (record?.history || []).some((entry) => entry?.type === "manual_mark");
+}
+
 function Token_grant_panel(props) {
     const [singleAddress, setSingleAddress] = useState("");
     const [bulkAddresses, setBulkAddresses] = useState("");
@@ -69,7 +75,10 @@ function Token_grant_panel(props) {
 
     const typedAddresses = useMemo(() => normalizeAddressLines(bulkAddresses), [bulkAddresses]);
     const manualGrantEntries = useMemo(
-        () => grantLedgerEntries.filter((entry) => ASSET_LABELS.some((item) => isManualMarkedRecord(entry?.status?.[item.key]))),
+        () => grantLedgerEntries.filter((entry) => ASSET_LABELS.some((item) => {
+            const record = normalizeGrantRecord(entry?.status?.[item.key]);
+            return isGrantActive(record) && hasManualMarkHistory(record);
+        })),
         [grantLedgerEntries]
     );
 
@@ -212,8 +221,13 @@ function Token_grant_panel(props) {
                     const currentRecord = status?.[target.assetKey];
                     if (!currentRecord) continue;
 
-                    clearGrantedToken(address, target.assetKey);
-                    await removeGrantRecordFromServer(address, target.assetKey);
+                    const clearPayload = {
+                        grantedAt: new Date().toISOString(),
+                        amount: currentRecord?.amount ?? target.amount,
+                        source: `${sourceLabel}_clear_manual_mark`,
+                    };
+                    clearGrantedToken(address, target.assetKey, clearPayload);
+                    await removeGrantRecordFromServer(address, target.assetKey, clearPayload);
                     removedCount += 1;
                 }
             }
@@ -353,7 +367,7 @@ function Token_grant_panel(props) {
                         <div key={item.key} className={`token-grant-status-badge ${record ? "granted" : "pending"}`}>
                             <span>{item.label}</span>
                             <span>
-                                {record
+                                {record && isGrantActive(record)
                                     ? `${isManualMarkedRecord(record) ? "既付与登録" : "付与済み"}${record.amount ? ` ${record.amount}` : ""}`
                                     : "未付与"}
                             </span>
@@ -370,23 +384,24 @@ function Token_grant_panel(props) {
         return (
             <div className="token-grant-status-list detailed">
                 {ASSET_LABELS.map((item) => {
-                    const record = status?.[item.key];
+                    const record = normalizeGrantRecord(status?.[item.key]);
+                    const history = [...(record?.history || [])].sort((left, right) => String(right.at).localeCompare(String(left.at)));
                     return (
                         <div key={item.key} className={`token-grant-status-badge ${record ? "granted" : "pending"} detailed`}>
                             <div className="token-grant-status-heading">
                                 <span>{item.label}</span>
                                 <span>
-                                    {record
+                                    {record && isGrantActive(record)
                                         ? `${isManualMarkedRecord(record) ? "既付与登録" : "付与済み"}${record.amount ? ` ${record.amount}` : ""}`
                                         : "未付与"}
                                 </span>
                             </div>
                             {record ? (
                                 <div className="token-grant-status-meta">
-                                    <div>状態: {isManualMarkedRecord(record) ? "過去配布済みとして登録（送金なし）" : "送金確認済み"}</div>
-                                    <div>時刻: {formatDateTime(record.grantedAt)}</div>
+                                    <div>状態: {isGrantActive(record) ? (isManualMarkedRecord(record) ? "過去配布済みとして登録（送金なし）" : "送金確認済み") : "現在は未付与"}</div>
+                                    <div>現在状態の時刻: {formatDateTime(record.grantedAt)}</div>
                                     <div>
-                                        Tx:
+                                        現在状態の Tx:
                                         {" "}
                                         {record.txHash ? (
                                             <a
@@ -401,6 +416,31 @@ function Token_grant_panel(props) {
                                             isManualMarkedRecord(record) ? "既付与登録のため送金なし" : "-"
                                         )}
                                     </div>
+                                    {history.length > 0 && (
+                                        <div style={{ marginTop: "var(--space-2)" }}>
+                                            <div style={{ fontWeight: 600, color: "#fff3cd" }}>履歴</div>
+                                            {history.map((entry, index) => (
+                                                <div key={`${item.key}-${index}-${entry.at}`} style={{ marginTop: "0.25rem" }}>
+                                                    {formatDateTime(entry.at)}
+                                                    {" / "}
+                                                    {entry.type === "manual_mark" ? "既付与登録" : entry.type === "clear" ? "既付与解除" : "送金確認"}
+                                                    {" / "}
+                                                    {entry.txHash ? (
+                                                        <a
+                                                            href={`${AMOY_EXPLORER_TX_BASE}${entry.txHash}`}
+                                                            target="_blank"
+                                                            rel="noreferrer"
+                                                            className="token-grant-link"
+                                                        >
+                                                            {shortenHash(entry.txHash)}
+                                                        </a>
+                                                    ) : (
+                                                        "送金なし"
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="token-grant-status-meta">
@@ -417,9 +457,12 @@ function Token_grant_panel(props) {
     function renderManualGrantAssets(address) {
         const status = getAddressGrantStatus(address);
         const manualAssets = ASSET_LABELS
-            .filter((item) => isManualMarkedRecord(status?.[item.key]))
+            .filter((item) => {
+                const record = normalizeGrantRecord(status?.[item.key]);
+                return isGrantActive(record) && hasManualMarkHistory(record);
+            })
             .map((item) => {
-                const record = status?.[item.key];
+                const record = normalizeGrantRecord(status?.[item.key]);
                 return `${item.label}${record?.amount ? ` ${record.amount}` : ""}`;
             });
         return manualAssets.join(" / ");
