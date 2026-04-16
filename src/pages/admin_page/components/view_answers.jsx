@@ -150,6 +150,7 @@ function View_answers() {
                 const result = [];
                 for (const student of students) {
                     const hash = answerMap[student];
+                    const detail = await contract.get_student_answer_detail(student, quizId, sourceAddress);
                     let decodedAnswer = "";
 
                     if (answerType === 0) {
@@ -166,6 +167,9 @@ function View_answers() {
                         address: student,
                         answer: decodedAnswer,
                         hash: hash,
+                        state: Number(detail?.state || 0),
+                        reward: Number(detail?.reward || 0),
+                        result: Boolean(detail?.result),
                     });
                 }
                 setAnswers(result);
@@ -264,6 +268,8 @@ function View_answers() {
                                         <th style={{ width: "50px" }}>#</th>
                                         <th>ウォレットアドレス</th>
                                         <th>回答内容</th>
+                                        <th>判定</th>
+                                        <th>報酬</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -281,6 +287,10 @@ function View_answers() {
                                             }}>
                                                 {item.answer || "未回答"}
                                             </td>
+                                            <td>
+                                                {item.state === 2 ? "正解" : item.state === 1 ? "不正解" : item.state === 3 ? "回答済み" : "未回答"}
+                                            </td>
+                                            <td>{Number(item.reward || 0) / 10 ** 18} TFT</td>
                                         </tr>
                                     ))}
                                 </tbody>

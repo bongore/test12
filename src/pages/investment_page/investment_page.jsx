@@ -17,6 +17,11 @@ function formatAnswerState(state) {
     return "未回答";
 }
 
+function formatTxHash(hash) {
+    if (!hash) return "";
+    return `${hash.slice(0, 10)}...${hash.slice(-6)}`;
+}
+
 function Investment_to_quiz() {
     const navigate = useNavigate();
     const location = useLocation();
@@ -34,6 +39,7 @@ function Investment_to_quiz() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(true);
     const [loadError, setLoadError] = useState("");
+    const [executionSummary, setExecutionSummary] = useState(null);
 
     const Contract = useMemo(() => new Contracts_MetaMask(), []);
     const access = useAccessControl(Contract);
@@ -96,13 +102,14 @@ function Investment_to_quiz() {
                 .filter((row) => row.submitted)
                 .map((row) => row.address);
 
+            let executionResult = null;
             if (gradingMode === "auto") {
                 if (isNotPayingOut === "false" && !autoAnswer.trim()) {
                     alert("自動判定で払い出しを行う場合は正解を入力してください。");
                     return;
                 }
 
-                await Contract.investment_to_quiz(
+                executionResult = await Contract.investment_to_quiz(
                     id,
                     amount,
                     convertFullWidthNumbersToHalf(autoAnswer),
@@ -139,7 +146,7 @@ function Investment_to_quiz() {
                         );
                     }
                 } else {
-                    await Contract.settle_quiz_rewards_manually(
+                    executionResult = await Contract.settle_quiz_rewards_manually(
                         id,
                         amount,
                         confirmAnswer,
@@ -150,8 +157,20 @@ function Investment_to_quiz() {
                     );
                 }
             }
-
-            navigate("/edit_list");
+            await loadStudentSubmissions();
+            setExecutionSummary({
+                executedAt: new Date().toISOString(),
+                gradingMode,
+                rewardAmount: Number(amount || 0),
+                correctCount,
+                incorrectCount,
+                submittedCount,
+                approvalTx: executionResult?.res?.transactionHash || executionResult?.res?.hash || "",
+                payoutTxs: Array.isArray(executionResult?.payoutReceipts)
+                    ? executionResult.payoutReceipts.map((item) => item?.transactionHash || item?.hash).filter(Boolean)
+                    : [],
+                bonusTx: executionResult?.hash || "",
+            });
         } finally {
             setIsSubmitting(false);
         }
@@ -359,7 +378,53 @@ function Investment_to_quiz() {
                     <button className="btn-invest-submit" onClick={handleExecute} disabled={isSubmitting}>
                         {isSubmitting ? "処理中..." : "🚀 採点結果を反映する"}
                     </button>
+                    <button className="btn btn-secondary" type="button" onClick={() => navigate("/edit_list")} style={{ marginLeft: "12px" }}>
+                        一覧へ戻る
+                    </button>
                 </div>
+
+                {executionSummary && (
+                    <div className="invest-section">
+                        <div className="invest-section-title">反映結果の確認</div>
+                        <div className="invest-section-desc">採点結果と報酬反映の結果をその場で確認できます</div>
+                        <div className="glass-card" style={{ padding: "16px", display: "grid", gap: "10px", color: "#fff" }}>
+                            <div>実行時刻: {new Date(executionSummary.executedAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}</div>
+                            <div>判定モード: {executionSummary.gradingMode === "auto" ? "自動判定" : "手動判定"}</div>
+                            <div>報酬額: {executionSummary.rewardAmount} TFT / 人</div>
+                            <div>正解: {executionSummary.correctCount}人 / 不正解: {executionSummary.incorrectCount}人 / 回答済み: {executionSummary.submittedCount}人</div>
+                            {executionSummary.approvalTx && (
+                                <div>
+                                    承認・準備Tx:
+                                    {" "}
+                                    <a href={`https://amoy.polygonscan.com/tx/${executionSummary.approvalTx}`} target="_blank" rel="noreferrer">
+                                        {formatTxHash(executionSummary.approvalTx)}
+                                    </a>
+                                </div>
+                            )}
+                            {executionSummary.payoutTxs.length > 0 && (
+                                <div>
+                                    報酬反映Tx:
+                                    <div style={{ display: "grid", gap: "6px", marginTop: "6px" }}>
+                                        {executionSummary.payoutTxs.map((hash) => (
+                                            <a key={hash} href={`https://amoy.polygonscan.com/tx/${hash}`} target="_blank" rel="noreferrer">
+                                                {formatTxHash(hash)}
+                                            </a>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            {executionSummary.bonusTx && (
+                                <div>
+                                    発表者ボーナスTx:
+                                    {" "}
+                                    <a href={`https://amoy.polygonscan.com/tx/${executionSummary.bonusTx}`} target="_blank" rel="noreferrer">
+                                        {formatTxHash(executionSummary.bonusTx)}
+                                    </a>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
