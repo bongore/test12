@@ -1608,22 +1608,40 @@ class Contracts_MetaMask {
         try {
             if (ethereum) {
                 try {
+                    const normalizedAddresses = this.normalizeAddressList(address);
+                    if (normalizedAddresses.length === 0) {
+                        throw new Error("有効な学生アドレスがありません。");
+                    }
+                    const [students, teachers] = await Promise.all([
+                        this.get_student_list(),
+                        this.get_teachers(),
+                    ]);
+                    const registered = new Set([
+                        ...(Array.isArray(students) ? students : []),
+                        ...(Array.isArray(teachers) ? teachers : []),
+                    ].map((item) => this.normalizeAddress(item)));
+                    const targets = normalizedAddresses.filter((item) => !registered.has(this.normalizeAddress(item)));
+                    if (targets.length === 0) {
+                        throw new Error("指定したアドレスはすでに学生または教員として登録済みです。");
+                    }
                     let account = await this.get_address();
                     return await this.writeContractDirect({
                         account,
                         address: class_room_address,
                         abi: [ADD_STUDENT_ABI],
                         functionName: "add_student",
-                        args: [address],
+                        args: [targets],
                     });
                 } catch (e) {
                     console.log(e);
+                    throw e;
                 }
             } else {
                 console.log("Ethereum object does not exist");
             }
         } catch (err) {
             console.log(err);
+            throw err;
         }
     }
 
@@ -1631,22 +1649,36 @@ class Contracts_MetaMask {
         try {
             if (ethereum) {
                 try {
+                    const normalizedAddress = checksumAddress(String(address || "").trim());
+                    const [students, teachers] = await Promise.all([
+                        this.get_student_list(),
+                        this.get_teachers(),
+                    ]);
+                    const registered = new Set([
+                        ...(Array.isArray(students) ? students : []),
+                        ...(Array.isArray(teachers) ? teachers : []),
+                    ].map((item) => this.normalizeAddress(item)));
+                    if (registered.has(this.normalizeAddress(normalizedAddress))) {
+                        throw new Error("指定したアドレスはすでに学生または教員として登録済みです。");
+                    }
                     let account = await this.get_address();
                     return await this.writeContractDirect({
                         account,
                         address: class_room_address,
                         abi: [ADD_TEACHER_ABI],
                         functionName: "add_teacher",
-                        args: [address],
+                        args: [normalizedAddress],
                     });
                 } catch (e) {
                     console.log(e);
+                    throw e;
                 }
             } else {
                 console.log("Ethereum object does not exist");
             }
         } catch (err) {
             console.log(err);
+            throw err;
         }
     }
 

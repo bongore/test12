@@ -9,26 +9,49 @@ function formatInternalId(prefix, index) {
 function Add_teacher(props) {
     const [addTeacher, setAddTeacher] = useState("");
     const [teachers, setTeachers] = useState([]);
+    const [students, setStudents] = useState([]);
+    const [submitError, setSubmitError] = useState("");
 
     async function loadTeachers() {
         try {
-            const result = await props.cont.get_teachers();
-            setTeachers(Array.isArray(result) ? result : []);
+            const [teacherResult, studentResult] = await Promise.all([
+                props.cont.get_teachers(),
+                props.cont.get_student_list(),
+            ]);
+            setTeachers(Array.isArray(teacherResult) ? teacherResult : []);
+            setStudents(Array.isArray(studentResult) ? studentResult : []);
         } catch (error) {
             console.error("Failed to load teachers", error);
             setTeachers([]);
+            setStudents([]);
         }
     }
 
     async function add_teacher() {
         if (!addTeacher.trim()) return;
-        await props.cont.add_teacher(addTeacher.trim());
-        appendActivityLog(ACTION_TYPES.ADMIN_ADD_TEACHER, {
-            page: "admin",
-            address: addTeacher.trim(),
-        });
-        setAddTeacher("");
-        await loadTeachers();
+        try {
+            const normalizedAddress = props.cont.normalizeAddressList([addTeacher.trim()])[0];
+            if (!normalizedAddress) {
+                setSubmitError("有効なウォレットアドレスを入力してください。");
+                return;
+            }
+            const registered = new Set([...(teachers || []), ...(students || [])].map((item) => props.cont.normalizeAddress(item)));
+            if (registered.has(props.cont.normalizeAddress(normalizedAddress))) {
+                setSubmitError("このアドレスはすでに学生または教員として登録済みです。");
+                return;
+            }
+            setSubmitError("");
+            await props.cont.add_teacher(normalizedAddress);
+            appendActivityLog(ACTION_TYPES.ADMIN_ADD_TEACHER, {
+                page: "admin",
+                address: normalizedAddress,
+            });
+            setAddTeacher("");
+            await loadTeachers();
+        } catch (error) {
+            console.error("Failed to add teacher", error);
+            setSubmitError(error?.message || "先生 / TA の追加に失敗しました。");
+        }
     }
 
     useEffect(() => {
@@ -53,6 +76,12 @@ function Add_teacher(props) {
                     />
                 </Form.Group>
             </Form>
+
+            {submitError && (
+                <div className="address-item" style={{ borderLeftColor: "#ff7b72", color: "#ffd7d7", marginBottom: "var(--space-4)" }}>
+                    {submitError}
+                </div>
+            )}
 
             <button className="btn-action" onClick={add_teacher}>
                 先生 / TA をコントラクトに追加

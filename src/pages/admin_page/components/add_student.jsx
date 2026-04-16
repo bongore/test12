@@ -9,41 +9,68 @@ function formatInternalId(prefix, index) {
 function Add_students(props) {
     const [addStudent, setAddStudent] = useState("");
     const [students, setStudents] = useState([]);
+    const [teachers, setTeachers] = useState([]);
+    const [submitError, setSubmitError] = useState("");
     const addStudent_list = useMemo(
         () => addStudent.split("\n").map((item) => item.trim()).filter(Boolean),
         [addStudent]
     );
+    const normalizedCandidates = useMemo(
+        () => props.cont.normalizeAddressList(addStudent_list),
+        [addStudent_list, props.cont]
+    );
+    const registeredAddressSet = useMemo(
+        () => new Set([...(students || []), ...(teachers || [])].map((item) => props.cont.normalizeAddress(item))),
+        [students, teachers, props.cont]
+    );
+    const duplicateRegisteredAddresses = useMemo(
+        () => normalizedCandidates.filter((item) => registeredAddressSet.has(props.cont.normalizeAddress(item))),
+        [normalizedCandidates, registeredAddressSet, props.cont]
+    );
+    const newStudentTargets = useMemo(
+        () => normalizedCandidates.filter((item) => !registeredAddressSet.has(props.cont.normalizeAddress(item))),
+        [normalizedCandidates, registeredAddressSet, props.cont]
+    );
 
     const loadStudents = async () => {
         try {
-            const result = await props.cont.get_student_list();
-            setStudents(Array.isArray(result) ? result : []);
+            const [studentResult, teacherResult] = await Promise.all([
+                props.cont.get_student_list(),
+                props.cont.get_teachers(),
+            ]);
+            setStudents(Array.isArray(studentResult) ? studentResult : []);
+            setTeachers(Array.isArray(teacherResult) ? teacherResult : []);
         } catch (error) {
             console.error("Failed to load registered students", error);
             setStudents([]);
+            setTeachers([]);
         }
     };
 
     const add_student = async () => {
         if (!addStudent_list.length) return;
-        await props.cont.add_student(addStudent_list);
-        appendActivityLog(ACTION_TYPES.ADMIN_ADD_STUDENT, {
-            page: "admin",
-            count: addStudent_list.length,
-        });
-        setAddStudent("");
-        await loadStudents();
+        if (!newStudentTargets.length) {
+            setSubmitError("入力したアドレスはすべて既登録です。重複登録は行いません。");
+            return;
+        }
+        try {
+            setSubmitError("");
+            await props.cont.add_student(newStudentTargets);
+            appendActivityLog(ACTION_TYPES.ADMIN_ADD_STUDENT, {
+                page: "admin",
+                count: newStudentTargets.length,
+                skippedCount: duplicateRegisteredAddresses.length,
+            });
+            setAddStudent("");
+            await loadStudents();
+        } catch (error) {
+            console.error("Failed to add students", error);
+            setSubmitError(error?.message || "学生の追加に失敗しました。");
+        }
     };
 
     useEffect(() => {
-        props.cont.get_student_list()
-            .then((result) => {
-                setStudents(Array.isArray(result) ? result : []);
-            })
-            .catch((error) => {
-                console.error("Failed to load registered students", error);
-                setStudents([]);
-            });
+        loadStudents();
     }, [props.cont]);
 
     return (
@@ -64,10 +91,25 @@ function Add_students(props) {
 
             {addStudent_list.length > 0 && (
                 <div className="address-list">
-                    <div className="address-list-title">追加予定アドレス ({addStudent_list.length}件)</div>
-                    {addStudent_list.map((item, index) => (
+                    <div className="address-list-title">入力アドレス ({normalizedCandidates.length}件)</div>
+                    {normalizedCandidates.map((item, index) => (
                         <div key={`${item}-${index}`} className="address-item">{item}</div>
                     ))}
+                </div>
+            )}
+
+            {duplicateRegisteredAddresses.length > 0 && (
+                <div className="address-list" style={{ marginTop: "var(--space-4)" }}>
+                    <div className="address-list-title">既登録のため追加しないアドレス ({duplicateRegisteredAddresses.length}件)</div>
+                    {duplicateRegisteredAddresses.map((item, index) => (
+                        <div key={`${item}-duplicate-${index}`} className="address-item">{item}</div>
+                    ))}
+                </div>
+            )}
+
+            {submitError && (
+                <div className="address-item" style={{ borderLeftColor: "#ff7b72", color: "#ffd7d7", marginTop: "var(--space-4)" }}>
+                    {submitError}
                 </div>
             )}
 
