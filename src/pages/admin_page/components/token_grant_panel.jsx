@@ -45,16 +45,22 @@ function Token_grant_panel(props) {
     const [tttAmount, setTttAmount] = useState("1000");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [grantLedgerEntries, setGrantLedgerEntries] = useState([]);
+    const [grantSyncError, setGrantSyncError] = useState("");
 
     const typedAddresses = useMemo(() => normalizeAddressLines(bulkAddresses), [bulkAddresses]);
 
     async function refreshGrantLedger() {
         try {
             await syncGrantLedgerFromServer();
+            setGrantSyncError("");
+            setGrantLedgerEntries(getGrantLedgerEntries());
+            return true;
         } catch (error) {
             console.error("Failed to sync token grant ledger", error);
+            setGrantSyncError("付与履歴の共有同期に失敗しました。二重送金防止のため、同期が戻るまで付与を停止しています。");
+            setGrantLedgerEntries(getGrantLedgerEntries());
+            return false;
         }
-        setGrantLedgerEntries(getGrantLedgerEntries());
     }
 
     async function loadStudents() {
@@ -111,7 +117,11 @@ function Token_grant_panel(props) {
     }
 
     async function grantToAddresses(addresses, sourceLabel) {
-        await refreshGrantLedger();
+        const synced = await refreshGrantLedger();
+        if (!synced) {
+            alert("付与履歴をサーバーと同期できなかったため、二重送金防止のため送金を止めました。少し待ってから再試行してください。");
+            return;
+        }
         const { requestedAmounts, normalizedTargets, plan } = buildGrantPlan(addresses);
         if (normalizedTargets.length === 0) {
             alert("付与先アドレスを入力または選択してください。");
@@ -286,6 +296,11 @@ function Token_grant_panel(props) {
             <p className="section-desc">
                 公開アドレスを提出した学生に、回答用 POL、回答お礼の TFT、掲示板用 TTT を個別またはまとめて配布できます。
             </p>
+            {grantSyncError && (
+                <div className="address-item" style={{ borderLeftColor: "#ff9800", color: "#ffe0a3", marginBottom: "var(--space-4)" }}>
+                    {grantSyncError}
+                </div>
+            )}
 
             <div className="token-grant-grid">
                 <div className="token-grant-card">

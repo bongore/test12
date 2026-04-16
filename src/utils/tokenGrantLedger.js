@@ -33,9 +33,31 @@ function getAddressGrantStatus(address) {
     return ledger[normalizeAddress(address)] || {};
 }
 
+function mergeGrantLedger(baseLedger = {}, nextLedger = {}) {
+    const merged = { ...(baseLedger || {}) };
+
+    Object.entries(nextLedger || {}).forEach(([address, status]) => {
+        const normalizedAddress = normalizeAddress(address);
+        const currentStatus = merged[normalizedAddress] || {};
+        const nextStatus = status && typeof status === "object" ? status : {};
+
+        merged[normalizedAddress] = {
+            ...currentStatus,
+            ...nextStatus,
+            [TOKEN_GRANT_KEYS.POL]: nextStatus[TOKEN_GRANT_KEYS.POL] || currentStatus[TOKEN_GRANT_KEYS.POL] || null,
+            [TOKEN_GRANT_KEYS.TFT]: nextStatus[TOKEN_GRANT_KEYS.TFT] || currentStatus[TOKEN_GRANT_KEYS.TFT] || null,
+            [TOKEN_GRANT_KEYS.TTT]: nextStatus[TOKEN_GRANT_KEYS.TTT] || currentStatus[TOKEN_GRANT_KEYS.TTT] || null,
+        };
+    });
+
+    return merged;
+}
+
 async function syncGrantLedgerFromServer() {
+    const localLedger = readGrantLedger();
     const response = await fetchLiveSignalJson("/token-grants", { method: "GET" });
-    const ledger = response?.ledger && typeof response.ledger === "object" ? response.ledger : {};
+    const serverLedger = response?.ledger && typeof response.ledger === "object" ? response.ledger : {};
+    const ledger = mergeGrantLedger(localLedger, serverLedger);
     writeGrantLedger(ledger);
     return ledger;
 }
@@ -49,7 +71,8 @@ async function persistGrantRecordToServer(address, assetKey, payload = {}) {
             payload,
         }),
     });
-    const ledger = response?.ledger && typeof response.ledger === "object" ? response.ledger : readGrantLedger();
+    const serverLedger = response?.ledger && typeof response.ledger === "object" ? response.ledger : {};
+    const ledger = mergeGrantLedger(readGrantLedger(), serverLedger);
     writeGrantLedger(ledger);
     return ledger;
 }
@@ -96,4 +119,5 @@ export {
     getGrantLedgerEntries,
     syncGrantLedgerFromServer,
     persistGrantRecordToServer,
+    mergeGrantLedger,
 };
