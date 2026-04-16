@@ -184,6 +184,51 @@
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+.token-grant-ledger-collapsible {
+  width: 100%;
+}
+
+.token-grant-ledger-summary {
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+  cursor: pointer;
+}
+
+.token-grant-ledger-summary::-webkit-details-marker {
+  display: none;
+}
+
+.token-grant-ledger-summary-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.token-grant-ledger-summary-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+  min-width: 230px;
+}
+
+.token-grant-summary-label {
+  margin-bottom: 0;
+}
+
+.token-grant-ledger-toggle-text {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.token-grant-ledger-body {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
 .token-grant-ledger-item.manual-mark {
   background: rgba(255, 193, 7, 0.08);
   border-color: rgba(255, 193, 7, 0.28);
@@ -208,6 +253,18 @@
 
 .token-grant-link:hover {
   text-decoration: underline;
+}
+
+@media (max-width: 900px) {
+  .token-grant-ledger-summary {
+    flex-direction: column;
+  }
+
+  .token-grant-ledger-summary-side {
+    width: 100%;
+    min-width: 0;
+    align-items: flex-start;
+  }
 }
 
 .admin-tab-btn {

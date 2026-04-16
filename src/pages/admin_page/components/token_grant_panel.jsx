@@ -468,6 +468,40 @@ function Token_grant_panel(props) {
         return manualAssets.join(" / ");
     }
 
+    function renderLedgerSummary(entry, summaryLabel = "") {
+        return (
+            <summary className="token-grant-ledger-summary">
+                <div className="token-grant-ledger-summary-main">
+                    <div className="token-grant-ledger-address">{entry.address}</div>
+                    {summaryLabel ? (
+                        <div className="token-grant-card-desc token-grant-summary-label">{summaryLabel}</div>
+                    ) : null}
+                </div>
+                <div className="token-grant-ledger-summary-side">
+                    {renderGrantStatusSummary(entry.address)}
+                    <span className="token-grant-ledger-toggle-text">開閉</span>
+                </div>
+            </summary>
+        );
+    }
+
+    function renderLedgerDetails(entry, summaryLabel = "") {
+        return (
+            <details className="token-grant-ledger-collapsible">
+                {renderLedgerSummary(entry, summaryLabel)}
+                <div className="token-grant-ledger-body">
+                    {summaryLabel ? (
+                        <div className="token-grant-card-desc" style={{ marginBottom: "var(--space-2)" }}>
+                            {summaryLabel}
+                        </div>
+                    ) : null}
+                    {renderAddressMeta(entry.address)}
+                    {renderGrantStatusDetails(entry.address)}
+                </div>
+            </details>
+        );
+    }
+
     return (
         <div>
             <h3 className="section-title">学生へのトークン付与</h3>
@@ -627,12 +661,7 @@ function Token_grant_panel(props) {
                     ) : (
                         manualGrantEntries.map((entry) => (
                             <div key={`manual-${entry.address}`} className="token-grant-ledger-item manual-mark">
-                                <div className="token-grant-ledger-address">{entry.address}</div>
-                                <div className="token-grant-card-desc" style={{ marginBottom: "var(--space-2)" }}>
-                                    既付与登録: {renderManualGrantAssets(entry.address)}
-                                </div>
-                                {renderAddressMeta(entry.address)}
-                                {renderGrantStatusDetails(entry.address)}
+                                {renderLedgerDetails(entry, `既付与登録: ${renderManualGrantAssets(entry.address)}`)}
                             </div>
                         ))
                     )}
@@ -650,9 +679,7 @@ function Token_grant_panel(props) {
                     ) : (
                         grantLedgerEntries.map((entry) => (
                             <div key={entry.address} className="token-grant-ledger-item">
-                                <div className="token-grant-ledger-address">{entry.address}</div>
-                                {renderAddressMeta(entry.address)}
-                                {renderGrantStatusDetails(entry.address)}
+                                {renderLedgerDetails(entry)}
                             </div>
                         ))
                     )}
