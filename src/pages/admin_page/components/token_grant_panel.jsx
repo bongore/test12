@@ -45,6 +45,16 @@ function getSelectedAssetTargets(polAmount, tftAmount, tttAmount) {
     ];
 }
 
+const ASSET_LABELS = [
+    { key: TOKEN_GRANT_KEYS.POL, label: "POL" },
+    { key: TOKEN_GRANT_KEYS.TFT, label: "TFT" },
+    { key: TOKEN_GRANT_KEYS.TTT, label: "TTT" },
+];
+
+function isManualMarkedRecord(record) {
+    return String(record?.source || "").includes("manual_mark");
+}
+
 function Token_grant_panel(props) {
     const [singleAddress, setSingleAddress] = useState("");
     const [bulkAddresses, setBulkAddresses] = useState("");
@@ -58,6 +68,10 @@ function Token_grant_panel(props) {
     const [grantSyncError, setGrantSyncError] = useState("");
 
     const typedAddresses = useMemo(() => normalizeAddressLines(bulkAddresses), [bulkAddresses]);
+    const manualGrantEntries = useMemo(
+        () => grantLedgerEntries.filter((entry) => ASSET_LABELS.some((item) => isManualMarkedRecord(entry?.status?.[item.key]))),
+        [grantLedgerEntries]
+    );
 
     async function refreshGrantLedger() {
         try {
@@ -330,20 +344,19 @@ function Token_grant_panel(props) {
 
     function renderGrantStatusSummary(address) {
         const status = getAddressGrantStatus(address);
-        const labels = [
-            { key: TOKEN_GRANT_KEYS.POL, label: "POL" },
-            { key: TOKEN_GRANT_KEYS.TFT, label: "TFT" },
-            { key: TOKEN_GRANT_KEYS.TTT, label: "TTT" },
-        ];
 
         return (
             <div className="token-grant-status-list">
-                {labels.map((item) => {
+                {ASSET_LABELS.map((item) => {
                     const record = status?.[item.key];
                     return (
                         <div key={item.key} className={`token-grant-status-badge ${record ? "granted" : "pending"}`}>
                             <span>{item.label}</span>
-                            <span>{record ? `付与済み${record.amount ? ` ${record.amount}` : ""}` : "未付与"}</span>
+                            <span>
+                                {record
+                                    ? `${isManualMarkedRecord(record) ? "既付与登録" : "付与済み"}${record.amount ? ` ${record.amount}` : ""}`
+                                    : "未付与"}
+                            </span>
                         </div>
                     );
                 })}
@@ -353,24 +366,24 @@ function Token_grant_panel(props) {
 
     function renderGrantStatusDetails(address) {
         const status = getAddressGrantStatus(address);
-        const labels = [
-            { key: TOKEN_GRANT_KEYS.POL, label: "POL" },
-            { key: TOKEN_GRANT_KEYS.TFT, label: "TFT" },
-            { key: TOKEN_GRANT_KEYS.TTT, label: "TTT" },
-        ];
 
         return (
             <div className="token-grant-status-list detailed">
-                {labels.map((item) => {
+                {ASSET_LABELS.map((item) => {
                     const record = status?.[item.key];
                     return (
                         <div key={item.key} className={`token-grant-status-badge ${record ? "granted" : "pending"} detailed`}>
                             <div className="token-grant-status-heading">
                                 <span>{item.label}</span>
-                                <span>{record ? `付与済み${record.amount ? ` ${record.amount}` : ""}` : "未付与"}</span>
+                                <span>
+                                    {record
+                                        ? `${isManualMarkedRecord(record) ? "既付与登録" : "付与済み"}${record.amount ? ` ${record.amount}` : ""}`
+                                        : "未付与"}
+                                </span>
                             </div>
                             {record ? (
                                 <div className="token-grant-status-meta">
+                                    <div>状態: {isManualMarkedRecord(record) ? "過去配布済みとして登録（送金なし）" : "送金確認済み"}</div>
                                     <div>時刻: {formatDateTime(record.grantedAt)}</div>
                                     <div>
                                         Tx:
@@ -385,7 +398,7 @@ function Token_grant_panel(props) {
                                                 {shortenHash(record.txHash)}
                                             </a>
                                         ) : (
-                                            "-"
+                                            isManualMarkedRecord(record) ? "既付与登録のため送金なし" : "-"
                                         )}
                                     </div>
                                 </div>
@@ -399,6 +412,17 @@ function Token_grant_panel(props) {
                 })}
             </div>
         );
+    }
+
+    function renderManualGrantAssets(address) {
+        const status = getAddressGrantStatus(address);
+        const manualAssets = ASSET_LABELS
+            .filter((item) => isManualMarkedRecord(status?.[item.key]))
+            .map((item) => {
+                const record = status?.[item.key];
+                return `${item.label}${record?.amount ? ` ${record.amount}` : ""}`;
+            });
+        return manualAssets.join(" / ");
     }
 
     return (
@@ -543,6 +567,29 @@ function Token_grant_panel(props) {
                                     </button>
                                     {renderGrantStatusSummary(student)}
                                 </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+
+            <div className="token-grant-card" style={{ marginTop: "var(--space-6)" }}>
+                <div className="token-grant-card-title">既付与登録した学生一覧</div>
+                <div className="token-grant-card-desc">
+                    過去にすでに配布済みとして送金せず印だけ付けた学生をここで確認できます。解除したいときは上の各解除ボタンを使ってください。
+                </div>
+                <div className="token-grant-ledger-list">
+                    {manualGrantEntries.length === 0 ? (
+                        <div className="address-item">既付与登録した学生はまだありません。</div>
+                    ) : (
+                        manualGrantEntries.map((entry) => (
+                            <div key={`manual-${entry.address}`} className="token-grant-ledger-item manual-mark">
+                                <div className="token-grant-ledger-address">{entry.address}</div>
+                                <div className="token-grant-card-desc" style={{ marginBottom: "var(--space-2)" }}>
+                                    既付与登録: {renderManualGrantAssets(entry.address)}
+                                </div>
+                                {renderAddressMeta(entry.address)}
+                                {renderGrantStatusDetails(entry.address)}
                             </div>
                         ))
                     )}

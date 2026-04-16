@@ -184,6 +184,11 @@
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+.token-grant-ledger-item.manual-mark {
+  background: rgba(255, 193, 7, 0.08);
+  border-color: rgba(255, 193, 7, 0.28);
+}
+
 .token-grant-ledger-address {
   font-family: var(--font-mono);
   color: var(--text-primary);
