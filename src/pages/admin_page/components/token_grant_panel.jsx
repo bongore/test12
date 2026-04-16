@@ -1,13 +1,38 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Form } from "react-bootstrap";
 import { ACTION_TYPES, appendActivityLog } from "../../../utils/activityLog";
-import { getAddressGrantStatus, getGrantLedgerEntries, hasGrantedToken, markGrantedToken, persistGrantRecordToServer, syncGrantLedgerFromServer, TOKEN_GRANT_KEYS } from "../../../utils/tokenGrantLedger";
+import {
+    getAddressGrantStatus,
+    getGrantLedgerEntries,
+    hasGrantedToken,
+    markGrantedToken,
+    persistGrantRecordToServer,
+    syncGrantLedgerFromServer,
+    TOKEN_GRANT_KEYS,
+} from "../../../utils/tokenGrantLedger";
+
+const AMOY_EXPLORER_TX_BASE = "https://amoy.polygonscan.com/tx/";
+const AMOY_EXPLORER_ADDRESS_BASE = "https://amoy.polygonscan.com/address/";
 
 function normalizeAddressLines(rawValue) {
     return rawValue
         .split(/\r?\n/)
         .map((item) => item.trim())
         .filter(Boolean);
+}
+
+function formatDateTime(value) {
+    if (!value) return "-";
+    try {
+        return new Date(value).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
+    } catch (error) {
+        return String(value);
+    }
+}
+
+function shortenHash(value = "") {
+    if (!value || value.length < 14) return value || "-";
+    return `${value.slice(0, 10)}...${value.slice(-6)}`;
 }
 
 function Token_grant_panel(props) {
@@ -69,18 +94,14 @@ function Token_grant_panel(props) {
             TTT: Number(tttAmount || 0),
         };
 
-        const plan = normalizedTargets.map((address) => {
-            const status = getAddressGrantStatus(address);
-            return {
-                address,
-                status,
-                shouldGrant: {
-                    POL: requestedAmounts.POL > 0 && !hasGrantedToken(address, TOKEN_GRANT_KEYS.POL),
-                    TFT: requestedAmounts.TFT > 0 && !hasGrantedToken(address, TOKEN_GRANT_KEYS.TFT),
-                    TTT: requestedAmounts.TTT > 0 && !hasGrantedToken(address, TOKEN_GRANT_KEYS.TTT),
-                },
-            };
-        });
+        const plan = normalizedTargets.map((address) => ({
+            address,
+            shouldGrant: {
+                POL: requestedAmounts.POL > 0 && !hasGrantedToken(address, TOKEN_GRANT_KEYS.POL),
+                TFT: requestedAmounts.TFT > 0 && !hasGrantedToken(address, TOKEN_GRANT_KEYS.TFT),
+                TTT: requestedAmounts.TTT > 0 && !hasGrantedToken(address, TOKEN_GRANT_KEYS.TTT),
+            },
+        }));
 
         return {
             requestedAmounts,
@@ -115,7 +136,7 @@ function Token_grant_panel(props) {
                 });
                 results.push(...recipientResults);
 
-                recipientResults.forEach((result) => {
+                for (const result of recipientResults) {
                     const assetKey =
                         result.asset === "POL"
                             ? TOKEN_GRANT_KEYS.POL
@@ -123,20 +144,16 @@ function Token_grant_panel(props) {
                                 ? TOKEN_GRANT_KEYS.TFT
                                 : TOKEN_GRANT_KEYS.TTT;
 
-                    markGrantedToken(item.address, assetKey, {
-                        amount: result.amount,
-                        txHash: result.hash,
-                        source: sourceLabel,
-                    });
-                    persistGrantRecordToServer(item.address, assetKey, {
+                    const payload = {
                         grantedAt: new Date().toISOString(),
                         amount: result.amount,
                         txHash: result.hash,
                         source: sourceLabel,
-                    }).catch((error) => {
-                        console.error("Failed to persist token grant record to server", error);
-                    });
-                });
+                    };
+
+                    markGrantedToken(item.address, assetKey, payload);
+                    await persistGrantRecordToServer(item.address, assetKey, payload);
+                }
             }
 
             appendActivityLog(ACTION_TYPES.ADMIN_GRANT_TOKENS, {
@@ -171,7 +188,23 @@ function Token_grant_panel(props) {
         }
     }
 
-    function renderGrantStatus(address) {
+    function renderAddressMeta(address) {
+        if (!address) return null;
+        return (
+            <div className="token-grant-address-meta">
+                <a
+                    href={`${AMOY_EXPLORER_ADDRESS_BASE}${address}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="token-grant-link"
+                >
+                    Polygonscan でアドレス確認
+                </a>
+            </div>
+        );
+    }
+
+    function renderGrantStatusSummary(address) {
         const status = getAddressGrantStatus(address);
         const labels = [
             { key: TOKEN_GRANT_KEYS.POL, label: "POL" },
@@ -187,6 +220,56 @@ function Token_grant_panel(props) {
                         <div key={item.key} className={`token-grant-status-badge ${record ? "granted" : "pending"}`}>
                             <span>{item.label}</span>
                             <span>{record ? `付与済み${record.amount ? ` ${record.amount}` : ""}` : "未付与"}</span>
+                        </div>
+                    );
+                })}
+            </div>
+        );
+    }
+
+    function renderGrantStatusDetails(address) {
+        const status = getAddressGrantStatus(address);
+        const labels = [
+            { key: TOKEN_GRANT_KEYS.POL, label: "POL" },
+            { key: TOKEN_GRANT_KEYS.TFT, label: "TFT" },
+            { key: TOKEN_GRANT_KEYS.TTT, label: "TTT" },
+        ];
+
+        return (
+            <div className="token-grant-status-list detailed">
+                {labels.map((item) => {
+                    const record = status?.[item.key];
+                    return (
+                        <div key={item.key} className={`token-grant-status-badge ${record ? "granted" : "pending"} detailed`}>
+                            <div className="token-grant-status-heading">
+                                <span>{item.label}</span>
+                                <span>{record ? `付与済み${record.amount ? ` ${record.amount}` : ""}` : "未付与"}</span>
+                            </div>
+                            {record ? (
+                                <div className="token-grant-status-meta">
+                                    <div>時刻: {formatDateTime(record.grantedAt)}</div>
+                                    <div>
+                                        Tx:
+                                        {" "}
+                                        {record.txHash ? (
+                                            <a
+                                                href={`${AMOY_EXPLORER_TX_BASE}${record.txHash}`}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="token-grant-link"
+                                            >
+                                                {shortenHash(record.txHash)}
+                                            </a>
+                                        ) : (
+                                            "-"
+                                        )}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="token-grant-status-meta">
+                                    <div>まだ送っていません</div>
+                                </div>
+                            )}
                         </div>
                     );
                 })}
@@ -239,6 +322,12 @@ function Token_grant_panel(props) {
                             placeholder="0x1234..."
                         />
                     </Form.Group>
+                    {singleAddress && (
+                        <>
+                            {renderAddressMeta(singleAddress)}
+                            {renderGrantStatusDetails(singleAddress)}
+                        </>
+                    )}
                     <div className="token-grant-actions">
                         <button className="btn-action" type="button" disabled={isSubmitting} onClick={() => grantToAddresses([singleAddress], "single")}>
                             1件に付与
@@ -302,7 +391,7 @@ function Token_grant_panel(props) {
                                     >
                                         {student}
                                     </button>
-                                    {renderGrantStatus(student)}
+                                    {renderGrantStatusSummary(student)}
                                 </div>
                             </div>
                         ))
@@ -313,7 +402,7 @@ function Token_grant_panel(props) {
             <div className="token-grant-card" style={{ marginTop: "var(--space-6)" }}>
                 <div className="token-grant-card-title">付与状況の一覧</div>
                 <div className="token-grant-card-desc">
-                    何を誰に付与済みか、まだ付与していないかをここで確認できます。付与済みのものは次回送金時に自動でスキップします。
+                    何を誰に付与済みか、まだ付与していないかをここで確認できます。Tx ハッシュから実際の送金も確認できます。
                 </div>
                 <div className="token-grant-ledger-list">
                     {grantLedgerEntries.length === 0 ? (
@@ -322,7 +411,8 @@ function Token_grant_panel(props) {
                         grantLedgerEntries.map((entry) => (
                             <div key={entry.address} className="token-grant-ledger-item">
                                 <div className="token-grant-ledger-address">{entry.address}</div>
-                                {renderGrantStatus(entry.address)}
+                                {renderAddressMeta(entry.address)}
+                                {renderGrantStatusDetails(entry.address)}
                             </div>
                         ))
                     )}
