@@ -116,6 +116,53 @@ function Token_grant_panel(props) {
         };
     }
 
+    async function markAddressesAsAlreadyGranted(addresses, sourceLabel) {
+        const synced = await refreshGrantLedger();
+        if (!synced) {
+            alert("付与履歴を同期できないため、既付与登録も停止しました。少し待ってから再試行してください。");
+            return;
+        }
+
+        const normalizedTargets = props.cont.normalizeAddressList(addresses);
+        if (normalizedTargets.length === 0) {
+            alert("対象アドレスを入力または選択してください。");
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            for (const address of normalizedTargets) {
+                const targets = [
+                    { enabled: Number(polAmount || 0) > 0, assetKey: TOKEN_GRANT_KEYS.POL, amount: Number(polAmount || 0) },
+                    { enabled: Number(tftAmount || 0) > 0, assetKey: TOKEN_GRANT_KEYS.TFT, amount: Number(tftAmount || 0) },
+                    { enabled: Number(tttAmount || 0) > 0, assetKey: TOKEN_GRANT_KEYS.TTT, amount: Number(tttAmount || 0) },
+                ];
+
+                for (const target of targets) {
+                    if (!target.enabled || hasGrantedToken(address, target.assetKey)) continue;
+
+                    const payload = {
+                        grantedAt: new Date().toISOString(),
+                        amount: target.amount,
+                        txHash: "",
+                        source: `${sourceLabel}_manual_mark`,
+                        confirmed: true,
+                    };
+                    markGrantedToken(address, target.assetKey, payload);
+                    await persistGrantRecordToServer(address, target.assetKey, payload);
+                }
+            }
+
+            await refreshGrantLedger();
+            alert(`${normalizedTargets.length}件を既付与として登録しました。今後は二重送金対象から外れます。`);
+        } catch (error) {
+            console.error("Failed to mark addresses as granted", error);
+            alert("既付与登録に失敗しました。");
+        } finally {
+            setIsSubmitting(false);
+        }
+    }
+
     async function grantToAddresses(addresses, sourceLabel) {
         const synced = await refreshGrantLedger();
         if (!synced) {
@@ -350,6 +397,9 @@ function Token_grant_panel(props) {
                         <button className="btn-action" type="button" disabled={isSubmitting} onClick={() => grantToAddresses([singleAddress], "single")}>
                             1件に付与
                         </button>
+                        <button className="btn-action token-grant-secondary-btn" type="button" disabled={isSubmitting} onClick={() => markAddressesAsAlreadyGranted([singleAddress], "single")}>
+                            既付与として登録
+                        </button>
                     </div>
                 </div>
             </div>
@@ -371,6 +421,9 @@ function Token_grant_panel(props) {
                     <button className="btn-action" type="button" disabled={isSubmitting} onClick={() => grantToAddresses(typedAddresses, "bulk_input")}>
                         入力済みアドレスへ一括付与
                     </button>
+                    <button className="btn-action token-grant-secondary-btn" type="button" disabled={isSubmitting} onClick={() => markAddressesAsAlreadyGranted(typedAddresses, "bulk_input")}>
+                        入力済みアドレスを既付与登録
+                    </button>
                 </div>
             </div>
 
@@ -388,6 +441,9 @@ function Token_grant_panel(props) {
                     </button>
                     <button className="btn-action" type="button" disabled={isSubmitting} onClick={() => grantToAddresses(selectedStudents, "bulk_selected")}>
                         選択した学生へ一括付与
+                    </button>
+                    <button className="btn-action token-grant-secondary-btn" type="button" disabled={isSubmitting} onClick={() => markAddressesAsAlreadyGranted(selectedStudents, "bulk_selected")}>
+                        選択した学生を既付与登録
                     </button>
                 </div>
                 <div className="token-grant-student-list">
