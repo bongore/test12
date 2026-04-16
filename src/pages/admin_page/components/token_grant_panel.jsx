@@ -39,6 +39,16 @@ function shortenHash(value = "") {
     return `${value.slice(0, 10)}...${value.slice(-6)}`;
 }
 
+function downloadTextFile(filename, content, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+}
+
 function getSelectedAssetTargets(polAmount, tftAmount, tttAmount) {
     return [
         { enabled: Number(polAmount || 0) > 0, assetKey: TOKEN_GRANT_KEYS.POL, amount: Number(polAmount || 0), label: "POL" },
@@ -81,6 +91,35 @@ function Token_grant_panel(props) {
         })),
         [grantLedgerEntries]
     );
+    const studentIndexMap = useMemo(
+        () => new Map((students || []).map((address, index) => [props.cont.normalizeAddress(address), formatInternalId("USER", index)])),
+        [students, props.cont]
+    );
+    const tokenGrantExportRows = useMemo(() => (
+        grantLedgerEntries.flatMap((entry) => (
+            ASSET_LABELS.flatMap((asset) => {
+                const record = normalizeGrantRecord(entry?.status?.[asset.key]);
+                const history = Array.isArray(record?.history) ? record.history : [];
+                return history.map((historyEntry, index) => ({
+                    address: entry.address,
+                    student_id: studentIndexMap.get(props.cont.normalizeAddress(entry.address)) || "",
+                    asset: asset.label,
+                    current_status: record ? (isGrantActive(record) ? (isManualMarkedRecord(record) ? "既付与登録" : "付与済み") : "未付与") : "未付与",
+                    current_amount: record?.amount ?? "",
+                    history_index: index + 1,
+                    history_type: historyEntry?.type === "manual_mark" ? "既付与登録" : historyEntry?.type === "clear" ? "既付与解除" : "送金確認",
+                    amount: historyEntry?.amount ?? "",
+                    timestamp: historyEntry?.at || "",
+                    tx_hash: historyEntry?.txHash || "",
+                    tx_url: historyEntry?.txHash ? `${AMOY_EXPLORER_TX_BASE}${historyEntry.txHash}` : "",
+                    address_url: `${AMOY_EXPLORER_ADDRESS_BASE}${entry.address}`,
+                    source: historyEntry?.source || "",
+                    confirmed: historyEntry?.confirmed !== false ? "true" : "false",
+                    active: historyEntry?.active !== false ? "true" : "false",
+                }));
+            })
+        ))
+    ), [grantLedgerEntries, studentIndexMap, props.cont]);
 
     async function refreshGrantLedger() {
         try {
@@ -502,12 +541,54 @@ function Token_grant_panel(props) {
         );
     }
 
+    function handleExportTokenGrantJson() {
+        downloadTextFile(
+            `token_grant_history_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`,
+            JSON.stringify(tokenGrantExportRows, null, 2),
+            "application/json;charset=utf-8"
+        );
+    }
+
+    function handleExportTokenGrantCsv() {
+        const header = [
+            "address",
+            "student_id",
+            "asset",
+            "current_status",
+            "current_amount",
+            "history_index",
+            "history_type",
+            "amount",
+            "timestamp",
+            "tx_hash",
+            "tx_url",
+            "address_url",
+            "source",
+            "confirmed",
+            "active",
+        ];
+        const escapeCsv = (value) => `"${String(value ?? "").replace(/"/g, "\"\"")}"`;
+        const rows = [
+            header.join(","),
+            ...tokenGrantExportRows.map((row) => header.map((key) => escapeCsv(row[key])).join(",")),
+        ];
+        downloadTextFile(
+            `token_grant_history_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.csv`,
+            rows.join("\n"),
+            "text/csv;charset=utf-8"
+        );
+    }
+
     return (
         <div>
             <h3 className="section-title">学生へのトークン付与</h3>
             <p className="section-desc">
                 公開アドレスを提出した学生に、回答用 POL、回答お礼の TFT、掲示板用 TTT を個別またはまとめて配布できます。
             </p>
+            <div className="csv-download-area" style={{ marginTop: 0, marginBottom: "16px" }}>
+                <button className="btn-action" onClick={handleExportTokenGrantCsv}>📤 トークン付与履歴を CSV 出力</button>
+                <button className="btn-action" onClick={handleExportTokenGrantJson}>📤 トークン付与履歴を JSON 出力</button>
+            </div>
             {grantSyncError && (
                 <div className="address-item" style={{ borderLeftColor: "#ff9800", color: "#ffe0a3", marginBottom: "var(--space-4)" }}>
                     {grantSyncError}
