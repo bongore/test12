@@ -172,6 +172,12 @@ const server = http.createServer((req, res) => {
                     writeJson(res, 400, { ok: false, error: "invalid_payload" });
                     return;
                 }
+                if (body?.remove) {
+                    delete deletedQuizzes[quizKey];
+                    persistState();
+                    writeJson(res, 200, { ok: true, deletedQuizzes });
+                    return;
+                }
                 deletedQuizzes[quizKey] = {
                     deletedAt: body?.payload?.deletedAt || new Date().toISOString(),
                     deletedBy: body?.payload?.deletedBy || "",

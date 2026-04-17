@@ -43,4 +43,14 @@ async function saveDeletedQuiz(quizKey, payload = {}) {
     });
 }
 
-export { getLiveSignalApiBaseUrl, fetchLiveSignalJson, getDeletedQuizzes, saveDeletedQuiz };
+async function removeDeletedQuiz(quizKey) {
+    return await fetchLiveSignalJson("/deleted-quizzes", {
+        method: "POST",
+        body: JSON.stringify({
+            quizKey,
+            remove: true,
+        }),
+    });
+}
+
+export { getLiveSignalApiBaseUrl, fetchLiveSignalJson, getDeletedQuizzes, saveDeletedQuiz, removeDeletedQuiz };

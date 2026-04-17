@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import Simple_quiz from "./components/quiz_simple";
 import Quiz_list from "./components/quiz_list";
 import { useAccessControl } from "../../utils/accessControl";
-import { getDeletedQuizzes, saveDeletedQuiz } from "../../utils/liveSignalApi";
+import { getDeletedQuizzes, removeDeletedQuiz, saveDeletedQuiz } from "../../utils/liveSignalApi";
 import "./edit_list_top.css";
 
 function Edit_list_top(props) {
@@ -82,7 +82,16 @@ function Edit_list_top(props) {
                 quizId: Number(quiz?.[0]),
             },
         }));
-        Set_quiz_list((current) => current.filter((entry) => getQuizCacheKey(entry) !== quizKey));
+    };
+
+    const handleRestoreQuiz = async (quiz) => {
+        const quizKey = getQuizCacheKey(quiz);
+        await removeDeletedQuiz(quizKey);
+        setDeletedQuizMap((current) => {
+            const next = { ...current };
+            delete next[quizKey];
+            return next;
+        });
     };
 
     const targetRef = useRef(null);
@@ -125,6 +134,45 @@ function Edit_list_top(props) {
                     <button className="btn-primary-custom" onClick={() => window.location.reload()}>
                         再読み込み
                     </button>
+                </div>
+            ) : null}
+
+            {quiz_list.some((quiz) => deletedQuizMap[getQuizCacheKey(quiz)]) ? (
+                <div className="deleted-quiz-panel glass-card">
+                    <div className="deleted-quiz-panel__header">
+                        <h2 className="deleted-quiz-panel__title">削除済みクイズ</h2>
+                        <span className="deleted-quiz-panel__count">
+                            {quiz_list.filter((quiz) => deletedQuizMap[getQuizCacheKey(quiz)]).length} 件
+                        </span>
+                    </div>
+                    <div className="deleted-quiz-panel__list">
+                        {quiz_list
+                            .filter((quiz) => deletedQuizMap[getQuizCacheKey(quiz)])
+                            .map((quiz, index) => {
+                                const quizKey = getQuizCacheKey(quiz);
+                                const deletedMeta = deletedQuizMap[quizKey] || {};
+                                return (
+                                    <div
+                                        key={`deleted-${quiz?.sourceAddress || quiz?.[12] || "default"}-${Number(quiz?.[0] ?? index)}-${index}`}
+                                        className="deleted-quiz-item"
+                                    >
+                                        <div className="deleted-quiz-item__body">
+                                            <div className="deleted-quiz-item__title">{quiz?.[2] || "タイトル未設定"}</div>
+                                            <div className="deleted-quiz-item__meta">
+                                                削除時刻: {deletedMeta?.deletedAt ? new Date(deletedMeta.deletedAt).toLocaleString("ja-JP") : "-"}
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            className="btn-edit"
+                                            onClick={() => handleRestoreQuiz(quiz)}
+                                        >
+                                            再表示
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                    </div>
                 </div>
             ) : null}
 
