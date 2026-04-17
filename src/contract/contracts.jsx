@@ -27,6 +27,27 @@ import {
 } from "./contractClients";
 import { getRegisteredCorrectAnswer } from "../utils/quizCorrectAnswerStore";
 
+function sleep(ms) {
+    return new Promise((resolve) => {
+        setTimeout(resolve, ms);
+    });
+}
+
+async function retryReadContractBalance(readFn, attempts = 3) {
+    let lastError = null;
+    for (let index = 0; index < attempts; index += 1) {
+        try {
+            return await readFn();
+        } catch (error) {
+            lastError = error;
+            if (index < attempts - 1) {
+                await sleep(400 * (index + 1));
+            }
+        }
+    }
+    throw lastError;
+}
+
 const IS_TEACHER_NO_ARG_ABI = {
     type: "function",
     name: "_isTeacher",
@@ -813,11 +834,11 @@ class Contracts_MetaMask {
     async get_token_balance(address) {
         try {
             if (this.getEthereumProvider()) {
-                console.log(token_address);
-                const balance = await token.read.balanceOf({ args: [address] });
-                console.log(balance);
-                console.log(Number(balance) / 10 ** 18);
-                //16進数を10進数に変換
+                const normalizedAddress = checksumAddress(String(address || "").trim());
+                const balance = await retryReadContractBalance(
+                    () => token.read.balanceOf({ args: [normalizedAddress] }),
+                    4
+                );
                 return Number(balance) / 10 ** 18;
             } else {
                 console.log("Ethereum object does not exist");
@@ -825,18 +846,23 @@ class Contracts_MetaMask {
         } catch (err) {
             console.log(err);
         }
+        return null;
     }
 
     async get_ttt_balance(address) {
         try {
             if (this.getEthereumProvider() && ttt_token_address) {
-                const balance = await tttToken.read.balanceOf({ args: [address] });
+                const normalizedAddress = checksumAddress(String(address || "").trim());
+                const balance = await retryReadContractBalance(
+                    () => tttToken.read.balanceOf({ args: [normalizedAddress] }),
+                    4
+                );
                 return Number(balance) / 10 ** 18;
             }
         } catch (err) {
             console.log(err);
         }
-        return 0;
+        return null;
     }
 
     async get_address() {

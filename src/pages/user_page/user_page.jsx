@@ -10,6 +10,8 @@ import { buildBadgeSet, buildReviewList, getCourseEnhancementSnapshot } from "..
 import { bootstrap_teacher_addresses } from "../../contract/config";
 import { MAX_TFT_PER_LECTURE, MAX_TFT_TOTAL, QUIZ_RATE_OPTIONS, TOTAL_LECTURE_COUNT, TFT_PER_POINT } from "../../utils/quizRewardRate";
 
+const BALANCE_CACHE_KEY = "user_page_balance_cache_v1";
+
 function normalizeAddress(address) {
     return String(address || "").toLowerCase();
 }
@@ -20,6 +22,28 @@ function isBootstrapTeacherAddress(address) {
     return (bootstrap_teacher_addresses || []).some(
         (teacherAddress) => normalizeAddress(teacherAddress) === normalizedTarget
     );
+}
+
+function readBalanceCache() {
+    try {
+        return JSON.parse(localStorage.getItem(BALANCE_CACHE_KEY) || "{}");
+    } catch (error) {
+        return {};
+    }
+}
+
+function writeBalanceCache(address, nextValues) {
+    const current = readBalanceCache();
+    current[normalizeAddress(address)] = {
+        ...(current[normalizeAddress(address)] || {}),
+        ...nextValues,
+    };
+    localStorage.setItem(BALANCE_CACHE_KEY, JSON.stringify(current));
+}
+
+function getCachedBalances(address) {
+    const cache = readBalanceCache();
+    return cache[normalizeAddress(address)] || {};
 }
 
 function User_page(props) {
@@ -49,7 +73,20 @@ function User_page(props) {
     const get_variable = async () => {
         try {
             setLoadError("");
-            Set_token(await cont.get_token_balance(address));
+            const cachedBalances = getCachedBalances(address);
+            const [nextTokenBalance, nextTttBalance] = await Promise.all([
+                cont.get_token_balance(address),
+                cont.get_ttt_balance(address),
+            ]);
+            const resolvedTokenBalance = nextTokenBalance ?? cachedBalances.token ?? token ?? 0;
+            const resolvedTttBalance = nextTttBalance ?? cachedBalances.tttBalance ?? tttBalance ?? 0;
+            Set_token(resolvedTokenBalance);
+            setTttBalance(resolvedTttBalance);
+            writeBalanceCache(address, {
+                token: resolvedTokenBalance,
+                tttBalance: resolvedTttBalance,
+                updatedAt: new Date().toISOString(),
+            });
             let [user_name, image, result, state] = await cont.get_user_data(address);
             const nextRoleInfo = await cont.getUserRole(address);
             const nextRegistrationInfo = await cont.getRegistrationDetails(address);
@@ -61,7 +98,6 @@ function User_page(props) {
             setRank(await cont.get_rank(result));
             setNum_of_student(await cont.get_num_of_students());
             Set_state(state);
-            setTttBalance(await cont.get_ttt_balance(address));
             setRoleInfo(
                 bootstrapTeacher
                     ? { key: "teacher", label: "教員" }
