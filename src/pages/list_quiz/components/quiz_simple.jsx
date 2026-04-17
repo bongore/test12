@@ -234,6 +234,29 @@ function Simple_quiz(props) {
                             </Link>
                         </div>
                     )}
+
+                    {props.isTeacher && typeof props.onDeleteQuiz === "function" && (
+                        <div style={{ display: "flex", gap: "8px", marginTop: "var(--space-3)", flexWrap: "wrap" }}>
+                            <button
+                                type="button"
+                                className="btn-secondary-custom"
+                                onClick={(event) => {
+                                    event.preventDefault();
+                                    props.onDeleteQuiz(quiz);
+                                }}
+                                style={{
+                                    minWidth: "160px",
+                                    textAlign: "center",
+                                    padding: "10px 14px",
+                                    border: "1px solid rgba(255,120,120,0.4)",
+                                    background: "rgba(255,120,120,0.12)",
+                                    color: "#ffd4d4",
+                                }}
+                            >
+                                一覧から削除
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

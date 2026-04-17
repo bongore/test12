@@ -11,6 +11,7 @@ const BLOCKED_MESSAGE_PATTERNS = [/ばか/i, /あほ/i, /死ね/i, /殺す/i, /�
 const REACTION_KEYS = ["understood", "repeat", "slow", "fast"];
 const STATE_FILE_PATH = path.join(__dirname, ".live-board-state.json");
 let tokenGrantLedger = {};
+let deletedQuizzes = {};
 
 function inferGrantHistoryType(source = "", isRemove = false) {
     if (isRemove) return "clear";
@@ -85,6 +86,11 @@ const server = http.createServer((req, res) => {
         return;
     }
 
+    if (req.url === "/deleted-quizzes" && req.method === "GET") {
+        writeJson(res, 200, { ok: true, deletedQuizzes });
+        return;
+    }
+
     if (req.url === "/token-grants" && req.method === "POST") {
         readRequestBody(req)
             .then((body) => {
@@ -151,6 +157,30 @@ const server = http.createServer((req, res) => {
                 };
                 persistState();
                 writeJson(res, 200, { ok: true, ledger: tokenGrantLedger });
+            })
+            .catch(() => {
+                writeJson(res, 400, { ok: false, error: "invalid_json" });
+            });
+        return;
+    }
+
+    if (req.url === "/deleted-quizzes" && req.method === "POST") {
+        readRequestBody(req)
+            .then((body) => {
+                const quizKey = String(body?.quizKey || "").trim();
+                if (!quizKey) {
+                    writeJson(res, 400, { ok: false, error: "invalid_payload" });
+                    return;
+                }
+                deletedQuizzes[quizKey] = {
+                    deletedAt: body?.payload?.deletedAt || new Date().toISOString(),
+                    deletedBy: body?.payload?.deletedBy || "",
+                    deletedByLabel: body?.payload?.deletedByLabel || "",
+                    sourceAddress: body?.payload?.sourceAddress || "",
+                    quizId: body?.payload?.quizId ?? null,
+                };
+                persistState();
+                writeJson(res, 200, { ok: true, deletedQuizzes });
             })
             .catch(() => {
                 writeJson(res, 400, { ok: false, error: "invalid_json" });
@@ -277,6 +307,7 @@ function persistState() {
             currentReactionSession: serializeReactionSessionForStorage(currentReactionSession),
             currentBoardSession: serializeBoardSessionForStorage(currentBoardSession),
             tokenGrantLedger,
+            deletedQuizzes,
             deletedBoardMessagesBySession: Object.fromEntries(
                 Object.entries(deletedBoardMessagesBySession).map(([sessionId, entries]) => [
                     sessionId,
@@ -309,6 +340,7 @@ function loadPersistedState() {
         currentReactionSession = reviveReactionSession(payload?.currentReactionSession, "現在の授業");
         currentBoardSession = reviveBoardSession(payload?.currentBoardSession, "現在の授業");
         tokenGrantLedger = payload?.tokenGrantLedger && typeof payload.tokenGrantLedger === "object" ? payload.tokenGrantLedger : {};
+        deletedQuizzes = payload?.deletedQuizzes && typeof payload.deletedQuizzes === "object" ? payload.deletedQuizzes : {};
         deletedBoardMessagesBySession = Object.fromEntries(
             Object.entries(payload?.deletedBoardMessagesBySession || {}).map(([sessionId, entries]) => [
                 String(sessionId),

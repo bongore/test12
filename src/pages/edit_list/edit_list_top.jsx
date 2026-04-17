@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import Simple_quiz from "./components/quiz_simple";
 import Quiz_list from "./components/quiz_list";
 import { useAccessControl } from "../../utils/accessControl";
+import { getDeletedQuizzes, saveDeletedQuiz } from "../../utils/liveSignalApi";
 import "./edit_list_top.css";
 
 function Edit_list_top(props) {
@@ -14,6 +15,8 @@ function Edit_list_top(props) {
     const [quiz_list, Set_quiz_list] = useState([]);
     const [add_num, Set_add_num] = useState(7);
     const [loadError, setLoadError] = useState("");
+    const [deletedQuizMap, setDeletedQuizMap] = useState({});
+    const getQuizCacheKey = (quiz) => `${quiz?.sourceAddress || quiz?.[12] || ""}:${Number(quiz?.[0])}`;
 
     useEffect(() => {
         cont.get_quiz_lenght()
@@ -30,6 +33,57 @@ function Edit_list_top(props) {
                 setLoadError("管理用クイズ一覧の読み込みに失敗しました。");
             });
     }, [cont]);
+
+    useEffect(() => {
+        let mounted = true;
+        const syncDeletedQuizzes = async () => {
+            try {
+                const nextDeleted = await getDeletedQuizzes();
+                if (mounted) {
+                    setDeletedQuizMap(nextDeleted || {});
+                }
+            } catch (error) {
+                console.error("Failed to load deleted quizzes", error);
+            }
+        };
+
+        syncDeletedQuizzes();
+        const timer = window.setInterval(syncDeletedQuizzes, 15000);
+        return () => {
+            mounted = false;
+            window.clearInterval(timer);
+        };
+    }, []);
+
+    const handleDeleteQuiz = async (quiz) => {
+        const quizKey = getQuizCacheKey(quiz);
+        const title = quiz?.[2] || "このクイズ";
+        if (!window.confirm(`「${title}」を削除対象として一覧から隠します。全ユーザーに反映されます。続けますか。`)) {
+            return;
+        }
+
+        const address = await cont.get_address();
+        const deletedByLabel = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "teacher";
+        await saveDeletedQuiz(quizKey, {
+            deletedAt: new Date().toISOString(),
+            deletedBy: address || "",
+            deletedByLabel,
+            sourceAddress: quiz?.sourceAddress || quiz?.[12] || "",
+            quizId: Number(quiz?.[0]),
+        });
+
+        setDeletedQuizMap((current) => ({
+            ...current,
+            [quizKey]: {
+                deletedAt: new Date().toISOString(),
+                deletedBy: address || "",
+                deletedByLabel,
+                sourceAddress: quiz?.sourceAddress || quiz?.[12] || "",
+                quizId: Number(quiz?.[0]),
+            },
+        }));
+        Set_quiz_list((current) => current.filter((entry) => getQuizCacheKey(entry) !== quizKey));
+    };
 
     const targetRef = useRef(null);
 
@@ -74,9 +128,15 @@ function Edit_list_top(props) {
                 </div>
             ) : null}
 
-            {quiz_list.map((quiz, index) => (
-                <Simple_quiz key={`${quiz?.sourceAddress || quiz?.[12] || "default"}-${Number(quiz?.[0] ?? index)}-${index}`} quiz={quiz} />
-            ))}
+            {quiz_list
+                .filter((quiz) => !deletedQuizMap[getQuizCacheKey(quiz)])
+                .map((quiz, index) => (
+                    <Simple_quiz
+                        key={`${quiz?.sourceAddress || quiz?.[12] || "default"}-${Number(quiz?.[0] ?? index)}-${index}`}
+                        quiz={quiz}
+                        onDeleteQuiz={handleDeleteQuiz}
+                    />
+                ))}
 
             {!loadError && (
                 <div ref={targetRef} className="loading-indicator">

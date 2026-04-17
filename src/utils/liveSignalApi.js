@@ -28,4 +28,19 @@ async function fetchLiveSignalJson(path, options = {}) {
     return await response.json();
 }
 
-export { getLiveSignalApiBaseUrl, fetchLiveSignalJson };
+async function getDeletedQuizzes() {
+    const response = await fetchLiveSignalJson("/deleted-quizzes");
+    return response?.deletedQuizzes || {};
+}
+
+async function saveDeletedQuiz(quizKey, payload = {}) {
+    return await fetchLiveSignalJson("/deleted-quizzes", {
+        method: "POST",
+        body: JSON.stringify({
+            quizKey,
+            payload,
+        }),
+    });
+}
+
+export { getLiveSignalApiBaseUrl, fetchLiveSignalJson, getDeletedQuizzes, saveDeletedQuiz };

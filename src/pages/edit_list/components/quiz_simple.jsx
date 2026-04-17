@@ -175,6 +175,20 @@ function Simple_quiz(props) {
                 >
                     💰 報酬の追加
                 </Link>
+                {typeof props.onDeleteQuiz === "function" && (
+                    <button
+                        type="button"
+                        className="btn-reward"
+                        onClick={() => props.onDeleteQuiz(quiz)}
+                        style={{
+                            background: "rgba(255, 120, 120, 0.16)",
+                            borderColor: "rgba(255, 120, 120, 0.4)",
+                            color: "#ffd4d4",
+                        }}
+                    >
+                        🗑 一覧から削除
+                    </button>
+                )}
             </div>
         </div>
     );
