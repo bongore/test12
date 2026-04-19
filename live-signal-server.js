@@ -48,6 +48,25 @@ function normalizeGrantRecord(record = null) {
     };
 }
 
+function normalizeQuizKey(quizKey = "") {
+    const [sourceAddress = "", quizId = ""] = String(quizKey || "").split(":");
+    return `${sourceAddress.toLowerCase()}:${quizId}`;
+}
+
+function normalizeDeletedQuizzes(rawMap = {}) {
+    const normalized = {};
+    Object.entries(rawMap || {}).forEach(([quizKey, value]) => {
+        const normalizedKey = normalizeQuizKey(quizKey);
+        if (!normalizedKey || normalizedKey === ":") return;
+        normalized[normalizedKey] = {
+            ...(value || {}),
+            sourceAddress: String(value?.sourceAddress || normalizedKey.split(":")[0] || "").toLowerCase(),
+            quizId: value?.quizId ?? Number(normalizedKey.split(":")[1]),
+        };
+    });
+    return normalized;
+}
+
 function writeJson(res, statusCode, payload) {
     res.writeHead(statusCode, {
         "Content-Type": "application/json",
@@ -167,22 +186,24 @@ const server = http.createServer((req, res) => {
     if (req.url === "/deleted-quizzes" && req.method === "POST") {
         readRequestBody(req)
             .then((body) => {
-                const quizKey = String(body?.quizKey || "").trim();
-                if (!quizKey) {
+                const quizKey = normalizeQuizKey(body?.quizKey || "");
+                if (!quizKey || quizKey === ":") {
                     writeJson(res, 400, { ok: false, error: "invalid_payload" });
                     return;
                 }
                 if (body?.remove) {
+                    deletedQuizzes = normalizeDeletedQuizzes(deletedQuizzes);
                     delete deletedQuizzes[quizKey];
                     persistState();
                     writeJson(res, 200, { ok: true, deletedQuizzes });
                     return;
                 }
+                deletedQuizzes = normalizeDeletedQuizzes(deletedQuizzes);
                 deletedQuizzes[quizKey] = {
                     deletedAt: body?.payload?.deletedAt || new Date().toISOString(),
                     deletedBy: body?.payload?.deletedBy || "",
                     deletedByLabel: body?.payload?.deletedByLabel || "",
-                    sourceAddress: body?.payload?.sourceAddress || "",
+                    sourceAddress: String(body?.payload?.sourceAddress || quizKey.split(":")[0] || "").toLowerCase(),
                     quizId: body?.payload?.quizId ?? null,
                 };
                 persistState();
@@ -346,7 +367,7 @@ function loadPersistedState() {
         currentReactionSession = reviveReactionSession(payload?.currentReactionSession, "現在の授業");
         currentBoardSession = reviveBoardSession(payload?.currentBoardSession, "現在の授業");
         tokenGrantLedger = payload?.tokenGrantLedger && typeof payload.tokenGrantLedger === "object" ? payload.tokenGrantLedger : {};
-        deletedQuizzes = payload?.deletedQuizzes && typeof payload.deletedQuizzes === "object" ? payload.deletedQuizzes : {};
+        deletedQuizzes = normalizeDeletedQuizzes(payload?.deletedQuizzes && typeof payload.deletedQuizzes === "object" ? payload.deletedQuizzes : {});
         deletedBoardMessagesBySession = Object.fromEntries(
             Object.entries(payload?.deletedBoardMessagesBySession || {}).map(([sessionId, entries]) => [
                 String(sessionId),

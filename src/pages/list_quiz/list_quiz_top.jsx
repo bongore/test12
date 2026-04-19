@@ -4,7 +4,7 @@ import Simple_quiz from "./components/quiz_simple";
 import Quiz_list from "./components/quiz_list";
 import { useAccessControl } from "../../utils/accessControl";
 import { getRegisteredCorrectAnswer } from "../../utils/quizCorrectAnswerStore";
-import { getDeletedQuizzes, saveDeletedQuiz } from "../../utils/liveSignalApi";
+import { getDeletedQuizzes, normalizeDeletedQuizKey, saveDeletedQuiz } from "../../utils/liveSignalApi";
 import "./list_quiz_top.css";
 
 function List_quiz_top(props) {
@@ -21,7 +21,7 @@ function List_quiz_top(props) {
     const [deletedQuizMap, setDeletedQuizMap] = useState({});
     const containerRef = useRef(null);
     const targetRef = useRef(null);
-    const getQuizCacheKey = (quiz) => `${quiz?.sourceAddress || quiz?.[12] || ""}:${Number(quiz?.[0])}`;
+    const getQuizCacheKey = (quiz) => normalizeDeletedQuizKey(`${quiz?.sourceAddress || quiz?.[12] || ""}:${Number(quiz?.[0])}`);
 
     useEffect(() => {
         let mounted = true;

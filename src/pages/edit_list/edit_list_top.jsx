@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import Simple_quiz from "./components/quiz_simple";
 import Quiz_list from "./components/quiz_list";
 import { useAccessControl } from "../../utils/accessControl";
-import { getDeletedQuizzes, removeDeletedQuiz, saveDeletedQuiz } from "../../utils/liveSignalApi";
+import { getDeletedQuizzes, normalizeDeletedQuizKey, removeDeletedQuiz, saveDeletedQuiz } from "../../utils/liveSignalApi";
 import "./edit_list_top.css";
 
 function Edit_list_top(props) {
@@ -16,7 +16,7 @@ function Edit_list_top(props) {
     const [add_num, Set_add_num] = useState(7);
     const [loadError, setLoadError] = useState("");
     const [deletedQuizMap, setDeletedQuizMap] = useState({});
-    const getQuizCacheKey = (quiz) => `${quiz?.sourceAddress || quiz?.[12] || ""}:${Number(quiz?.[0])}`;
+    const getQuizCacheKey = (quiz) => normalizeDeletedQuizKey(`${quiz?.sourceAddress || quiz?.[12] || ""}:${Number(quiz?.[0])}`);
 
     useEffect(() => {
         cont.get_quiz_lenght()
