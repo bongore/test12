@@ -29,9 +29,9 @@ function Login() {
             clickTarget: "metamask_button",
         });
 
-        const provider = contract.getEthereumProvider();
+        const provider = await contract.getEthereumProviderReady();
         if (!provider) {
-            setError("MetaMask が見つかりません。ブラウザ拡張を有効にしてください。");
+            setError("MetaMask が見つかりません。Mac の場合は Chrome / Brave に MetaMask 拡張を入れて有効化し、ページを再読み込みしてください。Safari では MetaMask 拡張が使えない場合があります。");
             appendActivityLog(ACTION_TYPES.WALLET_PROVIDER_MISSING, {
                 page: "login",
                 wallet: "MetaMask",

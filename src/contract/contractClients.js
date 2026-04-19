@@ -18,6 +18,7 @@ let walletClient = null;
 let tokenContract = null;
 let tttTokenContract = null;
 let quizContract = null;
+const eip6963Providers = [];
 
 /* ── Public Client (RPC) ── */
 const rpcTransports = (rpc_urls || [])
@@ -40,19 +41,44 @@ const publicClient = createPublicClient({
 const token_abi = token_contract.abi;
 const quiz_abi = quiz_contract.abi;
 
+function rememberEip6963Provider(detail) {
+    const provider = detail?.provider;
+    if (!provider) return;
+    if (!eip6963Providers.some((entry) => entry.provider === provider)) {
+        eip6963Providers.push({
+            provider,
+            info: detail?.info || {},
+        });
+    }
+}
+
+function getProviderScore(provider, info = {}) {
+    const rdns = String(info?.rdns || "").toLowerCase();
+    const name = String(info?.name || "").toLowerCase();
+    if (rdns.includes("io.metamask") || name.includes("metamask")) return 100;
+    if (provider?.isMetaMask && !provider?.isBraveWallet) return 90;
+    if (provider?.isMetaMask) return 80;
+    if (provider?.isBraveWallet) return 60;
+    return 10;
+}
+
+function pickBestProvider(candidates) {
+    return candidates
+        .filter((entry) => entry?.provider)
+        .sort((a, b) => getProviderScore(b.provider, b.info) - getProviderScore(a.provider, a.info))[0]?.provider || null;
+}
+
 function detectEthereumProvider() {
     if (typeof window === "undefined") return null;
+
+    const eip6963Provider = pickBestProvider(eip6963Providers);
+    if (eip6963Provider) return eip6963Provider;
 
     const injected = window.ethereum || null;
     if (!injected) return null;
 
     if (Array.isArray(injected.providers) && injected.providers.length > 0) {
-        return (
-            injected.providers.find((provider) => provider?.isMetaMask)
-            || injected.providers.find((provider) => provider?.isBraveWallet)
-            || injected.providers[0]
-            || injected
-        );
+        return pickBestProvider(injected.providers.map((provider) => ({ provider }))) || injected;
     }
 
     return injected;
@@ -96,6 +122,51 @@ function getEthereumProvider() {
     return syncInjectedClients();
 }
 
+function requestEip6963Providers() {
+    if (typeof window === "undefined") return;
+    try {
+        window.dispatchEvent(new Event("eip6963:requestProvider"));
+    } catch (error) {
+        console.log("Failed to request EIP-6963 providers", error);
+    }
+}
+
+async function waitForEthereumProvider(timeoutMs = 1800) {
+    const currentProvider = syncInjectedClients();
+    if (currentProvider) return currentProvider;
+    if (typeof window === "undefined") return null;
+
+    requestEip6963Providers();
+
+    return await new Promise((resolve) => {
+        let done = false;
+        const finish = (provider) => {
+            if (done) return;
+            done = true;
+            window.removeEventListener("ethereum#initialized", handleEthereumInitialized);
+            window.removeEventListener("eip6963:announceProvider", handleEip6963Provider);
+            window.clearTimeout(timer);
+            resolve(provider || syncInjectedClients());
+        };
+
+        const handleEthereumInitialized = () => {
+            finish(syncInjectedClients());
+        };
+
+        const handleEip6963Provider = (event) => {
+            rememberEip6963Provider(event?.detail);
+            finish(syncInjectedClients());
+        };
+
+        const timer = window.setTimeout(() => {
+            finish(syncInjectedClients());
+        }, timeoutMs);
+
+        window.addEventListener("ethereum#initialized", handleEthereumInitialized, { once: true });
+        window.addEventListener("eip6963:announceProvider", handleEip6963Provider);
+    });
+}
+
 function bindWalletProviderEvents() {
     if (typeof window === "undefined" || window.__web3QuizWalletEventsBound) return;
 
@@ -121,6 +192,13 @@ function bindWalletProviderEvents() {
 syncInjectedClients();
 
 if (typeof window !== "undefined") {
+    window.addEventListener("eip6963:announceProvider", (event) => {
+        rememberEip6963Provider(event?.detail);
+        syncInjectedClients();
+        bindWalletProviderEvents();
+        window.dispatchEvent(new CustomEvent(WALLET_PROVIDER_CHANGED_EVENT, { detail: { type: "providerAnnounced" } }));
+    });
+    requestEip6963Providers();
     bindWalletProviderEvents();
     window.addEventListener("ethereum#initialized", bindWalletProviderEvents, { once: false });
     window.addEventListener("load", bindWalletProviderEvents, { once: true });
@@ -179,5 +257,6 @@ export {
     convertFullWidthNumbersToHalf,
     getAddress,
     getEthereumProvider,
+    waitForEthereumProvider,
     WALLET_PROVIDER_CHANGED_EVENT,
 };

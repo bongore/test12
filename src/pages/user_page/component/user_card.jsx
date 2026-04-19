@@ -10,7 +10,7 @@ function User_card(props) {
         ? `${props.registrationInfo.addedBy.slice(0, 10)}...${props.registrationInfo.addedBy.slice(-6)}`
         : "未記録";
 
-    const hasEthereumProvider = () => Boolean(props.cont?.getEthereumProvider?.());
+    const hasEthereumProvider = async () => Boolean(await props.cont?.getEthereumProviderReady?.() || props.cont?.getEthereumProvider?.());
     const isMobileDevice = () => /iPhone|iPad|iPod|Android/i.test(navigator?.userAgent || "");
 
     const showManualTokenGuide = (symbol, address) => {
@@ -27,12 +27,12 @@ function User_card(props) {
     };
 
     const addNetworkHandler = async () => {
-        if (!hasEthereumProvider()) {
+        if (!(await hasEthereumProvider())) {
             if (isMobileDevice()) {
                 alert("iPhone / Android では MetaMask アプリ内ブラウザで開くとネットワーク追加とトークン追加が使いやすくなります。");
                 return;
             }
-            alert("MetaMask が見つかりません。MetaMask をインストールしてから再度お試しください。");
+            alert("MetaMask が見つかりません。Mac の場合は Chrome / Brave に MetaMask 拡張を入れて有効化し、ページを再読み込みしてください。Safari では MetaMask 拡張が使えない場合があります。");
             return;
         }
 
@@ -56,12 +56,12 @@ function User_card(props) {
     };
 
     const addTokenHandler = async () => {
-        if (!hasEthereumProvider()) {
+        if (!(await hasEthereumProvider())) {
             if (isMobileDevice()) {
                 showManualTokenGuide("TFT", token_address);
                 return;
             }
-            alert("MetaMask が見つかりません。MetaMask をインストールしてから再度お試しください。");
+            alert("MetaMask が見つかりません。Mac の場合は Chrome / Brave に MetaMask 拡張を入れて有効化し、ページを再読み込みしてください。Safari では MetaMask 拡張が使えない場合があります。");
             return;
         }
 
@@ -81,12 +81,12 @@ function User_card(props) {
     };
 
     const addTTTTokenHandler = async () => {
-        if (!hasEthereumProvider()) {
+        if (!(await hasEthereumProvider())) {
             if (isMobileDevice()) {
                 showManualTokenGuide("TTT", ttt_token_address);
                 return;
             }
-            alert("MetaMask が見つかりません。MetaMask をインストールしてから再度お試しください。");
+            alert("MetaMask が見つかりません。Mac の場合は Chrome / Brave に MetaMask 拡張を入れて有効化し、ページを再読み込みしてください。Safari では MetaMask 拡張が使えない場合があります。");
             return;
         }
 

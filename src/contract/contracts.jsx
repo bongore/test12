@@ -24,6 +24,7 @@ import {
     amoy,
     sliceByNumber,
     getEthereumProvider as resolveEthereumProvider,
+    waitForEthereumProvider,
 } from "./contractClients";
 import { getRegisteredCorrectAnswer } from "../utils/quizCorrectAnswerStore";
 
@@ -625,8 +626,12 @@ class Contracts_MetaMask {
         return resolveEthereumProvider() || ethereum || null;
     }
 
+    async getEthereumProviderReady() {
+        return await waitForEthereumProvider(2500);
+    }
+
     async writeContractDirect({ account, address, abi, functionName, args = [] }) {
-        const provider = this.getEthereumProvider();
+        const provider = await this.getEthereumProviderReady();
         if (!provider || !walletClient) {
             throw new Error("ethereum_not_found");
         }
@@ -642,7 +647,7 @@ class Contracts_MetaMask {
     }
 
     async add_watch_asset(address, symbol, decimals = 18) {
-        const provider = this.getEthereumProvider();
+        const provider = await this.getEthereumProviderReady();
         if (!provider || !address) return false;
         try {
             await this.ensure_amoy_network();
@@ -691,7 +696,7 @@ class Contracts_MetaMask {
     }
 
     async get_chain_id() {
-        const provider = this.getEthereumProvider();
+        const provider = await this.getEthereumProviderReady();
         if (!provider) return null;
         try {
             const chainIdHex = await provider.request({ method: "eth_chainId" });
@@ -703,7 +708,7 @@ class Contracts_MetaMask {
     }
 
     async request_wallet_access() {
-        const provider = this.getEthereumProvider();
+        const provider = await this.getEthereumProviderReady();
         if (!provider) return [];
         try {
             return await provider.request({ method: "eth_requestAccounts" });
@@ -741,7 +746,7 @@ class Contracts_MetaMask {
     }
 
     async change_network() {
-        const provider = this.getEthereumProvider();
+        const provider = await this.getEthereumProviderReady();
         if (!provider) return false;
         try {
             await provider.request({
@@ -756,7 +761,7 @@ class Contracts_MetaMask {
         }
     }
     async add_network() {
-        const provider = this.getEthereumProvider();
+        const provider = await this.getEthereumProviderReady();
         if (!provider) return false;
         try {
             await provider.request({
@@ -771,7 +776,7 @@ class Contracts_MetaMask {
     }
 
     async ensure_amoy_network() {
-        const provider = this.getEthereumProvider();
+        const provider = await this.getEthereumProviderReady();
         if (!provider) return false;
 
         await this.request_wallet_access();
@@ -791,7 +796,7 @@ class Contracts_MetaMask {
     }
 
     async add_or_switch_amoy_network() {
-        const provider = this.getEthereumProvider();
+        const provider = await this.getEthereumProviderReady();
         if (!provider) {
             throw new Error("metamask_not_found");
         }
@@ -867,7 +872,7 @@ class Contracts_MetaMask {
 
     async get_address() {
         try {
-            const provider = this.getEthereumProvider();
+            const provider = await this.getEthereumProviderReady();
             if (!provider || !walletClient) {
                 console.log("Ethereum object does not exist");
                 return "";

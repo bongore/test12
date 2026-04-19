@@ -19,8 +19,9 @@ function Modal_change_network(props) {
     }, [props.chain_id]);
 
     useEffect(() => {
-        const syncProviderState = () => {
-            setHasEthereumProvider(Boolean(props.cont?.getEthereumProvider?.()));
+        const syncProviderState = async () => {
+            const provider = await props.cont?.getEthereumProviderReady?.();
+            setHasEthereumProvider(Boolean(provider || props.cont?.getEthereumProvider?.()));
         };
 
         syncProviderState();
@@ -71,16 +72,16 @@ function Modal_change_network(props) {
     }
 
     const handleSwitchNetwork = async () => {
-        if (!hasEthereumProvider) {
-            alert("MetaMask が見つかりません。ブラウザに MetaMask をインストールしてから再度お試しください。");
-            return;
-        }
-
         try {
             await props.cont.add_or_switch_amoy_network();
             setCurrentChainId(await props.cont.get_chain_id());
         } catch (error) {
             console.error("Failed to add or switch Polygon Amoy", error);
+            if (error?.message === "metamask_not_found" || error?.message === "ethereum_not_found") {
+                alert("MetaMask が見つかりません。Mac の場合は Chrome / Brave に MetaMask 拡張を入れて有効化し、ページを再読み込みしてください。Safari では MetaMask 拡張が使えない場合があります。");
+                setHasEthereumProvider(false);
+                return;
+            }
             if (error?.code === 4001) {
                 alert("MetaMask 側で操作がキャンセルされました。");
                 return;
