@@ -60,6 +60,16 @@ function mergeDeletedQuizMaps(baseMap = {}, nextMap = {}) {
     });
 }
 
+function getPendingDeletedQuizMap(rawMap = {}) {
+    const pendingMap = {};
+    Object.entries(normalizeDeletedQuizMap(rawMap)).forEach(([quizKey, value]) => {
+        if (value?.pendingSync) {
+            pendingMap[quizKey] = value;
+        }
+    });
+    return pendingMap;
+}
+
 async function fetchLiveSignalJson(path, options = {}) {
     const response = await fetch(`${getLiveSignalApiBaseUrl()}${path}`, {
         headers: {
@@ -80,7 +90,7 @@ async function getDeletedQuizzes() {
     const cachedMap = readDeletedQuizCache();
     try {
         const response = await fetchLiveSignalJson("/deleted-quizzes");
-        const mergedMap = mergeDeletedQuizMaps(cachedMap, response?.deletedQuizzes || {});
+        const mergedMap = mergeDeletedQuizMaps(response?.deletedQuizzes || {}, getPendingDeletedQuizMap(cachedMap));
         writeDeletedQuizCache(mergedMap);
         return mergedMap;
     } catch (error) {
@@ -95,6 +105,7 @@ async function saveDeletedQuiz(quizKey, payload = {}) {
         [normalizedKey]: {
             ...payload,
             deletedAt: payload?.deletedAt || new Date().toISOString(),
+            pendingSync: true,
         },
     });
     writeDeletedQuizCache(localMap);
@@ -107,7 +118,10 @@ async function saveDeletedQuiz(quizKey, payload = {}) {
                 payload,
             }),
         });
-        const mergedMap = mergeDeletedQuizMaps(localMap, response?.deletedQuizzes || {});
+        const mergedMap = mergeDeletedQuizMaps(response?.deletedQuizzes || {}, getPendingDeletedQuizMap(localMap));
+        if (mergedMap[normalizedKey]) {
+            delete mergedMap[normalizedKey].pendingSync;
+        }
         writeDeletedQuizCache(mergedMap);
         return { ...response, deletedQuizzes: mergedMap };
     } catch (error) {
@@ -130,7 +144,7 @@ async function removeDeletedQuiz(quizKey) {
                 remove: true,
             }),
         });
-        const serverMap = normalizeDeletedQuizMap(response?.deletedQuizzes || {});
+        const serverMap = mergeDeletedQuizMaps(response?.deletedQuizzes || {}, getPendingDeletedQuizMap(localMap));
         delete serverMap[normalizedKey];
         writeDeletedQuizCache(serverMap);
         return { ...response, deletedQuizzes: serverMap };
