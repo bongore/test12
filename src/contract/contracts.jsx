@@ -1610,6 +1610,32 @@ class Contracts_MetaMask {
         return withQuizSourceMetadata([...normalizedQuiz, answer_typr, registeredCorrectAnswer, res2[1]], targetQuizAddress);
     }
 
+    async get_quiz_with_source(id, preferredSourceAddress = "") {
+        const preferred = preferredSourceAddress ? this.resolveQuizAddress(preferredSourceAddress) : "";
+        const sources = [
+            preferred,
+            ...this.getQuizReadAddresses(),
+        ].filter((address, index, list) => Boolean(address) && list.findIndex((item) => this.normalizeAddress(item) === this.normalizeAddress(address)) === index);
+
+        let lastError = null;
+        for (const source of sources) {
+            try {
+                const [quizData, simpleQuizData] = await Promise.all([
+                    this.get_quiz(id, source),
+                    this.get_quiz_simple(id, source),
+                ]);
+                if (quizData?.[2] || simpleQuizData?.[2]) {
+                    return { quizData, simpleQuizData, sourceAddress: source };
+                }
+            } catch (error) {
+                lastError = error;
+                console.log(error);
+            }
+        }
+
+        throw lastError || new Error("quiz_not_found");
+    }
+
     async get_quiz_simple(id, sourceAddress = "") {
         try {
             const targetQuizAddress = this.resolveQuizAddress(sourceAddress);

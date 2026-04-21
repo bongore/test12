@@ -154,13 +154,19 @@ function Answer_quiz() {
     const searchParams = new URLSearchParams(location.search);
     const querySourceAddress = searchParams.get("c") || "";
     const stateSourceAddress = location.state?.sourceAddress || "";
-    const sourceAddress = querySourceAddress || stateSourceAddress || getRememberedQuizSource(id) || "";
+    const initialSourceAddress = querySourceAddress || stateSourceAddress || getRememberedQuizSource(id) || "";
+    const [resolvedSourceAddress, setResolvedSourceAddress] = useState(initialSourceAddress);
+    const sourceAddress = resolvedSourceAddress || initialSourceAddress;
     const isPracticeMode = searchParams.get("practice") === "1";
     const draftKey = `quiz_answer_${String(sourceAddress || "default").toLowerCase()}_${id}`;
     const answerStorageKey = buildQuizStorageKey(id, sourceAddress);
     const pageOpenedAtRef = useRef(Date.now());
     const answerStartedAtRef = useRef(null);
     const textChangeCountRef = useRef(0);
+
+    useEffect(() => {
+        setResolvedSourceAddress(initialSourceAddress);
+    }, [id, initialSourceAddress]);
 
     useEffect(() => {
         if (sourceAddress) {
@@ -235,21 +241,29 @@ function Answer_quiz() {
         });
 
         try {
-            const quizData = await contract.get_quiz(id, sourceAddress);
-            const simpleQuizData = await contract.get_quiz_simple(id, sourceAddress);
+            const resolvedQuiz = await contract.get_quiz_with_source(id, sourceAddress);
+            const quizData = resolvedQuiz.quizData;
+            const simpleQuizData = resolvedQuiz.simpleQuizData;
+            const resolvedSource = resolvedQuiz.sourceAddress || sourceAddress;
+            if (resolvedSource && resolvedSource !== sourceAddress) {
+                setResolvedSourceAddress(resolvedSource);
+                rememberQuizSource(id, resolvedSource);
+            }
             setQuiz(quizData);
             setSimpleQuiz(simpleQuizData);
 
+            const resolvedAnswerStorageKey = buildQuizStorageKey(id, resolvedSource);
+            const resolvedDraftKey = `quiz_answer_${String(resolvedSource || "default").toLowerCase()}_${id}`;
             if (Number(simpleQuizData[10]) !== 0) {
-                const cachedAnswer = localStorage.getItem(answerStorageKey) || "";
+                const cachedAnswer = localStorage.getItem(resolvedAnswerStorageKey) || "";
                 setSavedAnswerStr(cachedAnswer);
                 if (cachedAnswer) {
                     setAnswer(cachedAnswer);
                 }
             } else {
-                localStorage.removeItem(answerStorageKey);
+                localStorage.removeItem(resolvedAnswerStorageKey);
                 setSavedAnswerStr("");
-                const draft = getDraft(draftKey);
+                const draft = getDraft(resolvedDraftKey);
                 if (draft) {
                     setAnswer(draft);
                     appendActivityLog(ACTION_TYPES.ANSWER_DRAFT_RESTORED, {
