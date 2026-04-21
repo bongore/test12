@@ -19,6 +19,9 @@ function Edit_quiz() {
     const [explanation, setExplanation] = useState("");
     const [thumbnail_url, setThumbnail_url] = useState("");
     const [content, setContent] = useState("");
+    const [reward, setReward] = useState("");
+    const [originalReward, setOriginalReward] = useState(0);
+    const [respondentLimit, setRespondentLimit] = useState(0);
     const [reply_startline, setReply_startline] = useState(
         new Date()
             .toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })
@@ -32,15 +35,41 @@ function Edit_quiz() {
     const [now, setnow] = useState(null);
     const [show, setShow] = useState(false);
     const [isReady, setIsReady] = useState(false);
+    const nextReward = Number(reward || 0);
+    const rewardDelta = Number.isFinite(nextReward) ? Math.max(nextReward - originalReward, 0) : 0;
+    const rewardDepositPreview = rewardDelta * respondentLimit;
+    const isRewardDecrease = Number.isFinite(nextReward) && nextReward < originalReward;
 
     const edit_quiz = async () => {
         console.log(id, owner, title, explanation, thumbnail_url, content, reply_startline, reply_deadline);
+        const rewardValue = Number(reward || 0);
+        if (!Number.isFinite(rewardValue) || rewardValue < 0) {
+            alert("回答報酬は0以上の数値で入力してください");
+            return;
+        }
+        if (rewardValue < originalReward) {
+            alert("既に預託済みのTFTと実際の送金量がずれるため、報酬の減額はできません。増額のみ可能です。");
+            return;
+        }
         if (new Date(reply_startline).getTime() < new Date(reply_deadline).getTime()) {
-            await Contract.edit_quiz(id, owner, title, explanation, thumbnail_url, content, reply_startline, reply_deadline, setShow, sourceAddress);
+            const editReceipt = await Contract.edit_quiz(id, owner, title, explanation, thumbnail_url, content, reply_startline, reply_deadline, setShow, sourceAddress);
+            if (!editReceipt || editReceipt.status !== "success") {
+                alert("クイズ編集のトランザクションが完了していません。報酬は変更していません。");
+                return;
+            }
+
+            const delta = rewardValue - originalReward;
+            if (delta > 0) {
+                await Contract.add_quiz_reward_delta(id, delta.toString(), respondentLimit, setShow, sourceAddress);
+            }
             appendActivityLog(ACTION_TYPES.ADMIN_EDIT_QUIZ, {
                 page: "edit_quiz",
                 quizId: id,
                 title,
+                rewardBefore: originalReward,
+                rewardAfter: rewardValue,
+                rewardDelta: delta,
+                respondentLimit,
             });
             navigate("/edit_list");
         } else {
@@ -87,6 +116,10 @@ function Edit_quiz() {
                 setContent(quiz[5] || "");
                 setReply_startline(getLocalizedDateTimeString(new Date(Number(quiz[8]) * 1000)));
                 setReply_deadline(getLocalizedDateTimeString(new Date(Number(quiz[9]) * 1000)));
+                const currentReward = Number(quiz[10] || 0) / 10 ** 18;
+                setReward(String(currentReward));
+                setOriginalReward(currentReward);
+                setRespondentLimit(Number(quiz[12] || 0));
                 setnow(getLocalizedDateTimeString());
                 setIsReady(true);
             } catch (error) {
@@ -187,6 +220,36 @@ function Edit_quiz() {
                                 />
                             </Form.Group>
                         </div>
+                    </div>
+
+                    {/* 報酬設定 */}
+                    <div className="quiz-form-group">
+                        <Form.Group style={{ textAlign: "left" }}>
+                            <Form.Label>💎 回答報酬 TFT</Form.Label>
+                            <Form.Control
+                                type="number"
+                                min={originalReward}
+                                step="0.000001"
+                                value={reward}
+                                onChange={(event) => setReward(event.target.value)}
+                            />
+                            <div className="reward-edit-summary">
+                                <span>現在の報酬: {originalReward.toLocaleString()} TFT / 人</span>
+                                <span>回答上限: {respondentLimit.toLocaleString()} 人</span>
+                                <span>追加預託: {rewardDepositPreview.toLocaleString()} TFT</span>
+                            </div>
+                            {isRewardDecrease ? (
+                                <p className="reward-edit-warning">
+                                    減額はできません。既に預託されたTFTと実際の送金量がずれるため、増額のみ対応しています。
+                                </p>
+                            ) : rewardDelta > 0 ? (
+                                <p className="reward-edit-note">
+                                    保存時に差額 {rewardDelta.toLocaleString()} TFT × {respondentLimit.toLocaleString()} 人分だけ追加で預託します。
+                                </p>
+                            ) : (
+                                <p className="reward-edit-note">報酬額は変更されません。</p>
+                            )}
+                        </Form.Group>
                     </div>
 
                     {/* 送信ボタン */}

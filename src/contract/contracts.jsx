@@ -1098,6 +1098,65 @@ class Contracts_MetaMask {
         }
     }
 
+    async add_quiz_reward_delta(id, deltaRewardTft, respondentLimit, setShow, sourceAddress = "") {
+        if (setShow) setShow(true);
+        try {
+            if (!ethereum) {
+                throw new Error("ethereum_not_found");
+            }
+
+            const account = await this.get_address();
+            if (!account) {
+                throw new Error("wallet_not_connected");
+            }
+
+            const studentLimit = Number(respondentLimit || 0);
+            if (!Number.isFinite(studentLimit) || studentLimit <= 0) {
+                throw new Error("invalid_respondent_limit");
+            }
+
+            const rewardText = String(deltaRewardTft || "0").trim();
+            const rewardDeltaWei = parseUnits(rewardText, 18);
+            if (rewardDeltaWei <= 0n) {
+                return { res: null, hash: null, approvalHash: null, requiredAmount: 0n };
+            }
+
+            const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
+            const requiredAmount = rewardDeltaWei * BigInt(studentLimit);
+            let approvalHash = null;
+            let approvalReceipt = null;
+            const approval = await token.read.allowance({ account, args: [account, targetQuizAddress] });
+
+            if (approval < requiredAmount) {
+                approvalHash = await this.approve(account, requiredAmount, targetQuizAddress);
+                if (!approvalHash) {
+                    throw new Error("approve_rejected");
+                }
+                approvalReceipt = await publicClient.waitForTransactionReceipt({ hash: approvalHash });
+                if (approvalReceipt?.status !== "success") {
+                    throw new Error("approve_failed");
+                }
+            }
+
+            const hash = await this._investment_to_quiz(account, id, rewardDeltaWei, studentLimit, targetQuizAddress);
+            if (!hash) {
+                throw new Error("reward_update_rejected");
+            }
+
+            const res = await publicClient.waitForTransactionReceipt({ hash });
+            if (res?.status !== "success") {
+                throw new Error("reward_update_failed");
+            }
+
+            return { res, hash, approvalHash, approvalReceipt, requiredAmount };
+        } catch (err) {
+            console.log(err);
+            throw err;
+        } finally {
+            if (setShow) setShow(false);
+        }
+    }
+
     async _payment_of_reward(account, id, answer, students, sourceAddress = "") {
         console.log([account, id, answer, students]);
         try {
