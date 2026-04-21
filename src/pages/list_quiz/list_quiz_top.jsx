@@ -53,13 +53,16 @@ function List_quiz_top(props) {
 
         const address = await cont.get_address();
         const deletedByLabel = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "teacher";
-        await saveDeletedQuiz(quizKey, {
+        const result = await saveDeletedQuiz(quizKey, {
             deletedAt: new Date().toISOString(),
             deletedBy: address || "",
             deletedByLabel,
             sourceAddress: quiz?.sourceAddress || quiz?.[12] || "",
             quizId: Number(quiz?.[0]),
         });
+        if (result?.offline) {
+            alert("削除状態をこの端末には保存しましたが、共有サーバーへの同期に失敗しました。他の学生へ反映されない可能性があります。少し待ってからもう一度削除操作をしてください。");
+        }
 
         setDeletedQuizMap((current) => ({
             ...current,

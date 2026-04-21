@@ -4,6 +4,7 @@ import { Contracts_MetaMask } from "../../contract/contracts";
 import { getAnnouncements, subscribeAnnouncements } from "../../utils/courseEnhancements";
 import { useAccessControl } from "../../utils/accessControl";
 import { convertTftToPoint } from "../../utils/quizRewardRate";
+import { getDeletedQuizzes, normalizeDeletedQuizKey } from "../../utils/liveSignalApi";
 import "./dashboard.css";
 
 function Dashboard() {
@@ -24,14 +25,20 @@ function Dashboard() {
                 const addr = await cont.get_address();
                 setAddress(addr);
 
-                const [bal, total, user] = await Promise.all([
+                const [bal, quizList, deletedQuizzes, user] = await Promise.all([
                     cont.get_token_balance(addr),
-                    cont.get_quiz_lenght(),
+                    cont.get_all_quiz_simple_list(),
+                    getDeletedQuizzes(),
                     cont.get_user_data(addr),
                 ]);
 
+                const visibleQuizTotal = (Array.isArray(quizList) ? quizList : []).filter((quiz) => {
+                    const quizKey = normalizeDeletedQuizKey(`${quiz?.sourceAddress || quiz?.[12] || ""}:${Number(quiz?.[0])}`);
+                    return !deletedQuizzes?.[quizKey];
+                }).length;
+
                 setBalance(bal);
-                setQuizTotal(Number(total));
+                setQuizTotal(visibleQuizTotal);
                 setUserData(user);
 
                 // ランクを計算
