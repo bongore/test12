@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import "./quiz_simple.css";
 import { Contracts_MetaMask } from "../../../contract/contracts";
+import { buildAnswerQuizPath, buildEditQuizPath, buildInvestmentQuizPath } from "../../../utils/quizLinks";
 
 /* ── 定数定義 ── */
 const QUIZ_INDEX = {
@@ -124,7 +125,7 @@ function Simple_quiz(props) {
     return (
         <div className={`edit-quiz-card glass-card ${statusInfo.glow} ${is_payment ? 'payment-warning' : ''}`}>
             <Link 
-                to={`/answer_quiz/${quizId}?c=${encodeURIComponent(sourceAddress)}`}
+                to={buildAnswerQuizPath(quizId, sourceAddress)}
                 state={{ back_page: 0 }}
                 className="quiz-card-link"
             >
@@ -164,13 +165,13 @@ function Simple_quiz(props) {
             </Link>
             <div className="quiz-card-actions">
                 <Link 
-                    to={`/edit_quiz/${quizId}?c=${encodeURIComponent(sourceAddress)}`} 
+                    to={buildEditQuizPath(quizId, sourceAddress)} 
                     className="btn-edit"
                 >
                     ✏️ 編集
                 </Link>
                 <Link 
-                    to={`/investment_page/${quizId}?c=${encodeURIComponent(sourceAddress)}`} 
+                    to={buildInvestmentQuizPath(quizId, sourceAddress)} 
                     className="btn-reward"
                 >
                     💰 報酬の追加

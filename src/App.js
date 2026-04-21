@@ -1,11 +1,33 @@
 import { Component, Suspense, lazy, useEffect } from "react";
 import "./styles/design-tokens.css";
 import "./styles/animations.css";
-import { HashRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import Nav_menu from "./pages/navbar/navbar";
 import { Contracts_MetaMask } from "./contract/contracts";
 import { ACTION_TYPES, appendActivityLog, logPageView } from "./utils/activityLog";
 import "bootstrap/dist/css/bootstrap.min.css";
+
+const routerBasename = (() => {
+    try {
+        const publicUrl = process.env.PUBLIC_URL || "";
+        if (!publicUrl) return "/";
+        return new URL(publicUrl, window.location.origin).pathname.replace(/\/$/, "") || "/";
+    } catch (error) {
+        return "/";
+    }
+})();
+
+function normalizeLegacyHashUrl() {
+    if (typeof window === "undefined") return;
+    const { hash, origin } = window.location;
+    if (!hash || !hash.startsWith("#/")) return;
+
+    const nextPath = hash.slice(1);
+    const base = routerBasename === "/" ? "" : routerBasename;
+    window.history.replaceState(null, "", `${origin}${base}${nextPath}`);
+}
+
+normalizeLegacyHashUrl();
 
 const Login = lazy(() => import("./contract/login"));
 const User_page = lazy(() => import("./pages/user_page/user_page"));
@@ -137,9 +159,9 @@ function App() {
 
     return (
         <div className="App">
-            <HashRouter>
+            <BrowserRouter basename={routerBasename}>
                 <AppRoutes cont={cont} />
-            </HashRouter>
+            </BrowserRouter>
         </div>
     );
 }

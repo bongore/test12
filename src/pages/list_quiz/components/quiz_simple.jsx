@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { buildAnswerQuizPath } from "../../../utils/quizLinks";
 import { buildQuizStorageKey } from "../../../utils/quizCorrectAnswerStore";
 import "./quiz_simple.css";
 
@@ -219,14 +220,14 @@ function Simple_quiz(props) {
                     {props.canAnswerQuiz && (
                         <div style={{ display: "flex", gap: "8px", marginTop: "var(--space-3)", flexWrap: "wrap" }}>
                             <Link
-                                to={`/answer_quiz/${quizId}?c=${encodeURIComponent(sourceAddress)}`}
+                                to={buildAnswerQuizPath(quizId, sourceAddress)}
                                 className="btn-primary-custom"
                                 style={{ textDecoration: "none", flex: 1, minWidth: "140px", textAlign: "center", padding: "10px 14px" }}
                             >
                                 本番で回答
                             </Link>
                             <Link
-                                to={`/answer_quiz/${quizId}?practice=1&c=${encodeURIComponent(sourceAddress)}`}
+                                to={buildAnswerQuizPath(quizId, sourceAddress, { practice: true })}
                                 className="btn-secondary-custom"
                                 style={{ textDecoration: "none", flex: 1, minWidth: "140px", textAlign: "center", padding: "10px 14px" }}
                             >

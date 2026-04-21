@@ -9,6 +9,7 @@ import { ACTION_TYPES, appendActivityLog } from "../../utils/activityLog";
 import { setRegisteredCorrectAnswer } from "../../utils/quizCorrectAnswerStore";
 import { quiz_address } from "../../contract/config";
 import { MAX_TFT_PER_LECTURE, MAX_TFT_TOTAL, QUIZ_RATE_OPTIONS, TOTAL_LECTURE_COUNT, convertTftToPoint, TFT_PER_POINT } from "../../utils/quizRewardRate";
+import { buildAnswerQuizPath } from "../../utils/quizLinks";
 import "./create_quiz.css";
 
 function Create_quiz() {
@@ -83,7 +84,7 @@ function Create_quiz() {
                 if (createdQuizId) {
                     const normalizedQuizId = BigInt(createdQuizId).toString();
                     setRegisteredCorrectAnswer(normalizedQuizId, convertFullWidthNumbersToHalf(correct), quiz_address);
-                    navigate(`/answer_quiz/${normalizedQuizId}?c=${encodeURIComponent(quiz_address)}`);
+                    navigate(buildAnswerQuizPath(normalizedQuizId, quiz_address));
                     return;
                 }
             } catch (error) {
