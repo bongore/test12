@@ -76,6 +76,7 @@
     ]
   },
   "devDependencies": {
+    "solc": "^0.8.34",
     "typescript": "^4.9.5"
   }
 }

@@ -9,6 +9,7 @@ interface IClassRoom {
 
 contract Quiz_Dapp {
     address public constant class_room_address = 0xa9AA6D24ecF43fEd6203680866f78B9A4798A8e0;
+    address public constant reward_burn_address = 0x000000000000000000000000000000000000dEaD;
     IClassRoom private immutable class_room;
     TokenInterface token;
 
@@ -85,6 +86,15 @@ contract Quiz_Dapp {
 
     mapping(address => User) private users;
     Quiz[] private quizs;
+
+    event QuizRewardReduced(
+        uint indexed quiz_id,
+        uint previous_reward,
+        uint new_reward,
+        uint burned_amount,
+        address indexed burned_to,
+        address indexed updated_by
+    );
 
     modifier isTeacher() {
         require(class_room._isTeacher(msg.sender), "teacher");
@@ -169,6 +179,29 @@ contract Quiz_Dapp {
 
         quizs[id].reward += amount;
         return id;
+    }
+
+    function reduce_quiz_reward(uint id, uint newReward) public isTeacher returns (uint burned_amount) {
+        Quiz storage quiz = quizs[id];
+        require(!quiz.is_payment, "paid");
+        require(newReward < quiz.reward, "not decrease");
+
+        uint previousReward = quiz.reward;
+        burned_amount = (previousReward - newReward) * quiz.respondent_limit;
+        require(burned_amount > 0, "zero");
+
+        quiz.reward = newReward;
+        require(token.transfer_explanation(reward_burn_address, burned_amount, "reduce_quiz_reward_burn"), "burn transfer");
+
+        emit QuizRewardReduced(id, previousReward, newReward, burned_amount, reward_burn_address, msg.sender);
+    }
+
+    function get_quiz_reward_burn_amount(uint id, uint newReward) public view returns (uint burned_amount) {
+        Quiz storage quiz = quizs[id];
+        if (newReward >= quiz.reward) {
+            return 0;
+        }
+        burned_amount = (quiz.reward - newReward) * quiz.respondent_limit;
     }
 
     function get_is_payment(uint quiz_id) public view returns (bool is_payment) {

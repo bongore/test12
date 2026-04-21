@@ -37,6 +37,7 @@ function Edit_quiz() {
     const [isReady, setIsReady] = useState(false);
     const nextReward = Number(reward || 0);
     const rewardDelta = Number.isFinite(nextReward) ? Math.max(nextReward - originalReward, 0) : 0;
+    const rewardBurnPreview = Number.isFinite(nextReward) ? Math.max(originalReward - nextReward, 0) * respondentLimit : 0;
     const rewardDepositPreview = rewardDelta * respondentLimit;
     const isRewardDecrease = Number.isFinite(nextReward) && nextReward < originalReward;
 
@@ -47,18 +48,25 @@ function Edit_quiz() {
             alert("回答報酬は0以上の数値で入力してください");
             return;
         }
-        if (rewardValue < originalReward) {
-            alert("既に預託済みのTFTと実際の送金量がずれるため、報酬の減額はできません。増額のみ可能です。");
-            return;
-        }
         if (new Date(reply_startline).getTime() < new Date(reply_deadline).getTime()) {
+            const delta = rewardValue - originalReward;
+            if (delta < 0) {
+                const ok = window.confirm(`報酬を減額します。余剰分 ${rewardBurnPreview.toLocaleString()} TFT はバーン用アドレスへ送られ、元に戻せません。続行しますか？`);
+                if (!ok) return;
+                try {
+                    await Contract.reduce_quiz_reward(id, rewardValue.toString(), setShow, sourceAddress);
+                } catch (error) {
+                    alert("報酬の減額バーンに失敗しました。既に報酬支払い済みの問題、または未対応の旧コントラクトでは減額できません。");
+                    return;
+                }
+            }
+
             const editReceipt = await Contract.edit_quiz(id, owner, title, explanation, thumbnail_url, content, reply_startline, reply_deadline, setShow, sourceAddress);
             if (!editReceipt || editReceipt.status !== "success") {
-                alert("クイズ編集のトランザクションが完了していません。報酬は変更していません。");
+                alert(delta < 0 ? "報酬の減額は完了しましたが、クイズ内容の編集が完了していません。" : "クイズ編集のトランザクションが完了していません。報酬は変更していません。");
                 return;
             }
 
-            const delta = rewardValue - originalReward;
             if (delta > 0) {
                 await Contract.add_quiz_reward_delta(id, delta.toString(), respondentLimit, setShow, sourceAddress);
             }
@@ -237,10 +245,11 @@ function Edit_quiz() {
                                 <span>現在の報酬: {originalReward.toLocaleString()} TFT / 人</span>
                                 <span>回答上限: {respondentLimit.toLocaleString()} 人</span>
                                 <span>追加預託: {rewardDepositPreview.toLocaleString()} TFT</span>
+                                <span>バーン予定: {rewardBurnPreview.toLocaleString()} TFT</span>
                             </div>
                             {isRewardDecrease ? (
                                 <p className="reward-edit-warning">
-                                    減額はできません。既に預託されたTFTと実際の送金量がずれるため、増額のみ対応しています。
+                                    保存時に差額 {Math.max(originalReward - nextReward, 0).toLocaleString()} TFT × {respondentLimit.toLocaleString()} 人分をバーン用アドレスへ送って、問題の報酬額も減額します。報酬支払い済みの問題は減額できません。
                                 </p>
                             ) : rewardDelta > 0 ? (
                                 <p className="reward-edit-note">

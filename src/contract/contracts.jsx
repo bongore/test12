@@ -1157,6 +1157,76 @@ class Contracts_MetaMask {
         }
     }
 
+    async reduce_quiz_reward(id, newRewardTft, setShow, sourceAddress = "") {
+        if (setShow) setShow(true);
+        try {
+            if (!ethereum) {
+                throw new Error("ethereum_not_found");
+            }
+
+            const account = await this.get_address();
+            if (!account) {
+                throw new Error("wallet_not_connected");
+            }
+
+            const rewardText = String(newRewardTft || "0").trim();
+            const newRewardWei = parseUnits(rewardText, 18);
+            const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
+            const hash = await this._reduce_quiz_reward(account, id, newRewardWei, targetQuizAddress);
+            if (!hash) {
+                throw new Error("reward_reduce_rejected");
+            }
+
+            const res = await publicClient.waitForTransactionReceipt({ hash });
+            if (res?.status !== "success") {
+                throw new Error("reward_reduce_failed");
+            }
+            return { res, hash };
+        } catch (err) {
+            console.log(err);
+            throw err;
+        } finally {
+            if (setShow) setShow(false);
+        }
+    }
+
+    async _reduce_quiz_reward(account, id, newRewardWei, sourceAddress = "") {
+        try {
+            if (!ethereum) {
+                throw new Error("ethereum_not_found");
+            }
+            return await this.writeContractDirect({
+                account,
+                address: this.resolveQuizAddress(sourceAddress),
+                abi: quiz_abi,
+                functionName: "reduce_quiz_reward",
+                args: [id, newRewardWei.toString()],
+            });
+        } catch (err) {
+            console.log(err);
+            throw err;
+        }
+    }
+
+    async get_quiz_reward_burn_amount(id, newRewardTft, sourceAddress = "") {
+        try {
+            const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
+            const newRewardWei = parseUnits(String(newRewardTft || "0").trim(), 18);
+            const result = targetQuizAddress === quiz_address
+                ? await quiz.read.get_quiz_reward_burn_amount({ args: [id, newRewardWei.toString()] })
+                : await publicClient.readContract({
+                    address: targetQuizAddress,
+                    abi: quiz_abi,
+                    functionName: "get_quiz_reward_burn_amount",
+                    args: [id, newRewardWei.toString()],
+                });
+            return Number(result || 0) / 10 ** 18;
+        } catch (err) {
+            console.log(err);
+            return null;
+        }
+    }
+
     async _payment_of_reward(account, id, answer, students, sourceAddress = "") {
         console.log([account, id, answer, students]);
         try {
