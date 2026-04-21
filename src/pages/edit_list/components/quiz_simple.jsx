@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import "./quiz_simple.css";
 import { Contracts_MetaMask } from "../../../contract/contracts";
-import { buildAnswerQuizPath, buildEditQuizPath, buildInvestmentQuizPath } from "../../../utils/quizLinks";
+import { buildAnswerQuizPath, buildAnswerQuizState, buildEditQuizPath, buildInvestmentQuizPath, rememberQuizSource } from "../../../utils/quizLinks";
 
 /* ── 定数定義 ── */
 const QUIZ_INDEX = {
@@ -126,7 +126,8 @@ function Simple_quiz(props) {
         <div className={`edit-quiz-card glass-card ${statusInfo.glow} ${is_payment ? 'payment-warning' : ''}`}>
             <Link 
                 to={buildAnswerQuizPath(quizId, sourceAddress)}
-                state={{ back_page: 0 }}
+                state={{ back_page: 0, ...(buildAnswerQuizState(sourceAddress) || {}) }}
+                onClick={() => rememberQuizSource(quizId, sourceAddress)}
                 className="quiz-card-link"
             >
                 <div className="quiz-card-body">

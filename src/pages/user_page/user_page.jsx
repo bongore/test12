@@ -9,7 +9,7 @@ import { useRef } from "react";
 import { buildBadgeSet, buildReviewList, getCourseEnhancementSnapshot } from "../../utils/courseEnhancements";
 import { bootstrap_teacher_addresses } from "../../contract/config";
 import { MAX_TFT_PER_LECTURE, MAX_TFT_TOTAL, QUIZ_RATE_OPTIONS, TOTAL_LECTURE_COUNT, TFT_PER_POINT } from "../../utils/quizRewardRate";
-import { buildAnswerQuizPath } from "../../utils/quizLinks";
+import { buildAnswerQuizPath, buildAnswerQuizState, rememberQuizSource } from "../../utils/quizLinks";
 
 const BALANCE_CACHE_KEY = "user_page_balance_cache_v1";
 
@@ -205,6 +205,8 @@ function User_page(props) {
                                 <Link
                                     key={item.quizId}
                                     to={buildAnswerQuizPath(item.quizId, item.sourceAddress || "", { practice: true })}
+                                    state={buildAnswerQuizState(item.sourceAddress || "")}
+                                    onClick={() => rememberQuizSource(item.quizId, item.sourceAddress || "")}
                                     className="glass-card"
                                     style={{ padding: "12px 16px", textDecoration: "none", color: "#fff" }}
                                 >

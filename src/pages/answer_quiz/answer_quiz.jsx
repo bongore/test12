@@ -16,6 +16,7 @@ import {
 } from "../../utils/activityLog";
 import { recordPracticeAttempt } from "../../utils/courseEnhancements";
 import { buildQuizStorageKey } from "../../utils/quizCorrectAnswerStore";
+import { getRememberedQuizSource, rememberQuizSource } from "../../utils/quizLinks";
 import {
     QUIZ_INPUT_MODE_PLAIN,
     QUIZ_INPUT_MODE_REGEX,
@@ -151,13 +152,30 @@ function Answer_quiz() {
     const access = useAccessControl(contract);
     const id = useParams().id;
     const searchParams = new URLSearchParams(location.search);
-    const sourceAddress = searchParams.get("c") || "";
+    const querySourceAddress = searchParams.get("c") || "";
+    const stateSourceAddress = location.state?.sourceAddress || "";
+    const sourceAddress = querySourceAddress || stateSourceAddress || getRememberedQuizSource(id) || "";
     const isPracticeMode = searchParams.get("practice") === "1";
     const draftKey = `quiz_answer_${String(sourceAddress || "default").toLowerCase()}_${id}`;
     const answerStorageKey = buildQuizStorageKey(id, sourceAddress);
     const pageOpenedAtRef = useRef(Date.now());
     const answerStartedAtRef = useRef(null);
     const textChangeCountRef = useRef(0);
+
+    useEffect(() => {
+        if (sourceAddress) {
+            rememberQuizSource(id, sourceAddress);
+        }
+        if (querySourceAddress) {
+            const nextParams = new URLSearchParams(location.search);
+            nextParams.delete("c");
+            const query = nextParams.toString();
+            navigate(`/answer_quiz/${id}${query ? `?${query}` : ""}`, {
+                replace: true,
+                state: { ...(location.state || {}), sourceAddress },
+            });
+        }
+    }, [id, location.search, location.state, navigate, querySourceAddress, sourceAddress]);
 
     const convertFullWidthNumbersToHalf = (text) => {
         const full = "０１２３４５６７８９";

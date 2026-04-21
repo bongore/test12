@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { buildAnswerQuizPath } from "../../../utils/quizLinks";
+import { buildAnswerQuizPath, buildAnswerQuizState, rememberQuizSource } from "../../../utils/quizLinks";
 import { buildQuizStorageKey } from "../../../utils/quizCorrectAnswerStore";
 import "./quiz_simple.css";
 
@@ -221,6 +221,8 @@ function Simple_quiz(props) {
                         <div style={{ display: "flex", gap: "8px", marginTop: "var(--space-3)", flexWrap: "wrap" }}>
                             <Link
                                 to={buildAnswerQuizPath(quizId, sourceAddress)}
+                                state={buildAnswerQuizState(sourceAddress)}
+                                onClick={() => rememberQuizSource(quizId, sourceAddress)}
                                 className="btn-primary-custom"
                                 style={{ textDecoration: "none", flex: 1, minWidth: "140px", textAlign: "center", padding: "10px 14px" }}
                             >
@@ -228,6 +230,8 @@ function Simple_quiz(props) {
                             </Link>
                             <Link
                                 to={buildAnswerQuizPath(quizId, sourceAddress, { practice: true })}
+                                state={buildAnswerQuizState(sourceAddress)}
+                                onClick={() => rememberQuizSource(quizId, sourceAddress)}
                                 className="btn-secondary-custom"
                                 style={{ textDecoration: "none", flex: 1, minWidth: "140px", textAlign: "center", padding: "10px 14px" }}
                             >
