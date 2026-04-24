@@ -1902,7 +1902,7 @@ class Contracts_MetaMask {
                     const user = await this.get_user_data(student);
                     return {
                         student,
-                        result: BigInt(Math.floor(Number(user?.[2] || 0) * 10 ** 18)),
+                        result: Number(user?.[2] || 0),
                     };
                 })
             );
@@ -2731,7 +2731,7 @@ class Contracts_MetaMask {
                     return {
                         user: student,
                         create_quiz_count: 0,
-                        result: BigInt(Math.floor(Number(user?.[2] || 0) * 10 ** 18)),
+                        result: Number(user?.[2] || 0),
                         answer_count: 0,
                     };
                 })

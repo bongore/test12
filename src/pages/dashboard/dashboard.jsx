@@ -30,13 +30,18 @@ function Dashboard() {
                 if (cancelled) return;
                 setAddress(addr || "");
 
-                const [bal, inventory, user] = await Promise.all([
+                const [balanceResult, inventoryResult, userResult] = await Promise.allSettled([
                     addr ? cont.get_token_balance(addr) : Promise.resolve(0),
                     cont.getQuizInventory(),
                     addr ? cont.get_user_data(addr) : Promise.resolve(["", "", 0, false]),
                 ]);
 
                 if (cancelled) return;
+
+                const bal = balanceResult.status === "fulfilled" ? balanceResult.value : 0;
+                const inventory = inventoryResult.status === "fulfilled" ? inventoryResult.value : [];
+                const user = userResult.status === "fulfilled" ? userResult.value : ["", "", 0, false];
+
                 setBalance(Number(bal || 0));
                 setQuizTotal(Array.isArray(inventory) ? inventory.length : 0);
                 setUserData(user || ["", "", 0, false]);
@@ -61,7 +66,7 @@ function Dashboard() {
                     cont.get_rank(user[2])
                         .then((nextRank) => {
                             if (!cancelled) {
-                                setRank(nextRank);
+                                setRank(Number(nextRank || 0));
                             }
                         })
                         .catch((error) => {
@@ -72,10 +77,13 @@ function Dashboard() {
                 console.error("Dashboard load error:", err);
                 if (!cancelled) {
                     setLoadError("ダッシュボードの読み込みに失敗しました。再読み込みしてください。");
+                    setBalance(0);
+                    setQuizTotal(0);
+                    setUserData(["", "", 0, false]);
                 }
             } finally {
                 if (!cancelled) {
-                setLoading(false);
+                    setLoading(false);
                 }
             }
         }

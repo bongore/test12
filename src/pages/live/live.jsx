@@ -8,6 +8,7 @@ import { useAccessControl } from "../../utils/accessControl";
 import { Contracts_MetaMask } from "../../contract/contracts";
 import { appendBoardLog, upsertBoardLog } from "../../utils/boardModerationLog";
 import { getAnnouncements, publishAnnouncement, removeAnnouncement, subscribeAnnouncements } from "../../utils/courseEnhancements";
+import { getLiveSignalApiBaseUrl, getLiveSignalWebSocketUrl } from "../../utils/liveSignalApi";
 
 const DUMMY_COMMENTS = [
     "この内容はあとで復習できますか？",
@@ -123,20 +124,8 @@ function formatSessionTime(isoString) {
     });
 }
 
-function getSignalServerUrl() {
-    if (process.env.REACT_APP_LIVE_SIGNAL_URL) {
-        return process.env.REACT_APP_LIVE_SIGNAL_URL;
-    }
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const hostname = window.location.hostname || "localhost";
-    return `${protocol}//${hostname}:3001`;
-}
-
 function getSignalHealthUrl() {
-    const wsUrl = getSignalServerUrl();
-    if (wsUrl.startsWith("wss://")) return wsUrl.replace("wss://", "https://");
-    if (wsUrl.startsWith("ws://")) return wsUrl.replace("ws://", "http://");
-    return wsUrl;
+    return getLiveSignalApiBaseUrl();
 }
 
 function wait(ms) {
@@ -693,7 +682,7 @@ function Live_page(props) {
                 await wakeSignalServer();
                 if (cancelled) return;
 
-                socket = new WebSocket(getSignalServerUrl());
+                socket = new WebSocket(getLiveSignalWebSocketUrl());
                 wsRef.current = socket;
 
                 socket.onopen = () => {

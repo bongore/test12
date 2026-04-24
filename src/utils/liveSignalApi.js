@@ -1,17 +1,57 @@
 const DELETED_QUIZ_STORAGE_KEY = "web3_quiz_deleted_quizzes_v1";
+const DEFAULT_RENDER_HTTP_URL = "https://test12-live-signal.onrender.com";
+const DEFAULT_RENDER_WS_URL = "wss://test12-live-signal.onrender.com";
 
-function getLiveSignalApiBaseUrl() {
-    const configuredUrl = process.env.REACT_APP_LIVE_SIGNAL_URL || "";
+function normalizeLiveSignalHttpUrl(rawUrl = "") {
+    const configuredUrl = String(rawUrl || "").trim();
+    if (!configuredUrl) return "";
     if (configuredUrl.startsWith("wss://")) return configuredUrl.replace("wss://", "https://");
     if (configuredUrl.startsWith("ws://")) return configuredUrl.replace("ws://", "http://");
+    return configuredUrl.replace(/\/+$/, "");
+}
+
+function normalizeLiveSignalWsUrl(rawUrl = "") {
+    const configuredUrl = String(rawUrl || "").trim();
+    if (!configuredUrl) return "";
+    if (configuredUrl.startsWith("https://")) return configuredUrl.replace("https://", "wss://");
+    if (configuredUrl.startsWith("http://")) return configuredUrl.replace("http://", "ws://");
+    return configuredUrl.replace(/\/+$/, "");
+}
+
+function isGithubPagesHost(hostname = "") {
+    return /\.github\.io$/i.test(String(hostname || "").trim());
+}
+
+function getLiveSignalApiBaseUrl() {
+    const configuredUrl = normalizeLiveSignalHttpUrl(process.env.REACT_APP_LIVE_SIGNAL_URL || "");
+    if (configuredUrl) return configuredUrl;
 
     if (typeof window !== "undefined") {
-        const protocol = window.location.protocol === "https:" ? "https:" : "http:";
         const hostname = window.location.hostname || "localhost";
+        if (isGithubPagesHost(hostname)) {
+            return DEFAULT_RENDER_HTTP_URL;
+        }
+        const protocol = window.location.protocol === "https:" ? "https:" : "http:";
         return `${protocol}//${hostname}:3001`;
     }
 
-    return "http://localhost:3001";
+    return DEFAULT_RENDER_HTTP_URL;
+}
+
+function getLiveSignalWebSocketUrl() {
+    const configuredUrl = normalizeLiveSignalWsUrl(process.env.REACT_APP_LIVE_SIGNAL_URL || "");
+    if (configuredUrl) return configuredUrl;
+
+    if (typeof window !== "undefined") {
+        const hostname = window.location.hostname || "localhost";
+        if (isGithubPagesHost(hostname)) {
+            return DEFAULT_RENDER_WS_URL;
+        }
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        return `${protocol}//${hostname}:3001`;
+    }
+
+    return DEFAULT_RENDER_WS_URL;
 }
 
 function normalizeDeletedQuizKey(quizKey = "") {
@@ -192,6 +232,7 @@ async function removeDeletedQuiz(quizKey) {
 
 export {
     getLiveSignalApiBaseUrl,
+    getLiveSignalWebSocketUrl,
     fetchLiveSignalJson,
     getDeletedQuizzes,
     saveDeletedQuiz,
