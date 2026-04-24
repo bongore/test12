@@ -14,46 +14,77 @@ function Dashboard() {
     const [quizTotal, setQuizTotal] = useState(null);
     const [userData, setUserData] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState("");
     const [announcements, setAnnouncements] = useState(() => getAnnouncements().slice(0, 3));
 
     const cont = useMemo(() => new Contracts_MetaMask(), []);
     const access = useAccessControl(cont);
 
     useEffect(() => {
+        let cancelled = false;
+
         async function loadData() {
             try {
-                const addr = await cont.get_address();
-                setAddress(addr);
+                setLoadError("");
+                const addr = access.address || await cont.get_address();
+                if (cancelled) return;
+                setAddress(addr || "");
 
-                const [bal, quizList, deletedQuizzes, user] = await Promise.all([
-                    cont.get_token_balance(addr),
-                    cont.get_all_quiz_simple_list(),
-                    getDeletedQuizzes(),
-                    cont.get_user_data(addr),
+                const [bal, inventory, user] = await Promise.all([
+                    addr ? cont.get_token_balance(addr) : Promise.resolve(0),
+                    cont.getQuizInventory(),
+                    addr ? cont.get_user_data(addr) : Promise.resolve(["", "", 0, false]),
                 ]);
 
-                const visibleQuizTotal = (Array.isArray(quizList) ? quizList : []).filter((quiz) => {
-                    const quizKey = normalizeDeletedQuizKey(`${quiz?.sourceAddress || quiz?.[12] || ""}:${Number(quiz?.[0])}`);
-                    return !deletedQuizzes?.[quizKey];
-                }).length;
+                if (cancelled) return;
+                setBalance(Number(bal || 0));
+                setQuizTotal(Array.isArray(inventory) ? inventory.length : 0);
+                setUserData(user || ["", "", 0, false]);
+                setLoading(false);
 
-                setBalance(bal);
-                setQuizTotal(visibleQuizTotal);
-                setUserData(user);
+                // 削除済み問題の反映は後から同期し、初期表示を止めない
+                getDeletedQuizzes()
+                    .then((deletedQuizzes) => {
+                        if (cancelled) return;
+                        const visibleQuizTotal = (Array.isArray(inventory) ? inventory : []).filter((quiz) => {
+                            const quizKey = normalizeDeletedQuizKey(`${quiz?.address || ""}:${Number(quiz?.id)}`);
+                            return !deletedQuizzes?.[quizKey];
+                        }).length;
+                        setQuizTotal(visibleQuizTotal);
+                    })
+                    .catch((error) => {
+                        console.error("Failed to sync deleted quizzes on dashboard", error);
+                    });
 
-                // ランクを計算
-                if (user && user[2]) {
-                    const r = await cont.get_rank(user[2]);
-                    setRank(r);
+                // ランキングは重いので後から読み込む
+                if (user && Number(user[2] || 0) > 0) {
+                    cont.get_rank(user[2])
+                        .then((nextRank) => {
+                            if (!cancelled) {
+                                setRank(nextRank);
+                            }
+                        })
+                        .catch((error) => {
+                            console.error("Dashboard rank load error:", error);
+                        });
                 }
             } catch (err) {
                 console.error("Dashboard load error:", err);
+                if (!cancelled) {
+                    setLoadError("ダッシュボードの読み込みに失敗しました。再読み込みしてください。");
+                }
             } finally {
+                if (!cancelled) {
                 setLoading(false);
+                }
             }
         }
         loadData();
-    }, []);
+
+        return () => {
+            cancelled = true;
+        };
+    }, [access.address, cont]);
 
     useEffect(() => {
         const sync = () => setAnnouncements(getAnnouncements().slice(0, 3));
@@ -98,6 +129,12 @@ function Dashboard() {
                 <h1 className="page-title">📊 ダッシュボード</h1>
                 <p className="page-subtitle">あなたの学習状況の概要</p>
             </div>
+
+            {loadError ? (
+                <div className="glass-card" style={{ padding: "var(--space-5)", marginBottom: "var(--space-5)", color: "#fff" }}>
+                    <div style={{ fontWeight: 700 }}>{loadError}</div>
+                </div>
+            ) : null}
 
             {/* Welcome Card */}
             <div className="welcome-card">

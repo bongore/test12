@@ -1,5 +1,5 @@
 import { Contracts_MetaMask } from "../../contract/contracts";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useParams } from "react-router-dom";
 import "./user_page.css";
@@ -65,20 +65,51 @@ function User_page(props) {
     const [loadError, setLoadError] = useState("");
     const [reviewItems, setReviewItems] = useState([]);
     const [badges, setBadges] = useState([]);
+    const [isPageLoading, setIsPageLoading] = useState(true);
     const now_numRef = useRef(0);
     const targetRef = useRef(null);
 
-    const cont = props.cont || new Contracts_MetaMask();
+    const cont = useMemo(() => props.cont || new Contracts_MetaMask(), [props.cont]);
     const [history_list, Set_history_list] = useState([]);
 
-    const get_variable = async () => {
+    const loadInitialData = async () => {
         try {
             setLoadError("");
+            setIsPageLoading(true);
+
             const cachedBalances = getCachedBalances(address);
-            const [nextTokenBalance, nextTttBalance] = await Promise.all([
+            if (cachedBalances.token != null) {
+                Set_token(cachedBalances.token);
+            }
+            if (cachedBalances.tttBalance != null) {
+                setTttBalance(cachedBalances.tttBalance);
+            }
+
+            const snapshot = getCourseEnhancementSnapshot();
+            const ownLogs = snapshot.activityLogs.filter((log) => String(log.actor || log.address || "").toLowerCase() === String(address || "").toLowerCase());
+            const ownPractice = snapshot.practiceAttempts.filter((item) => String(item.address || "").toLowerCase() === String(address || "").toLowerCase());
+            setBadges(buildBadgeSet({ logs: ownLogs, boardLogs: snapshot.boardLogs, practiceAttempts: ownPractice }));
+
+            const [
+                nextTokenBalance,
+                nextTttBalance,
+                user,
+                nextRoleInfo,
+                nextRegistrationInfo,
+                nextConnectedAddress,
+                historyLength,
+                studentCount,
+            ] = await Promise.all([
                 cont.get_token_balance(address),
                 cont.get_ttt_balance(address),
+                cont.get_user_data(address),
+                cont.getUserRole(address),
+                cont.getRegistrationDetails(address),
+                cont.get_address(),
+                cont.get_user_history_len(address),
+                cont.get_num_of_students(),
             ]);
+
             const resolvedTokenBalance = nextTokenBalance ?? cachedBalances.token ?? token ?? 0;
             const resolvedTttBalance = nextTttBalance ?? cachedBalances.tttBalance ?? tttBalance ?? 0;
             Set_token(resolvedTokenBalance);
@@ -88,16 +119,13 @@ function User_page(props) {
                 tttBalance: resolvedTttBalance,
                 updatedAt: new Date().toISOString(),
             });
-            let [user_name, image, result, state] = await cont.get_user_data(address);
-            const nextRoleInfo = await cont.getUserRole(address);
-            const nextRegistrationInfo = await cont.getRegistrationDetails(address);
-            const nextConnectedAddress = await cont.get_address();
+
+            let [user_name, image, result, state] = user || ["", "", 0, false];
             const bootstrapTeacher = isBootstrapTeacherAddress(address);
             Setuser_name(user_name);
             SetIcons(image);
             SetResult(result / 10 ** 18);
-            setRank(await cont.get_rank(result));
-            setNum_of_student(await cont.get_num_of_students());
+            setNum_of_student(studentCount);
             Set_state(state);
             setRoleInfo(
                 bootstrapTeacher
@@ -111,31 +139,63 @@ function User_page(props) {
             );
             setConnectedAddress(nextConnectedAddress || "");
 
-            const historyLength = Number(await cont.get_user_history_len(address));
-            Set_history_sum(historyLength);
-            now_numRef.current = historyLength;
-
-        const quizData = await cont.get_all_quiz_simple_list();
-
-            const snapshot = getCourseEnhancementSnapshot();
-            const ownLogs = snapshot.activityLogs.filter((log) => String(log.actor || log.address || "").toLowerCase() === String(address || "").toLowerCase());
-            const ownPractice = snapshot.practiceAttempts.filter((item) => String(item.address || "").toLowerCase() === String(address || "").toLowerCase());
-
-            setReviewItems(buildReviewList({ quizzes: quizData, address, practiceAttempts: ownPractice }));
-            setBadges(buildBadgeSet({ logs: ownLogs, boardLogs: snapshot.boardLogs, practiceAttempts: ownPractice }));
+            Set_history_sum(Number(historyLength || 0));
+            now_numRef.current = Number(historyLength || 0);
         } catch (error) {
             console.error("Failed to load user page", error);
             Set_history_sum(0);
             now_numRef.current = 0;
             setLoadError("マイページの読み込みに失敗しました。通信状態を確認して再読み込みしてください。");
+        } finally {
+            setIsPageLoading(false);
         }
     };
 
     useEffect(() => {
-        get_variable();
+        loadInitialData();
         // address changes when another profile page is opened.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [address]);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        async function loadDeferredData() {
+            try {
+                const snapshot = getCourseEnhancementSnapshot();
+                const ownPractice = snapshot.practiceAttempts.filter((item) => String(item.address || "").toLowerCase() === String(address || "").toLowerCase());
+
+                const [quizData, nextRank] = await Promise.all([
+                    cont.get_all_quiz_simple_list(),
+                    result != null && Number(result) > 0 ? cont.get_rank(Number(result) * 10 ** 18) : Promise.resolve(0),
+                ]);
+
+                if (cancelled) return;
+                setRank(nextRank || 0);
+                setReviewItems(buildReviewList({ quizzes: quizData, address, practiceAttempts: ownPractice }));
+            } catch (error) {
+                console.error("Failed to load deferred user page data", error);
+            }
+        }
+
+        if (!isPageLoading) {
+            loadDeferredData();
+        }
+
+        return () => {
+            cancelled = true;
+        };
+    }, [address, cont, isPageLoading, result]);
+
+    if (isPageLoading) {
+        return (
+            <div className="user-page">
+                <div className="skeleton skeleton-card" style={{ height: "200px" }}></div>
+                <div className="skeleton skeleton-card"></div>
+                <div className="skeleton skeleton-card"></div>
+            </div>
+        );
+    }
 
     if (history_sum != null) {
         return (
