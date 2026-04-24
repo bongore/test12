@@ -34,6 +34,18 @@ function sleep(ms) {
     });
 }
 
+function normalizeReadAccount(account) {
+    return account ? checksumAddress(String(account).trim()) : undefined;
+}
+
+function getTokenHistoryExplanation(entry) {
+    return String(entry?._explanation || entry?.[5] || "");
+}
+
+function getTokenHistoryValueTft(entry) {
+    return Number(entry?._value || entry?.[4] || 0) / 10 ** 18;
+}
+
 async function retryReadContractBalance(readFn, attempts = 3) {
     let lastError = null;
     for (let index = 0; index < attempts; index += 1) {
@@ -536,7 +548,7 @@ class Contracts_MetaMask {
         for (const address of addresses) {
             try {
                 const result = await publicClient.readContract({
-                    account,
+                    account: normalizeReadAccount(account),
                     address,
                     abi,
                     functionName,
@@ -570,7 +582,7 @@ class Contracts_MetaMask {
         for (const address of addresses) {
             try {
                 const result = await publicClient.readContract({
-                    account,
+                    account: normalizeReadAccount(account),
                     address,
                     abi,
                     functionName,
@@ -896,31 +908,57 @@ class Contracts_MetaMask {
 
     async get_token_history(address, start, end) {
         console.log(address, start, end);
-        let account = await this.get_address();
         try {
-            if (this.getEthereumProvider()) {
-                console.log(token_address);
-                //取得したクイズを格納する配列
-                let res = [];
+            const account = await this.get_address();
+            const normalizedAccount = normalizeReadAccount(account);
+            const res = [];
 
-                console.log(start, end);
-                if (start <= end) {
-                    for (let i = start; i < end; i++) {
-                        res.push(await token.read.get_user_history({ account, args: [address, i] }));
-                    }
-                } else {
-                    //console.log("33");
-                    for (let i = start - 1; i >= end; i--) {
-                        res.push(await token.read.get_user_history({ account, args: [address, i] }));
-                    }
+            console.log(start, end);
+            if (start <= end) {
+                for (let i = start; i < end; i++) {
+                    res.push(await publicClient.readContract({
+                        account: normalizedAccount,
+                        address: token_address,
+                        abi: token_abi,
+                        functionName: "get_user_history",
+                        args: [address, i],
+                    }));
                 }
-
-                return res;
             } else {
-                console.log("Ethereum object does not exist");
+                for (let i = start - 1; i >= end; i--) {
+                    res.push(await publicClient.readContract({
+                        account: normalizedAccount,
+                        address: token_address,
+                        abi: token_abi,
+                        functionName: "get_user_history",
+                        args: [address, i],
+                    }));
+                }
             }
+
+            return res;
         } catch (err) {
             console.log(err);
+        }
+        return [];
+    }
+
+    async get_quiz_reward_tft(address) {
+        try {
+            const historyLength = await this.get_user_history_len(address);
+            if (!historyLength || historyLength <= 0) return 0;
+
+            const history = await this.get_token_history(address, historyLength, 0);
+            return (Array.isArray(history) ? history : []).reduce((sum, entry) => {
+                const explanation = getTokenHistoryExplanation(entry).toLowerCase();
+                if (!explanation.includes("correct answer")) {
+                    return sum;
+                }
+                return sum + getTokenHistoryValueTft(entry);
+            }, 0);
+        } catch (error) {
+            console.log(error);
+            return 0;
         }
     }
 
@@ -1906,10 +1944,10 @@ class Contracts_MetaMask {
             const students = await this.get_student_list();
             const rows = await Promise.all(
                 (Array.isArray(students) ? students : []).map(async (student) => {
-                    const balance = await this.get_token_balance(student);
+                    const score = await this.get_quiz_reward_tft(student);
                     return {
                         student,
-                        result: Number(balance || 0),
+                        result: Number(score || 0),
                     };
                 })
             );
@@ -2730,11 +2768,11 @@ class Contracts_MetaMask {
             const students = await this.get_student_list();
             const rows = await Promise.all(
                 (Array.isArray(students) ? students : []).map(async (student) => {
-                    const balance = await this.get_token_balance(student);
+                    const score = await this.get_quiz_reward_tft(student);
                     return {
                         user: student,
                         create_quiz_count: 0,
-                        result: Number(balance || 0),
+                        result: Number(score || 0),
                         answer_count: 0,
                     };
                 })

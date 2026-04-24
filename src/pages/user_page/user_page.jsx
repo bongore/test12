@@ -93,6 +93,7 @@ function User_page(props) {
             const [
                 nextTokenBalance,
                 nextTttBalance,
+                nextScoreTft,
                 user,
                 nextRoleInfo,
                 nextRegistrationInfo,
@@ -102,6 +103,7 @@ function User_page(props) {
             ] = await Promise.all([
                 cont.get_token_balance(address),
                 cont.get_ttt_balance(address),
+                cont.get_quiz_reward_tft(address),
                 cont.get_user_data(address),
                 cont.getUserRole(address),
                 cont.getRegistrationDetails(address),
@@ -124,7 +126,7 @@ function User_page(props) {
             const bootstrapTeacher = isBootstrapTeacherAddress(address);
             Setuser_name(user_name);
             SetIcons(image);
-            SetResult(Number(nextResultWei || 0) / 10 ** 18);
+            SetResult(Number(nextScoreTft || 0));
             setNum_of_student(Number(studentCount || 0));
             Set_state(state);
             setRoleInfo(
@@ -167,7 +169,7 @@ function User_page(props) {
 
                 const [quizData, nextRank] = await Promise.all([
                     cont.get_all_quiz_simple_list(),
-                    Number(token || 0) > 0 ? cont.get_rank(Number(token || 0)) : Promise.resolve(0),
+                    Number(result || 0) > 0 ? cont.get_rank(Number(result || 0)) : Promise.resolve(0),
                 ]);
 
                 if (cancelled) return;
@@ -185,7 +187,7 @@ function User_page(props) {
         return () => {
             cancelled = true;
         };
-    }, [address, cont, isPageLoading, token]);
+    }, [address, cont, isPageLoading, result]);
 
     if (isPageLoading) {
         return (

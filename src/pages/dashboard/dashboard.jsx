@@ -11,6 +11,7 @@ function Dashboard() {
     const [address, setAddress] = useState(null);
     const [balance, setBalance] = useState(null);
     const [rank, setRank] = useState(null);
+    const [scoreTft, setScoreTft] = useState(0);
     const [quizTotal, setQuizTotal] = useState(null);
     const [userData, setUserData] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -61,23 +62,32 @@ function Dashboard() {
                         console.error("Failed to sync deleted quizzes on dashboard", error);
                     });
 
-                // ランキングは重いので後から読み込む
-                if (Number(bal || 0) > 0) {
-                    cont.get_rank(Number(bal || 0))
-                        .then((nextRank) => {
+                Promise.all([
+                    cont.get_quiz_reward_tft(addr || ""),
+                ])
+                    .then(([nextScoreTft]) => {
+                        if (cancelled) return;
+                        const normalizedScore = Number(nextScoreTft || 0);
+                        setScoreTft(normalizedScore);
+                        if (normalizedScore <= 0) {
+                            setRank(0);
+                            return;
+                        }
+                        return cont.get_rank(normalizedScore).then((nextRank) => {
                             if (!cancelled) {
                                 setRank(Number(nextRank || 0));
                             }
-                        })
-                        .catch((error) => {
-                            console.error("Dashboard rank load error:", error);
                         });
-                }
+                    })
+                    .catch((error) => {
+                        console.error("Dashboard rank load error:", error);
+                    });
             } catch (err) {
                 console.error("Dashboard load error:", err);
                 if (!cancelled) {
                     setLoadError("ダッシュボードの読み込みに失敗しました。再読み込みしてください。");
                     setBalance(0);
+                    setScoreTft(0);
                     setQuizTotal(0);
                     setUserData(["", "", 0, false]);
                 }
@@ -105,9 +115,7 @@ function Dashboard() {
         ? `${address.slice(0, 6)}...${address.slice(-4)}`
         : "---";
 
-    const answeredCount = userData ? userData[2] : 0;
-    const score = userData ? Number(userData[2]) / (10 ** 18) : 0;
-    const pointScore = convertTftToPoint(score);
+    const pointScore = convertTftToPoint(scoreTft);
 
     if (loading) {
         return (
