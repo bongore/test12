@@ -3,6 +3,7 @@ import { CSVLink } from "react-csv";
 import { Contracts_MetaMask } from "../../../contract/contracts";
 import { ACTION_TYPES, appendActivityLog, getActivityLogs } from "../../../utils/activityLog";
 import { buildExtendedCsvData, getCourseEnhancementSnapshot } from "../../../utils/courseEnhancements";
+import { convertTftToPoint, normalizeTftAmount } from "../../../utils/quizRewardRate";
 
 function getCurrentDateTime() {
     const now = new Date();
@@ -57,7 +58,7 @@ function View_result(props) {
             users_data.push([
                 data_for_survey_users[i].user, 
                 Number(data_for_survey_users[i].create_quiz_count).toString(), 
-                (Number(data_for_survey_users[i].result) / (10 ** 18)).toString(), 
+                normalizeTftAmount(data_for_survey_users[i].result).toString(), 
                 Number(data_for_survey_users[i].answer_count).toString()
             ]);
         }
@@ -131,7 +132,7 @@ function View_result(props) {
                             <tr key={index}>
                                 <td>{index + 1}</td>
                                 <td className="address-cell">{item.student}</td>
-                                <td className="score-cell">{Number(item.result) / 10 ** 18 / 40}点</td>
+                                <td className="score-cell">{convertTftToPoint(Number(item.result || 0)).toFixed(1)}点</td>
                             </tr>
                         ))}
                     </tbody>

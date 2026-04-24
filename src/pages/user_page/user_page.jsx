@@ -53,7 +53,6 @@ function User_page(props) {
     const [icons, SetIcons] = useState(null);
     const [user_name, Setuser_name] = useState(null);
     const [result, SetResult] = useState(null);
-    const [rawResultWei, setRawResultWei] = useState(0);
     const [token, Set_token] = useState(null);
     const [state, Set_state] = useState(null);
     const [rank, setRank] = useState(null);
@@ -125,7 +124,6 @@ function User_page(props) {
             const bootstrapTeacher = isBootstrapTeacherAddress(address);
             Setuser_name(user_name);
             SetIcons(image);
-            setRawResultWei(Number(nextResultWei || 0));
             SetResult(Number(nextResultWei || 0) / 10 ** 18);
             setNum_of_student(Number(studentCount || 0));
             Set_state(state);
@@ -169,7 +167,7 @@ function User_page(props) {
 
                 const [quizData, nextRank] = await Promise.all([
                     cont.get_all_quiz_simple_list(),
-                    Number(rawResultWei || 0) > 0 ? cont.get_rank(Number(rawResultWei || 0)) : Promise.resolve(0),
+                    Number(token || 0) > 0 ? cont.get_rank(Number(token || 0)) : Promise.resolve(0),
                 ]);
 
                 if (cancelled) return;
@@ -187,7 +185,7 @@ function User_page(props) {
         return () => {
             cancelled = true;
         };
-    }, [address, cont, isPageLoading, rawResultWei]);
+    }, [address, cont, isPageLoading, token]);
 
     if (isPageLoading) {
         return (

@@ -17,9 +17,9 @@ describe("Ranking", () => {
         Contracts_MetaMask.mockImplementation(() => ({
             get_address: jest.fn().mockResolvedValue("0xme"),
             get_results: jest.fn().mockResolvedValue([
-                { student: "0xaaa", result: "4000000000000000000" },
-                { student: "0xme", result: "3000000000000000000" },
-                { student: "0xbbb", result: "1000000000000000000" },
+                { student: "0xaaa", result: 200 },
+                { student: "0xme", result: 150 },
+                { student: "0xbbb", result: 50 },
             ]),
         }));
         getCourseEnhancementSnapshot.mockReturnValue({

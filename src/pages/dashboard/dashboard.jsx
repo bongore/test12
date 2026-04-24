@@ -62,8 +62,8 @@ function Dashboard() {
                     });
 
                 // ランキングは重いので後から読み込む
-                if (user && Number(user[2] || 0) > 0) {
-                    cont.get_rank(user[2])
+                if (Number(bal || 0) > 0) {
+                    cont.get_rank(Number(bal || 0))
                         .then((nextRank) => {
                             if (!cancelled) {
                                 setRank(Number(nextRank || 0));

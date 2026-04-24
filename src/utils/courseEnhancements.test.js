@@ -109,7 +109,7 @@ describe("courseEnhancements utilities", () => {
                 title: "短時間の連続回答",
             }),
         ]);
-        expect(csvData.gradeRows).toContainEqual(["0xuser", "2", "3", "3", "2"]);
+        expect(csvData.gradeRows).toContainEqual(["0xuser", "1.6", "3", "3", "2"]);
         expect(csvData.reactionRows).toContainEqual(["第3回", "2026-04-07T09:00:00.000Z", "2026-04-07T10:30:00.000Z", "10", "2", "1", "0"]);
     });
 });

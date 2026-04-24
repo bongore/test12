@@ -1906,10 +1906,10 @@ class Contracts_MetaMask {
             const students = await this.get_student_list();
             const rows = await Promise.all(
                 (Array.isArray(students) ? students : []).map(async (student) => {
-                    const user = await this.get_user_data(student);
+                    const balance = await this.get_token_balance(student);
                     return {
                         student,
-                        result: Number(user?.[2] || 0),
+                        result: Number(balance || 0),
                     };
                 })
             );
@@ -2730,11 +2730,11 @@ class Contracts_MetaMask {
             const students = await this.get_student_list();
             const rows = await Promise.all(
                 (Array.isArray(students) ? students : []).map(async (student) => {
-                    const user = await this.get_user_data(student);
+                    const balance = await this.get_token_balance(student);
                     return {
                         user: student,
                         create_quiz_count: 0,
-                        result: Number(user?.[2] || 0),
+                        result: Number(balance || 0),
                         answer_count: 0,
                     };
                 })

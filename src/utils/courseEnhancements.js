@@ -1,5 +1,6 @@
 import { getActivityLogs } from "./activityLog";
 import { getBoardLogs } from "./boardModerationLog";
+import { convertTftToPoint } from "./quizRewardRate";
 
 const ANNOUNCEMENT_KEY = "web3_quiz_announcements_v1";
 const ANNOUNCEMENT_EVENT = "course-announcements-updated";
@@ -265,7 +266,7 @@ function buildExtendedCsvData({ results = [], logs = [], boardLogs = [], reactio
             const attendanceDays = [...attendanceMap.keys()].filter((key) => key.startsWith(`${actor}_`)).length;
             return [
                 actor,
-                (Number(item.result) / 10 ** 18 / 40).toString(),
+                convertTftToPoint(Number(item.result || 0)).toString(),
                 String(attendanceDays),
                 String(answerCountByActor.get(actor) || 0),
                 String(boardCountByActor.get(actor) || 0),

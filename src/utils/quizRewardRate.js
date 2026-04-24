@@ -9,8 +9,17 @@ const MAX_TFT_PER_LECTURE = 150;
 const MAX_TFT_TOTAL = 750;
 const TOTAL_LECTURE_COUNT = 5;
 
+function normalizeTftAmount(value) {
+    const numericValue = Number(value || 0);
+    if (!Number.isFinite(numericValue)) return 0;
+    if (Math.abs(numericValue) >= 1e9) {
+        return numericValue / 10 ** 18;
+    }
+    return numericValue;
+}
+
 function convertTftToPoint(tftAmount) {
-    return Number(tftAmount || 0) / TFT_PER_POINT;
+    return normalizeTftAmount(tftAmount) / TFT_PER_POINT;
 }
 
 export {
@@ -19,5 +28,6 @@ export {
     MAX_TFT_PER_LECTURE,
     MAX_TFT_TOTAL,
     TOTAL_LECTURE_COUNT,
+    normalizeTftAmount,
     convertTftToPoint,
 };

@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Contracts_MetaMask } from "../../contract/contracts";
 import { getCourseEnhancementSnapshot } from "../../utils/courseEnhancements";
+import { convertTftToPoint, normalizeTftAmount } from "../../utils/quizRewardRate";
 import "./ranking.css";
 
 function Ranking() {
@@ -12,7 +13,7 @@ function Ranking() {
     const [rankingMode, setRankingMode] = useState("score");
     const [boardRanking, setBoardRanking] = useState([]);
 
-    const cont = new Contracts_MetaMask();
+    const cont = useMemo(() => new Contracts_MetaMask(), []);
 
     useEffect(() => {
         async function loadData() {
@@ -35,7 +36,7 @@ function Ranking() {
                         r => r.student && r.student.toLowerCase() === addr.toLowerCase()
                     );
                     if (myResult) {
-                        setMyScore(Number(myResult.result) / (10 ** 18));
+                        setMyScore(convertTftToPoint(Number(myResult.result || 0)));
                         const idx = sorted.findIndex(
                             r => r.student && r.student.toLowerCase() === addr.toLowerCase()
                         );
@@ -138,7 +139,7 @@ function Ranking() {
                             <div className="podium-medal">{MEDALS[idx]}</div>
                             <div className="podium-bar">
                                 <div className="podium-score">
-                                    {(Number(top3[idx].result) / (10 ** 18)).toFixed(1)}
+                                    {convertTftToPoint(Number(top3[idx].result || 0)).toFixed(1)}
                                 </div>
                                 <div className="podium-label">
                                     {top3[idx].student 
@@ -167,7 +168,7 @@ function Ranking() {
                     }
                     const isMe = myAddress && item.student && 
                         item.student.toLowerCase() === myAddress.toLowerCase();
-                    const score = Number(item.result) / (10 ** 18);
+                    const score = convertTftToPoint(Number(item.result || 0));
                     
                     return (
                         <div key={index} className={`ranking-row ${isMe ? 'highlight' : ''}`}>
@@ -179,7 +180,7 @@ function Ranking() {
                                     {isMe ? "👤 あなた" : item.student}
                                 </div>
                             </div>
-                            <div className="rank-score">{score.toFixed(1)} pts</div>
+                            <div className="rank-score">{normalizeTftAmount(item.result).toFixed(1)} TFT / {score.toFixed(1)} pts</div>
                         </div>
                     );
                 })}
