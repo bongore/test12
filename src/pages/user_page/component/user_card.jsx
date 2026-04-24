@@ -3,6 +3,10 @@ import { token_address, ttt_token_address } from "../../../contract/config";
 
 function User_card(props) {
     const isCurrentWallet = String(props.connectedAddress || "").toLowerCase() === String(props.address || "").toLowerCase();
+    const tokenBalance = Number(props.token || 0);
+    const superchatBalance = Number(props.tttBalance || 0);
+    const rank = Number(props.rank || 0);
+    const studentCount = Number(props.num_of_student || 0);
     const registrationDate = props.registrationInfo?.addedAt
         ? new Date(Number(props.registrationInfo.addedAt) * 1000).toLocaleString("ja-JP")
         : "";
@@ -130,7 +134,7 @@ function User_card(props) {
                     <div className="user-stat-icon">T</div>
                     <div className="user-stat-info">
                         <span className="user-stat-label">保有トークン</span>
-                        <span className="user-stat-value">{props.token} TFT</span>
+                        <span className="user-stat-value">{tokenBalance.toFixed(2)} TFT</span>
                     </div>
                 </div>
                 <div className="user-stat-item">
@@ -138,7 +142,7 @@ function User_card(props) {
                     <div className="user-stat-info">
                         <span className="user-stat-label">順位</span>
                         <span className="user-stat-value">
-                            {props.rank}位 / {props.num_of_student}人
+                            {rank}位 / {studentCount}人
                         </span>
                     </div>
                 </div>
@@ -146,7 +150,7 @@ function User_card(props) {
                     <div className="user-stat-icon">C</div>
                     <div className="user-stat-info">
                         <span className="user-stat-label">スーパーチャット残高</span>
-                        <span className="user-stat-value">{props.tttBalance || 0} TTT</span>
+                        <span className="user-stat-value">{superchatBalance.toFixed(2)} TTT</span>
                     </div>
                 </div>
                 <div className="user-stat-item">

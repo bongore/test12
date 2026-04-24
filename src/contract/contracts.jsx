@@ -838,36 +838,41 @@ class Contracts_MetaMask {
 
     async get_token_balance(address) {
         try {
-            if (this.getEthereumProvider()) {
-                const normalizedAddress = checksumAddress(String(address || "").trim());
-                const balance = await retryReadContractBalance(
-                    () => token.read.balanceOf({ args: [normalizedAddress] }),
-                    4
-                );
-                return Number(balance) / 10 ** 18;
-            } else {
-                console.log("Ethereum object does not exist");
-            }
+            const normalizedAddress = checksumAddress(String(address || "").trim());
+            const balance = await retryReadContractBalance(
+                () => publicClient.readContract({
+                    address: token_address,
+                    abi: token_abi,
+                    functionName: "balanceOf",
+                    args: [normalizedAddress],
+                }),
+                4
+            );
+            return Number(balance) / 10 ** 18;
         } catch (err) {
             console.log(err);
         }
-        return null;
+        return 0;
     }
 
     async get_ttt_balance(address) {
         try {
-            if (this.getEthereumProvider() && ttt_token_address) {
-                const normalizedAddress = checksumAddress(String(address || "").trim());
-                const balance = await retryReadContractBalance(
-                    () => tttToken.read.balanceOf({ args: [normalizedAddress] }),
-                    4
-                );
-                return Number(balance) / 10 ** 18;
-            }
+            if (!ttt_token_address) return 0;
+            const normalizedAddress = checksumAddress(String(address || "").trim());
+            const balance = await retryReadContractBalance(
+                () => publicClient.readContract({
+                    address: ttt_token_address,
+                    abi: token_abi,
+                    functionName: "balanceOf",
+                    args: [normalizedAddress],
+                }),
+                4
+            );
+            return Number(balance) / 10 ** 18;
         } catch (err) {
             console.log(err);
         }
-        return null;
+        return 0;
     }
 
     async get_address() {
@@ -922,8 +927,14 @@ class Contracts_MetaMask {
     async get_user_history_len(address) {
         try {
             console.log(token_address);
-            let account = await this.get_address();
-            const res = await token.read.get_user_history_len({ account, args: [address] });
+            const account = await this.get_address();
+            const res = await publicClient.readContract({
+                account: account || undefined,
+                address: token_address,
+                abi: token_abi,
+                functionName: "get_user_history_len",
+                args: [address],
+            });
             return Number(res);
         } catch (error) {
             console.log(error);
@@ -1870,24 +1881,20 @@ class Contracts_MetaMask {
 
     async get_teachers() {
         try {
-            if (this.getEthereumProvider()) {
-                let account = await this.get_address();
-                const teachers = await this.readAccessControlAddressList({
-                    account,
-                    abi: [GET_TEACHER_ALL_ABI],
-                    functionName: "get_teacher_all",
-                    args: [],
-                });
-                const normalizedTeachers = Array.isArray(teachers) ? [...teachers] : [];
-                for (const teacherAddress of bootstrap_teacher_addresses || []) {
-                    if (!normalizedTeachers.some((item) => this.normalizeAddress(item) === this.normalizeAddress(teacherAddress))) {
-                        normalizedTeachers.push(teacherAddress);
-                    }
+            let account = await this.get_address();
+            const teachers = await this.readAccessControlAddressList({
+                account,
+                abi: [GET_TEACHER_ALL_ABI],
+                functionName: "get_teacher_all",
+                args: [],
+            });
+            const normalizedTeachers = Array.isArray(teachers) ? [...teachers] : [];
+            for (const teacherAddress of bootstrap_teacher_addresses || []) {
+                if (!normalizedTeachers.some((item) => this.normalizeAddress(item) === this.normalizeAddress(teacherAddress))) {
+                    normalizedTeachers.push(teacherAddress);
                 }
-                return normalizedTeachers;
-            } else {
-                console.log("Ethereum object does not exist");
             }
+            return normalizedTeachers;
         } catch (err) {
             console.log(err);
         }
@@ -2686,18 +2693,14 @@ class Contracts_MetaMask {
 
     async get_student_list() {
         try {
-            if (this.getEthereumProvider()) {
-                let account = await this.get_address();
-                let res = await this.readAccessControlAddressList({
-                    account,
-                    abi: [GET_STUDENT_ALL_ABI],
-                    functionName: "get_student_all",
-                    args: [],
-                });
-                return res;
-            } else {
-                console.log("Ethereum object does not exists");
-            }
+            let account = await this.get_address();
+            let res = await this.readAccessControlAddressList({
+                account,
+                abi: [GET_STUDENT_ALL_ABI],
+                functionName: "get_student_all",
+                args: [],
+            });
+            return res;
         } catch (err) {
             console.log(err);
         }

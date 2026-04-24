@@ -53,6 +53,7 @@ function User_page(props) {
     const [icons, SetIcons] = useState(null);
     const [user_name, Setuser_name] = useState(null);
     const [result, SetResult] = useState(null);
+    const [rawResultWei, setRawResultWei] = useState(0);
     const [token, Set_token] = useState(null);
     const [state, Set_state] = useState(null);
     const [rank, setRank] = useState(null);
@@ -112,20 +113,21 @@ function User_page(props) {
 
             const resolvedTokenBalance = nextTokenBalance ?? cachedBalances.token ?? token ?? 0;
             const resolvedTttBalance = nextTttBalance ?? cachedBalances.tttBalance ?? tttBalance ?? 0;
-            Set_token(resolvedTokenBalance);
-            setTttBalance(resolvedTttBalance);
+            Set_token(Number(resolvedTokenBalance || 0));
+            setTttBalance(Number(resolvedTttBalance || 0));
             writeBalanceCache(address, {
-                token: resolvedTokenBalance,
-                tttBalance: resolvedTttBalance,
+                token: Number(resolvedTokenBalance || 0),
+                tttBalance: Number(resolvedTttBalance || 0),
                 updatedAt: new Date().toISOString(),
             });
 
-            let [user_name, image, result, state] = user || ["", "", 0, false];
+            let [user_name, image, nextResultWei, state] = user || ["", "", 0, false];
             const bootstrapTeacher = isBootstrapTeacherAddress(address);
             Setuser_name(user_name);
             SetIcons(image);
-            SetResult(result / 10 ** 18);
-            setNum_of_student(studentCount);
+            setRawResultWei(Number(nextResultWei || 0));
+            SetResult(Number(nextResultWei || 0) / 10 ** 18);
+            setNum_of_student(Number(studentCount || 0));
             Set_state(state);
             setRoleInfo(
                 bootstrapTeacher
@@ -167,7 +169,7 @@ function User_page(props) {
 
                 const [quizData, nextRank] = await Promise.all([
                     cont.get_all_quiz_simple_list(),
-                    result != null && Number(result) > 0 ? cont.get_rank(Number(result) * 10 ** 18) : Promise.resolve(0),
+                    Number(rawResultWei || 0) > 0 ? cont.get_rank(Number(rawResultWei || 0)) : Promise.resolve(0),
                 ]);
 
                 if (cancelled) return;
@@ -185,7 +187,7 @@ function User_page(props) {
         return () => {
             cancelled = true;
         };
-    }, [address, cont, isPageLoading, result]);
+    }, [address, cont, isPageLoading, rawResultWei]);
 
     if (isPageLoading) {
         return (
