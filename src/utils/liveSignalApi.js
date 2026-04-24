@@ -70,6 +70,42 @@ function getPendingDeletedQuizMap(rawMap = {}) {
     return pendingMap;
 }
 
+async function flushPendingDeletedQuizzes() {
+    const cachedMap = readDeletedQuizCache();
+    const pendingMap = getPendingDeletedQuizMap(cachedMap);
+    const pendingEntries = Object.entries(pendingMap);
+    if (!pendingEntries.length) {
+        return cachedMap;
+    }
+
+    const nextMap = { ...cachedMap };
+    await Promise.all(pendingEntries.map(async ([quizKey, value]) => {
+        try {
+            await fetchLiveSignalJson("/deleted-quizzes", {
+                method: "POST",
+                body: JSON.stringify({
+                    quizKey,
+                    payload: {
+                        deletedAt: value?.deletedAt || new Date().toISOString(),
+                        deletedBy: value?.deletedBy || "",
+                        deletedByLabel: value?.deletedByLabel || "",
+                        sourceAddress: value?.sourceAddress || "",
+                        quizId: value?.quizId ?? Number(quizKey.split(":")[1]),
+                    },
+                }),
+            });
+            if (nextMap[quizKey]) {
+                delete nextMap[quizKey].pendingSync;
+            }
+        } catch (error) {
+            console.error("Failed to flush pending deleted quiz", error);
+        }
+    }));
+
+    writeDeletedQuizCache(nextMap);
+    return nextMap;
+}
+
 async function fetchLiveSignalJson(path, options = {}) {
     const response = await fetch(`${getLiveSignalApiBaseUrl()}${path}`, {
         headers: {
@@ -87,7 +123,7 @@ async function fetchLiveSignalJson(path, options = {}) {
 }
 
 async function getDeletedQuizzes() {
-    const cachedMap = readDeletedQuizCache();
+    const cachedMap = await flushPendingDeletedQuizzes();
     try {
         const response = await fetchLiveSignalJson("/deleted-quizzes");
         const mergedMap = mergeDeletedQuizMaps(response?.deletedQuizzes || {}, getPendingDeletedQuizMap(cachedMap));

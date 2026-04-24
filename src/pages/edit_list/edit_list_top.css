@@ -25,6 +25,13 @@
   font-size: var(--font-size-sm);
 }
 
+.loading-text-bright {
+  color: #f8fafc;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  text-shadow: 0 2px 8px rgba(15, 23, 42, 0.55);
+}
+
 /* ── Skeleton Loading ── */
 
 .loading-indicator {

@@ -7,6 +7,7 @@ import {
     getGrantLedgerEntries,
     hasGrantedToken,
     isGrantActive,
+    isGrantReserved,
     markGrantedToken,
     normalizeGrantRecord,
     persistGrantRecordToServer,
@@ -108,7 +109,7 @@ function Token_grant_panel(props) {
                     address: entry.address,
                     student_id: studentIndexMap.get(props.cont.normalizeAddress(entry.address)) || "",
                     asset: asset.label,
-                    current_status: record ? (isGrantActive(record) ? (isManualMarkedRecord(record) ? "既付与登録" : "付与済み") : "未付与") : "未付与",
+                    current_status: record ? (isGrantActive(record) ? (isManualMarkedRecord(record) ? "既付与登録" : "付与済み") : isGrantReserved(record) ? "送金処理中" : "未付与") : "未付与",
                     current_amount: record?.amount ?? "",
                     history_index: index + 1,
                     history_type: historyEntry?.type === "manual_mark" ? "既付与登録" : historyEntry?.type === "clear" ? "既付与解除" : "送金確認",
@@ -153,6 +154,24 @@ function Token_grant_panel(props) {
         loadStudents();
         refreshGrantLedger();
     }, [props.cont]);
+
+    useEffect(() => {
+        const timer = window.setInterval(() => {
+            refreshGrantLedger();
+        }, 5000);
+        const handleSync = () => {
+            if (document.visibilityState === "visible") {
+                refreshGrantLedger();
+            }
+        };
+        document.addEventListener("visibilitychange", handleSync);
+        window.addEventListener("focus", handleSync);
+        return () => {
+            window.clearInterval(timer);
+            document.removeEventListener("visibilitychange", handleSync);
+            window.removeEventListener("focus", handleSync);
+        };
+    }, []);
 
     function toggleStudent(address) {
         setSelectedStudents((current) => (
@@ -321,12 +340,31 @@ function Token_grant_panel(props) {
             const results = [];
 
             for (const item of grantableTargets) {
+                const pendingTargets = getSelectedAssetTargets(
+                    item.shouldGrant.POL ? requestedAmounts.POL : 0,
+                    item.shouldGrant.TFT ? requestedAmounts.TFT : 0,
+                    item.shouldGrant.TTT ? requestedAmounts.TTT : 0,
+                ).filter((target) => target.enabled);
+
+                for (const target of pendingTargets) {
+                    const pendingPayload = {
+                        grantedAt: new Date().toISOString(),
+                        amount: target.amount,
+                        txHash: "",
+                        source: `${sourceLabel}_pending`,
+                        confirmed: false,
+                    };
+                    markGrantedToken(item.address, target.assetKey, pendingPayload);
+                    await persistGrantRecordToServer(item.address, target.assetKey, pendingPayload);
+                }
+
                 const recipientResults = await props.cont.grantStudentStarterTokens([item.address], {
                     pol: item.shouldGrant.POL ? requestedAmounts.POL : 0,
                     tft: item.shouldGrant.TFT ? requestedAmounts.TFT : 0,
                     ttt: item.shouldGrant.TTT ? requestedAmounts.TTT : 0,
                 });
                 results.push(...recipientResults);
+                const settledAssetKeys = new Set();
 
                 for (const result of recipientResults) {
                     const assetKey =
@@ -335,6 +373,7 @@ function Token_grant_panel(props) {
                             : result.asset === "TFT"
                                 ? TOKEN_GRANT_KEYS.TFT
                                 : TOKEN_GRANT_KEYS.TTT;
+                    settledAssetKeys.add(assetKey);
 
                     const payload = {
                         grantedAt: new Date().toISOString(),
@@ -347,7 +386,26 @@ function Token_grant_panel(props) {
                     if (result.confirmed !== false) {
                         markGrantedToken(item.address, assetKey, payload);
                         await persistGrantRecordToServer(item.address, assetKey, payload);
+                    } else {
+                        const clearPayload = {
+                            grantedAt: new Date().toISOString(),
+                            amount: result.amount,
+                            source: `${sourceLabel}_rollback_pending`,
+                        };
+                        clearGrantedToken(item.address, assetKey, clearPayload);
+                        await removeGrantRecordFromServer(item.address, assetKey, clearPayload);
                     }
+                }
+
+                for (const target of pendingTargets) {
+                    if (settledAssetKeys.has(target.assetKey)) continue;
+                    const clearPayload = {
+                        grantedAt: new Date().toISOString(),
+                        amount: target.amount,
+                        source: `${sourceLabel}_rollback_pending`,
+                    };
+                    clearGrantedToken(item.address, target.assetKey, clearPayload);
+                    await removeGrantRecordFromServer(item.address, target.assetKey, clearPayload);
                 }
             }
 
@@ -412,6 +470,8 @@ function Token_grant_panel(props) {
                             <span>
                                 {record && isGrantActive(record)
                                     ? `${isManualMarkedRecord(record) ? "既付与登録" : "付与済み"}${record.amount ? ` ${record.amount}` : ""}`
+                                    : record && isGrantReserved(record)
+                                        ? `送金処理中${record.amount ? ` ${record.amount}` : ""}`
                                     : "未付与"}
                             </span>
                         </div>
@@ -436,12 +496,14 @@ function Token_grant_panel(props) {
                                 <span>
                                     {record && isGrantActive(record)
                                         ? `${isManualMarkedRecord(record) ? "既付与登録" : "付与済み"}${record.amount ? ` ${record.amount}` : ""}`
+                                        : record && isGrantReserved(record)
+                                            ? `送金処理中${record.amount ? ` ${record.amount}` : ""}`
                                         : "未付与"}
                                 </span>
                             </div>
                             {record ? (
                                 <div className="token-grant-status-meta">
-                                    <div>状態: {isGrantActive(record) ? (isManualMarkedRecord(record) ? "過去配布済みとして登録（送金なし）" : "送金確認済み") : "現在は未付与"}</div>
+                                    <div>状態: {isGrantActive(record) ? (isManualMarkedRecord(record) ? "過去配布済みとして登録（送金なし）" : "送金確認済み") : isGrantReserved(record) ? "送金処理中" : "現在は未付与"}</div>
                                     <div>現在状態の時刻: {formatDateTime(record.grantedAt)}</div>
                                     <div>
                                         現在状態の Tx:

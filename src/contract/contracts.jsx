@@ -2914,23 +2914,62 @@ class Contracts_MetaMask {
 
         for (const recipient of recipients) {
             if (polAmount > 0) {
-                const transferResult = await this.transferNativePol(recipient, polAmount);
-                if (transferResult?.confirmed) {
-                    results.push(transferResult);
+                try {
+                    const transferResult = await this.transferNativePol(recipient, polAmount);
+                    results.push(transferResult || {
+                        recipient,
+                        amount: polAmount,
+                        asset: "POL",
+                        confirmed: false,
+                    });
+                } catch (error) {
+                    results.push({
+                        recipient,
+                        amount: polAmount,
+                        asset: "POL",
+                        confirmed: false,
+                        error: error?.message || "transfer_failed",
+                    });
                 }
             }
 
             if (tftAmount > 0) {
-                const transferResult = await this.transferErc20Token(token_address, recipient, tftAmount, "TFT");
-                if (transferResult?.confirmed) {
-                    results.push(transferResult);
+                try {
+                    const transferResult = await this.transferErc20Token(token_address, recipient, tftAmount, "TFT");
+                    results.push(transferResult || {
+                        recipient,
+                        amount: tftAmount,
+                        asset: "TFT",
+                        confirmed: false,
+                    });
+                } catch (error) {
+                    results.push({
+                        recipient,
+                        amount: tftAmount,
+                        asset: "TFT",
+                        confirmed: false,
+                        error: error?.message || "transfer_failed",
+                    });
                 }
             }
 
             if (tttAmount > 0) {
-                const transferResult = await this.transferErc20Token(ttt_token_address, recipient, tttAmount, "TTT");
-                if (transferResult?.confirmed) {
-                    results.push(transferResult);
+                try {
+                    const transferResult = await this.transferErc20Token(ttt_token_address, recipient, tttAmount, "TTT");
+                    results.push(transferResult || {
+                        recipient,
+                        amount: tttAmount,
+                        asset: "TTT",
+                        confirmed: false,
+                    });
+                } catch (error) {
+                    results.push({
+                        recipient,
+                        amount: tttAmount,
+                        asset: "TTT",
+                        confirmed: false,
+                        error: error?.message || "transfer_failed",
+                    });
                 }
             }
         }

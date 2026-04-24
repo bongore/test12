@@ -48,10 +48,19 @@ function Edit_list_top(props) {
         };
 
         syncDeletedQuizzes();
-        const timer = window.setInterval(syncDeletedQuizzes, 15000);
+        const timer = window.setInterval(syncDeletedQuizzes, 5000);
+        const handleVisible = () => {
+            if (document.visibilityState === "visible") {
+                syncDeletedQuizzes();
+            }
+        };
+        document.addEventListener("visibilitychange", handleVisible);
+        window.addEventListener("focus", handleVisible);
         return () => {
             mounted = false;
             window.clearInterval(timer);
+            document.removeEventListener("visibilitychange", handleVisible);
+            window.removeEventListener("focus", handleVisible);
         };
     }, []);
 
@@ -100,7 +109,7 @@ function Edit_list_top(props) {
     const targetRef = useRef(null);
 
     if (access.isLoading) {
-        return <div className="edit-list-page">権限を確認中です...</div>;
+        return <div className="edit-list-page"><div className="loading-text-bright">権限を確認中です...</div></div>;
     }
 
     if (!access.isTeacher) {
@@ -108,7 +117,7 @@ function Edit_list_top(props) {
     }
 
     if (quiz_sum == null) {
-        return <div className="edit-list-page">読み込み中です...</div>;
+        return <div className="edit-list-page"><div className="loading-text-bright">読み込み中です...</div></div>;
     }
 
     return (

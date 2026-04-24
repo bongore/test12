@@ -17,6 +17,7 @@ import {
 import { recordPracticeAttempt } from "../../utils/courseEnhancements";
 import { buildQuizStorageKey } from "../../utils/quizCorrectAnswerStore";
 import { getRememberedQuizSource, rememberQuizSource } from "../../utils/quizLinks";
+import { parseQuizContentMeta, stripQuizContentMeta } from "../../utils/quizContentMeta";
 import {
     QUIZ_INPUT_MODE_PLAIN,
     QUIZ_INPUT_MODE_REGEX,
@@ -358,6 +359,15 @@ function Answer_quiz() {
             return;
         }
 
+        const quizMeta = parseQuizContentMeta(quiz?.[5] || "");
+        const allowMultipleAnswers = Boolean(quizMeta.allowMultipleAnswers);
+        const currentStatus = Number(simpleQuiz?.[10] || 0);
+        const canUpdateSubmittedAnswer = allowMultipleAnswers && currentStatus === 3 && !Boolean(simpleQuiz?.[11]) && Number(quiz?.[9] || 0) >= currentEpoch;
+        if (!isPracticeMode && currentStatus !== 0 && !canUpdateSubmittedAnswer) {
+            alert("この問題は現在の設定では再回答できません。");
+            return;
+        }
+
         setIsSubmitting(true);
         const startedAt = performance.now();
         const finalAnswer = convertFullWidthNumbersToHalf(answer);
@@ -518,13 +528,18 @@ function Answer_quiz() {
     const status = rawStatus;
     const deadlineEpoch = Number(quiz?.[9] || 0);
     const canShowCorrectAnswer = Boolean(quiz?.[14]) && (isCorrectShow || (deadlineEpoch > 0 && currentEpoch > deadlineEpoch));
+    const quizMeta = parseQuizContentMeta(quiz?.[5] || "");
+    const renderedContent = stripQuizContentMeta(quiz?.[5] || "");
+    const allowMultipleAnswers = Boolean(quizMeta.allowMultipleAnswers);
+    const canUpdateSubmittedAnswer = !isPracticeMode && allowMultipleAnswers && status === 3 && !Boolean(simpleQuiz?.[11]) && deadlineEpoch >= currentEpoch;
+    const canEditAnswer = isPracticeMode || status === 0 || canUpdateSubmittedAnswer;
     const savedAnswerDisplay = savedAnswerStr || localCachedAnswer || "";
     const visibleDraft = status === 0 ? answer : "";
     const statusMessages = {
         0: { text: "未回答です。回答後に結果を確認してください。", className: "status-first" },
         1: { text: "支払い処理後に回答結果が確定しました。必要なら正解を確認してください。", className: "status-wrong" },
         2: { text: "支払い処理後に正解として確定しました。", className: "status-correct" },
-        3: { text: "回答は送信済みです。支払い処理完了まで再回答はできません。", className: "status-first" },
+        3: { text: canUpdateSubmittedAnswer ? "回答は送信済みです。いまは回答内容を更新できます。" : allowMultipleAnswers ? "回答は送信済みです。締切または支払い確定後のため、いまは更新できません。" : "回答は送信済みです。再回答はできません。", className: "status-first" },
     };
     const statusInfo = statusMessages[status] || { text: "", className: "" };
 
@@ -557,8 +572,14 @@ function Answer_quiz() {
                     <span className="text-accent">{quiz[1] ? `${quiz[1].slice(0, 10)}...` : ""}</span>
                 </div>
 
+                <div style={{ marginBottom: "var(--space-4)", display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                    <span className="reward-edit-summary" style={{ marginTop: 0 }}>
+                        <span>回答設定: {allowMultipleAnswers ? "複数回回答可" : "初回のみ"}</span>
+                    </span>
+                </div>
+
                 <div data-color-mode="dark" style={{ marginBottom: "var(--space-6)" }}>
-                    <MDEditor.Markdown source={quiz[5]} />
+                    <MDEditor.Markdown source={renderedContent} />
                 </div>
 
                 {Number(quiz[13]) === 0 && (
@@ -566,7 +587,7 @@ function Answer_quiz() {
                         quiz={quiz}
                         answer={answer}
                         onSelect={handleSelectOption}
-                        disabled={(!isPracticeMode && status !== 0) || isSubmitting}
+                        disabled={!canEditAnswer || isSubmitting}
                     />
                 )}
                 {Number(quiz[13]) === 1 && (
@@ -575,14 +596,14 @@ function Answer_quiz() {
                         answer={answer}
                         onTextChange={handleTextChange}
                         onValidation={handleValidation}
-                        disabled={(!isPracticeMode && status !== 0) || isSubmitting}
+                        disabled={!canEditAnswer || isSubmitting}
                     />
                 )}
 
-                {(status === 0 || isPracticeMode) ? (
+                {canEditAnswer ? (
                     <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginTop: "var(--space-6)", gap: "var(--space-4)", flexWrap: "wrap" }}>
                         <button className="btn-primary-custom" onClick={create_answer} disabled={isSubmitting || !answer}>
-                            {isPracticeMode ? "練習として判定" : (isSubmitting ? "送信中..." : "回答を送信")}
+                            {isPracticeMode ? "練習として判定" : canUpdateSubmittedAnswer ? (isSubmitting ? "更新中..." : "回答を更新") : (isSubmitting ? "送信中..." : "回答を送信")}
                         </button>
                     </div>
                 ) : (

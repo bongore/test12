@@ -193,9 +193,13 @@ function isGrantActive(record) {
     return Boolean(record?.active !== false && record?.confirmed !== false && record?.grantedAt);
 }
 
+function isGrantReserved(record) {
+    return Boolean(record?.active !== false && record?.grantedAt);
+}
+
 function hasGrantedToken(address, assetKey) {
     const status = getAddressGrantStatus(address);
-    return isGrantActive(status?.[assetKey]);
+    return isGrantReserved(status?.[assetKey]);
 }
 
 function markGrantedToken(address, assetKey, payload = {}) {
@@ -282,6 +286,7 @@ export {
     getAddressGrantStatus,
     hasGrantedToken,
     isGrantActive,
+    isGrantReserved,
     markGrantedToken,
     clearGrantedToken,
     getGrantLedgerEntries,

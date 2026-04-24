@@ -6,6 +6,8 @@ import MDEditor from "@uiw/react-md-editor";
 import Wait_Modal from "../../contract/wait_Modal";
 import { ACTION_TYPES, appendActivityLog } from "../../utils/activityLog";
 import { useAccessControl } from "../../utils/accessControl";
+import { createDefaultQuizContentMeta, parseQuizContentMeta, stripQuizContentMeta, withQuizContentMeta } from "../../utils/quizContentMeta";
+import { appendColoredText } from "../../utils/quizEditorHelpers";
 import "../create_quiz/create_quiz.css";
 
 function Edit_quiz() {
@@ -19,6 +21,8 @@ function Edit_quiz() {
     const [explanation, setExplanation] = useState("");
     const [thumbnail_url, setThumbnail_url] = useState("");
     const [content, setContent] = useState("");
+    const [allowMultipleAnswers, setAllowMultipleAnswers] = useState(createDefaultQuizContentMeta().allowMultipleAnswers);
+    const [highlightText, setHighlightText] = useState("");
     const [reward, setReward] = useState("");
     const [originalReward, setOriginalReward] = useState(0);
     const [respondentLimit, setRespondentLimit] = useState(0);
@@ -61,7 +65,7 @@ function Edit_quiz() {
                 }
             }
 
-            const editReceipt = await Contract.edit_quiz(id, owner, title, explanation, thumbnail_url, content, reply_startline, reply_deadline, setShow, sourceAddress);
+            const editReceipt = await Contract.edit_quiz(id, owner, title, explanation, thumbnail_url, withQuizContentMeta(content, { allowMultipleAnswers }), reply_startline, reply_deadline, setShow, sourceAddress);
             if (!editReceipt || editReceipt.status !== "success") {
                 alert(delta < 0 ? "報酬の減額は完了しましたが、クイズ内容の編集が完了していません。" : "クイズ編集のトランザクションが完了していません。報酬は変更していません。");
                 return;
@@ -78,6 +82,7 @@ function Edit_quiz() {
                 rewardAfter: rewardValue,
                 rewardDelta: delta,
                 respondentLimit,
+                allowMultipleAnswers,
             });
             navigate("/edit_list");
         } else {
@@ -121,7 +126,9 @@ function Edit_quiz() {
                 setTitle(quiz[2] || "");
                 setExplanation(quiz[3] || "");
                 setThumbnail_url(quiz[4] || "");
-                setContent(quiz[5] || "");
+                const nextMeta = parseQuizContentMeta(quiz[5] || "");
+                setAllowMultipleAnswers(Boolean(nextMeta.allowMultipleAnswers));
+                setContent(stripQuizContentMeta(quiz[5] || ""));
                 setReply_startline(getLocalizedDateTimeString(new Date(Number(quiz[8]) * 1000)));
                 setReply_deadline(getLocalizedDateTimeString(new Date(Number(quiz[9]) * 1000)));
                 const currentReward = Number(quiz[10] || 0) / 10 ** 18;
@@ -143,8 +150,17 @@ function Edit_quiz() {
         };
     }, [Contract, id, sourceAddress]);
 
+    const handleAddHighlight = (color) => {
+        if (!highlightText.trim()) {
+            alert("色を付けたい文字を入力してください");
+            return;
+        }
+        setContent((current) => appendColoredText(current, highlightText, color));
+        setHighlightText("");
+    };
+
     if (access.isLoading || !isReady) {
-        return <div className="quiz-form-page">読み込み中です...</div>;
+        return <div className="quiz-form-page"><div className="loading-text-bright">読み込み中です...</div></div>;
     }
 
     if (access.isTeacher) {
@@ -203,7 +219,49 @@ function Edit_quiz() {
                     <div className="quiz-form-group">
                         <Form.Group data-color-mode="dark" style={{ textAlign: "left" }}>
                             <Form.Label>📋 内容</Form.Label>
+                            <div className="content-helper-card">
+                                <div className="content-helper-title">重要箇所の色付け</div>
+                                <div className="content-helper-row">
+                                    <Form.Control
+                                        type="text"
+                                        value={highlightText}
+                                        placeholder="色を付けたい文字を入力"
+                                        onChange={(event) => setHighlightText(event.target.value)}
+                                    />
+                                    <button type="button" className="content-color-btn red" onClick={() => handleAddHighlight("#ef4444")}>赤</button>
+                                    <button type="button" className="content-color-btn blue" onClick={() => handleAddHighlight("#3b82f6")}>青</button>
+                                    <button type="button" className="content-color-btn yellow" onClick={() => handleAddHighlight("#facc15")}>黄</button>
+                                    <button type="button" className="content-color-btn green" onClick={() => handleAddHighlight("#22c55e")}>緑</button>
+                                </div>
+                                <div className="content-helper-note">入力した文字を選んだ色で本文末尾に追加します。</div>
+                            </div>
                             <MDEditor height={500} value={content} onChange={setContent} />
+                        </Form.Group>
+                    </div>
+
+                    <div className="quiz-form-group">
+                        <Form.Group style={{ textAlign: "left" }}>
+                            <Form.Label>🔁 回答回数の設定</Form.Label>
+                            <div className="answer-policy-row">
+                                <label className={`answer-policy-option ${allowMultipleAnswers ? "" : "selected"}`}>
+                                    <input
+                                        type="radio"
+                                        name="answer_policy"
+                                        checked={!allowMultipleAnswers}
+                                        onChange={() => setAllowMultipleAnswers(false)}
+                                    />
+                                    初回のみ回答可
+                                </label>
+                                <label className={`answer-policy-option ${allowMultipleAnswers ? "selected" : ""}`}>
+                                    <input
+                                        type="radio"
+                                        name="answer_policy"
+                                        checked={allowMultipleAnswers}
+                                        onChange={() => setAllowMultipleAnswers(true)}
+                                    />
+                                    締切まで複数回回答可
+                                </label>
+                            </div>
                         </Form.Group>
                     </div>
 

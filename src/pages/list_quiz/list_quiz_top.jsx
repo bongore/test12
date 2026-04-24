@@ -37,10 +37,19 @@ function List_quiz_top(props) {
         };
 
         syncDeletedQuizzes();
-        const timer = window.setInterval(syncDeletedQuizzes, 15000);
+        const timer = window.setInterval(syncDeletedQuizzes, 5000);
+        const handleVisible = () => {
+            if (document.visibilityState === "visible") {
+                syncDeletedQuizzes();
+            }
+        };
+        document.addEventListener("visibilitychange", handleVisible);
+        window.addEventListener("focus", handleVisible);
         return () => {
             mounted = false;
             window.clearInterval(timer);
+            document.removeEventListener("visibilitychange", handleVisible);
+            window.removeEventListener("focus", handleVisible);
         };
     }, []);
 
