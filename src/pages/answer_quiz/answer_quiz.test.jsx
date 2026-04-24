@@ -6,9 +6,46 @@ import Answer_quiz from "./answer_quiz";
 
 const mockNavigate = jest.fn();
 const mockRecordPracticeAttempt = jest.fn();
+const routerFuture = {
+    v7_startTransition: true,
+    v7_relativeSplatPath: true,
+};
+const buildQuizData = ({ title = "練習問題", deadline = "0", correctAnswer = "A", isPayment = false } = {}) => ([
+    1,
+    "0xteacher",
+    title,
+    "説明",
+    "",
+    "問題本文",
+    "A,B,C",
+    0,
+    "0",
+    deadline,
+    0,
+    0,
+    0,
+    0,
+    correctAnswer,
+    isPayment,
+]);
+const buildSimpleQuizData = ({ title = "練習問題", state = 0, isPayment = false } = {}) => ([
+    1,
+    "0xteacher",
+    title,
+    "説明",
+    "",
+    0,
+    0,
+    0,
+    0,
+    0,
+    state,
+    isPayment,
+]);
 const mockContract = {
     get_quiz: jest.fn(),
     get_quiz_simple: jest.fn(),
+    get_quiz_with_source: jest.fn(),
     create_answer: jest.fn(),
 };
 
@@ -60,30 +97,20 @@ describe("Answer_quiz practice mode", () => {
             canAnswerQuiz: true,
             address: "0xpractice",
         });
-        mockContract.get_quiz.mockResolvedValue([
-            1,
-            "2026-04-07T00:00:00.000Z",
-            "練習問題",
-            "説明",
-            "",
-            "問題本文",
-            "A,B,C",
-            0,
-            "0",
-            "0",
-            0,
-            0,
-            0,
-            0,
-            "A",
-            false,
-        ]);
-        mockContract.get_quiz_simple.mockResolvedValue([1, "", "練習問題", "", "", "", "", 0, 0, 0, 0]);
+        const quizData = buildQuizData();
+        const simpleQuizData = buildSimpleQuizData();
+        mockContract.get_quiz.mockResolvedValue(quizData);
+        mockContract.get_quiz_simple.mockResolvedValue(simpleQuizData);
+        mockContract.get_quiz_with_source.mockResolvedValue({
+            quizData,
+            simpleQuizData,
+            sourceAddress: "",
+        });
     });
 
     test("records attempts and does not reveal the correct answer text", async () => {
         render(
-            <MemoryRouter initialEntries={["/answer_quiz/1?practice=1"]}>
+            <MemoryRouter initialEntries={["/answer_quiz/1?practice=1"]} future={routerFuture}>
                 <Routes>
                     <Route path="/answer_quiz/:id" element={<Answer_quiz />} />
                 </Routes>
@@ -114,7 +141,7 @@ describe("Answer_quiz practice mode", () => {
 
     test("submits a normal answer and returns to the quiz list", async () => {
         render(
-            <MemoryRouter initialEntries={["/answer_quiz/1"]}>
+            <MemoryRouter initialEntries={["/answer_quiz/1"]} future={routerFuture}>
                 <Routes>
                     <Route path="/answer_quiz/:id" element={<Answer_quiz />} />
                 </Routes>
@@ -142,27 +169,14 @@ describe("Answer_quiz practice mode", () => {
     });
 
     test("shows the registered correct answer automatically after the deadline", async () => {
-        mockContract.get_quiz.mockResolvedValueOnce([
-            1,
-            "2026-04-07T00:00:00.000Z",
-            "締切後問題",
-            "説明",
-            "",
-            "問題本文",
-            "A,B,C",
-            0,
-            "0",
-            "1",
-            0,
-            0,
-            0,
-            0,
-            "A",
-            false,
-        ]);
+        mockContract.get_quiz_with_source.mockResolvedValueOnce({
+            quizData: buildQuizData({ title: "締切後問題", deadline: "1" }),
+            simpleQuizData: buildSimpleQuizData({ title: "締切後問題" }),
+            sourceAddress: "",
+        });
 
         render(
-            <MemoryRouter initialEntries={["/answer_quiz/1"]}>
+            <MemoryRouter initialEntries={["/answer_quiz/1"]} future={routerFuture}>
                 <Routes>
                     <Route path="/answer_quiz/:id" element={<Answer_quiz />} />
                 </Routes>

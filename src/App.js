@@ -159,7 +159,13 @@ function App() {
 
     return (
         <div className="App">
-            <BrowserRouter basename={routerBasename}>
+            <BrowserRouter
+                basename={routerBasename}
+                future={{
+                    v7_startTransition: true,
+                    v7_relativeSplatPath: true,
+                }}
+            >
                 <AppRoutes cont={cont} />
             </BrowserRouter>
         </div>

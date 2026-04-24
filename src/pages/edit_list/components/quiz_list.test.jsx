@@ -2,6 +2,11 @@ import { render, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import Quiz_list from "./quiz_list";
 
+const routerFuture = {
+    v7_startTransition: true,
+    v7_relativeSplatPath: true,
+};
+
 describe("Edit Quiz_list", () => {
     test("loads raw quiz data for the management screen", async () => {
         const setLoadError = jest.fn();
@@ -19,7 +24,7 @@ describe("Edit Quiz_list", () => {
         delete window.IntersectionObserver;
 
         render(
-            <MemoryRouter>
+            <MemoryRouter future={routerFuture}>
                 <Quiz_list
                     cont={cont}
                     Set_quiz_list={setQuizList}

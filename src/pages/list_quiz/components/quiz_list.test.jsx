@@ -2,6 +2,11 @@ import { render, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import Quiz_list from "./quiz_list";
 
+const routerFuture = {
+    v7_startTransition: true,
+    v7_relativeSplatPath: true,
+};
+
 describe("Quiz_list", () => {
     test("reports a readable error when a batch fetch fails", async () => {
         const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
@@ -17,7 +22,7 @@ describe("Quiz_list", () => {
         delete window.IntersectionObserver;
 
         render(
-            <MemoryRouter>
+            <MemoryRouter future={routerFuture}>
                 <Quiz_list
                     cont={cont}
                     Set_quiz_list={setQuizList}

@@ -3,6 +3,11 @@ import { MemoryRouter } from "react-router-dom";
 import Nav_menu from "./navbar";
 import { useAccessControl } from "../../utils/accessControl";
 
+const routerFuture = {
+    v7_startTransition: true,
+    v7_relativeSplatPath: true,
+};
+
 jest.mock("./Modal_change_network", () => () => null);
 jest.mock("../../utils/accessControl", () => ({
     useAccessControl: jest.fn(),
@@ -31,7 +36,7 @@ describe("Nav_menu", () => {
 
         await act(async () => {
             render(
-                <MemoryRouter>
+                <MemoryRouter future={routerFuture}>
                     <Nav_menu cont={cont} />
                 </MemoryRouter>
             );
@@ -55,7 +60,7 @@ describe("Nav_menu", () => {
 
         await act(async () => {
             render(
-                <MemoryRouter>
+                <MemoryRouter future={routerFuture}>
                     <Nav_menu cont={cont} />
                 </MemoryRouter>
             );
