@@ -165,6 +165,24 @@ function getPendingDeletedQuizMap(rawMap = {}) {
     return pendingMap;
 }
 
+function reconcileDeletedQuizMaps(serverMap = {}, localMap = {}) {
+    const normalizedServerMap = normalizeDeletedQuizMap(serverMap);
+    const normalizedLocalMap = normalizeDeletedQuizMap(localMap);
+    const mergedMap = mergeDeletedQuizMaps(normalizedServerMap, normalizedLocalMap);
+
+    Object.entries(normalizedLocalMap).forEach(([quizKey, value]) => {
+        if (!normalizedServerMap[quizKey]) {
+            mergedMap[quizKey] = {
+                ...mergedMap[quizKey],
+                ...value,
+                pendingSync: true,
+            };
+        }
+    });
+
+    return mergedMap;
+}
+
 async function flushPendingDeletedQuizzes() {
     const cachedMap = readDeletedQuizCache();
     const pendingMap = getPendingDeletedQuizMap(cachedMap);
@@ -221,9 +239,9 @@ async function getDeletedQuizzes() {
     const cachedMap = await flushPendingDeletedQuizzes();
     try {
         const response = await fetchLiveSignalJson("/deleted-quizzes");
-        const mergedMap = mergeDeletedQuizMaps(response?.deletedQuizzes || {}, getPendingDeletedQuizMap(cachedMap));
+        const mergedMap = reconcileDeletedQuizMaps(response?.deletedQuizzes || {}, cachedMap);
         writeDeletedQuizCache(mergedMap);
-        return mergedMap;
+        return await flushPendingDeletedQuizzes();
     } catch (error) {
         console.error("Failed to fetch deleted quizzes from server", error);
         return cachedMap;
@@ -234,10 +252,11 @@ async function getDeletedQuizzesWithStatus() {
     const cachedMap = await flushPendingDeletedQuizzes();
     try {
         const response = await fetchLiveSignalJson("/deleted-quizzes");
-        const mergedMap = mergeDeletedQuizMaps(response?.deletedQuizzes || {}, getPendingDeletedQuizMap(cachedMap));
+        const mergedMap = reconcileDeletedQuizMaps(response?.deletedQuizzes || {}, cachedMap);
         writeDeletedQuizCache(mergedMap);
+        const stabilizedMap = await flushPendingDeletedQuizzes();
         return {
-            deletedQuizzes: mergedMap,
+            deletedQuizzes: stabilizedMap,
             ready: true,
             fromServer: true,
         };
