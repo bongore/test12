@@ -1,10 +1,22 @@
-import { legacy_quiz_addresses, quiz_address } from "../contract/config";
+import {
+    legacy_current_route_address,
+    legacy_quiz_addresses,
+    quiz_address,
+    routed_quiz_addresses,
+} from "../contract/config";
 
 function normalizeAddress(value = "") {
     return String(value || "").trim().toLowerCase();
 }
 
 const uniqueLegacyAddresses = (legacy_quiz_addresses || []).filter(
+    (address, index, list) => {
+        const normalized = normalizeAddress(address);
+        return Boolean(normalized) && list.findIndex((item) => normalizeAddress(item) === normalized) === index;
+    }
+);
+
+const uniqueRoutedAddresses = (routed_quiz_addresses || []).filter(
     (address, index, list) => {
         const normalized = normalizeAddress(address);
         return Boolean(normalized) && list.findIndex((item) => normalizeAddress(item) === normalized) === index;
@@ -37,8 +49,11 @@ export function toGlobalId(localId, sourceAddress) {
         return String(localId ?? "");
     }
 
-    if (normAddress === normalizeAddress(quiz_address)) {
-        return `c-${numericLocalId}`;
+    const routedIndex = uniqueRoutedAddresses.findIndex(
+        (address) => normalizeAddress(address) === normAddress
+    );
+    if (routedIndex >= 0) {
+        return `q${routedIndex}-${numericLocalId}`;
     }
 
     const legacyIndex = uniqueLegacyAddresses.findIndex(
@@ -57,8 +72,17 @@ export function resolveGlobalId(globalId) {
     const currentMatch = raw.match(/^c-(\d+)$/i);
     if (currentMatch) {
         return {
-            address: quiz_address,
+            address: legacy_current_route_address || quiz_address,
             id: Number(currentMatch[1]),
+        };
+    }
+
+    const routedMatch = raw.match(/^q(\d+)-(\d+)$/i);
+    if (routedMatch) {
+        const routedAddress = uniqueRoutedAddresses[Number(routedMatch[1])] || quiz_address;
+        return {
+            address: routedAddress,
+            id: Number(routedMatch[2]),
         };
     }
 

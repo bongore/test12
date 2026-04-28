@@ -23,10 +23,35 @@ const legacy_quiz_addresses = [
     "0x2DfaC485A476FdFbF33411C88A126D74fbfbD0Ee",
     "0x49576E6B1a9D81075767D61dAE3AdcB0b30B00d4",
 ];
+// Keep this list append-only so existing shared URLs never change target contracts.
+// When a new quiz.sol is deployed:
+// 1. update quiz_address to the new contract
+// 2. move the previous quiz_address into legacy_quiz_addresses
+// 3. append the new contract address to routed_quiz_addresses
+const routed_quiz_addresses = [
+    "0x55B3977C7B7b913eaf175A7364c8375732d22241",
+    "0xEbBD4E3276bcb847838E18DDA7585Ac8925a5eA6",
+    "0x2DfaC485A476FdFbF33411C88A126D74fbfbD0Ee",
+    "0x49576E6B1a9D81075767D61dAE3AdcB0b30B00d4",
+];
+// Backward-compatible alias for previously shared c-<id> URLs.
+const legacy_current_route_address = "0x55B3977C7B7b913eaf175A7364c8375732d22241";
 const token_address = "0x021e416bb6bfA1e76Aa4E280828b1d55F2d5f2F0";
 const ttt_token_address = "0x22b6457aC35b2A839EE6eb47c91f0941E1b21476";
 const bootstrap_teacher_addresses = [
     "0xd5670D7B88411d03741680451C2ea630B68C6944",
 ];
 
-export { chainId, rpc, rpc_urls, class_room_address, quiz_address, legacy_quiz_addresses, token_address, ttt_token_address, bootstrap_teacher_addresses };
+export {
+    chainId,
+    rpc,
+    rpc_urls,
+    class_room_address,
+    quiz_address,
+    legacy_quiz_addresses,
+    routed_quiz_addresses,
+    legacy_current_route_address,
+    token_address,
+    ttt_token_address,
+    bootstrap_teacher_addresses,
+};
