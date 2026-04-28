@@ -186,4 +186,30 @@ describe("Answer_quiz practice mode", () => {
         expect(await screen.findByText("締切後問題")).toBeInTheDocument();
         expect(await screen.findByText(/正解:/)).toBeInTheDocument();
     });
+
+    test("disables submitting before the quiz start time", async () => {
+        const futureStart = String(Math.floor(Date.now() / 1000) + 3600);
+        mockContract.get_quiz_with_source.mockResolvedValueOnce({
+            quizData: [
+                ...buildQuizData({ title: "開始前問題" }).slice(0, 8),
+                futureStart,
+                "9999999999",
+                ...buildQuizData({ title: "開始前問題" }).slice(10),
+            ],
+            simpleQuizData: buildSimpleQuizData({ title: "開始前問題" }),
+            sourceAddress: "",
+        });
+
+        render(
+            <MemoryRouter initialEntries={["/answer_quiz/1"]} future={routerFuture}>
+                <Routes>
+                    <Route path="/answer_quiz/:id" element={<Answer_quiz />} />
+                </Routes>
+            </MemoryRouter>
+        );
+
+        expect(await screen.findByText("開始前問題")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "回答開始前" })).toBeDisabled();
+        expect(mockContract.create_answer).not.toHaveBeenCalled();
+    });
 });

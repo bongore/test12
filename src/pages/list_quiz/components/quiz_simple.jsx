@@ -116,6 +116,8 @@ function Simple_quiz(props) {
     const sourceAddress = quiz.sourceAddress || quiz[12] || "";
     const answerStorageKey = buildQuizStorageKey(quizId, sourceAddress);
     const currentEpoch = props.currentEpoch ?? Math.floor(Date.now() / 1000);
+    const isBeforeStart = startTime > 0 && currentEpoch < startTime;
+    const canOpenAnswer = props.canAnswerQuiz && !isBeforeStart;
     const correctAnswer = props.correctAnswer || "";
     const scheduleLabel = currentEpoch < startTime ? "公開予約" : (currentEpoch > deadline ? "締切済み" : "公開中");
 
@@ -219,24 +221,37 @@ function Simple_quiz(props) {
 
                     {props.canAnswerQuiz && (
                         <div style={{ display: "flex", gap: "8px", marginTop: "var(--space-3)", flexWrap: "wrap" }}>
-                            <Link
-                                to={buildAnswerQuizPath(quizId, sourceAddress)}
-                                state={buildAnswerQuizState(sourceAddress)}
-                                onClick={() => rememberQuizSource(quizId, sourceAddress)}
-                                className="btn-primary-custom"
-                                style={{ textDecoration: "none", flex: 1, minWidth: "140px", textAlign: "center", padding: "10px 14px" }}
-                            >
-                                本番で回答
-                            </Link>
-                            <Link
-                                to={buildAnswerQuizPath(quizId, sourceAddress, { practice: true })}
-                                state={buildAnswerQuizState(sourceAddress)}
-                                onClick={() => rememberQuizSource(quizId, sourceAddress)}
-                                className="btn-secondary-custom"
-                                style={{ textDecoration: "none", flex: 1, minWidth: "140px", textAlign: "center", padding: "10px 14px" }}
-                            >
-                                練習モード
-                            </Link>
+                            {canOpenAnswer ? (
+                                <>
+                                    <Link
+                                        to={buildAnswerQuizPath(quizId, sourceAddress)}
+                                        state={buildAnswerQuizState(sourceAddress)}
+                                        onClick={() => rememberQuizSource(quizId, sourceAddress)}
+                                        className="btn-primary-custom"
+                                        style={{ textDecoration: "none", flex: 1, minWidth: "140px", textAlign: "center", padding: "10px 14px" }}
+                                    >
+                                        本番で回答
+                                    </Link>
+                                    <Link
+                                        to={buildAnswerQuizPath(quizId, sourceAddress, { practice: true })}
+                                        state={buildAnswerQuizState(sourceAddress)}
+                                        onClick={() => rememberQuizSource(quizId, sourceAddress)}
+                                        className="btn-secondary-custom"
+                                        style={{ textDecoration: "none", flex: 1, minWidth: "140px", textAlign: "center", padding: "10px 14px" }}
+                                    >
+                                        練習モード
+                                    </Link>
+                                </>
+                            ) : (
+                                <button
+                                    type="button"
+                                    className="btn-secondary-custom"
+                                    disabled
+                                    style={{ flex: 1, minWidth: "140px", textAlign: "center", padding: "10px 14px", cursor: "not-allowed", opacity: 0.7 }}
+                                >
+                                    回答開始前
+                                </button>
+                            )}
                         </div>
                     )}
 

@@ -136,7 +136,6 @@ function Answer_quiz() {
     const navigate = useNavigate();
     const location = useLocation();
     const [answer, setAnswer] = useState("");
-    const [now, setNow] = useState(null);
     const [show, setShow] = useState(false);
     const [content, setContent] = useState("");
     const [isCorrectShow, setIsCorrectShow] = useState(false);
@@ -303,6 +302,19 @@ function Answer_quiz() {
     const create_answer = async () => {
         if (!quiz) return;
 
+        const startEpoch = Number(quiz?.[8] || 0);
+        if (startEpoch > 0 && currentEpoch < startEpoch) {
+            appendActivityLog(ACTION_TYPES.ANSWER_BLOCKED_BEFORE_START, {
+                page: "answer_quiz",
+                quizId: id,
+                now: currentEpoch,
+                replyStart: startEpoch,
+                practiceMode: isPracticeMode,
+            });
+            alert("まだ回答開始時間になっていません。");
+            return;
+        }
+
         if (isPracticeMode) {
             const finalAnswer = convertFullWidthNumbersToHalf(answer).trim();
             const correctAnswer = String(quiz[14] || "").trim();
@@ -345,17 +357,6 @@ function Answer_quiz() {
                 quizId: id,
                 source: "already_correct",
             });
-            return;
-        }
-
-        if (parseInt(quiz[8], 10).toString() > now) {
-            appendActivityLog(ACTION_TYPES.ANSWER_BLOCKED_BEFORE_START, {
-                page: "answer_quiz",
-                quizId: id,
-                now,
-                replyStart: String(quiz[8]),
-            });
-            alert("まだ回答開始時間になっていません。");
             return;
         }
 
@@ -428,7 +429,6 @@ function Answer_quiz() {
             quizId: id,
         });
         get_quiz();
-        setNow(Math.floor(Date.now() / 1000));
         // contract instance is intentionally recreated locally.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [access.canAnswerQuiz, access.isLoading, id, sourceAddress]);
@@ -527,12 +527,14 @@ function Answer_quiz() {
     const rawStatus = Number(simpleQuiz[10]);
     const status = rawStatus;
     const deadlineEpoch = Number(quiz?.[9] || 0);
+    const startEpoch = Number(quiz?.[8] || 0);
+    const isBeforeStart = startEpoch > 0 && currentEpoch < startEpoch;
     const canShowCorrectAnswer = Boolean(quiz?.[14]) && (isCorrectShow || (deadlineEpoch > 0 && currentEpoch > deadlineEpoch));
     const quizMeta = parseQuizContentMeta(quiz?.[5] || "");
     const renderedContent = stripQuizContentMeta(quiz?.[5] || "");
     const allowMultipleAnswers = Boolean(quizMeta.allowMultipleAnswers);
     const canUpdateSubmittedAnswer = !isPracticeMode && allowMultipleAnswers && status === 3 && !Boolean(simpleQuiz?.[11]) && deadlineEpoch >= currentEpoch;
-    const canEditAnswer = isPracticeMode || status === 0 || canUpdateSubmittedAnswer;
+    const canEditAnswer = !isBeforeStart && (isPracticeMode || status === 0 || canUpdateSubmittedAnswer);
     const savedAnswerDisplay = savedAnswerStr || localCachedAnswer || "";
     const visibleDraft = status === 0 ? answer : "";
     const statusMessages = {
@@ -576,6 +578,11 @@ function Answer_quiz() {
                     <span className="reward-edit-summary" style={{ marginTop: 0 }}>
                         <span>回答設定: {allowMultipleAnswers ? "複数回回答可" : "初回のみ"}</span>
                     </span>
+                    {isBeforeStart ? (
+                        <span className="reward-edit-summary" style={{ marginTop: 0 }}>
+                            <span>回答開始前です</span>
+                        </span>
+                    ) : null}
                 </div>
 
                 <div data-color-mode="dark" style={{ marginBottom: "var(--space-6)" }}>
@@ -602,14 +609,14 @@ function Answer_quiz() {
 
                 {canEditAnswer ? (
                     <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginTop: "var(--space-6)", gap: "var(--space-4)", flexWrap: "wrap" }}>
-                        <button className="btn-primary-custom" onClick={create_answer} disabled={isSubmitting || !answer}>
-                            {isPracticeMode ? "練習として判定" : canUpdateSubmittedAnswer ? (isSubmitting ? "更新中..." : "回答を更新") : (isSubmitting ? "送信中..." : "回答を送信")}
+                        <button className="btn-primary-custom" onClick={create_answer} disabled={isSubmitting || !answer || isBeforeStart}>
+                            {isBeforeStart ? "回答開始前" : (isPracticeMode ? "練習として判定" : canUpdateSubmittedAnswer ? (isSubmitting ? "更新中..." : "回答を更新") : (isSubmitting ? "送信中..." : "回答を送信"))}
                         </button>
                     </div>
                 ) : (
                     <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "var(--space-6)" }}>
                         <button className="btn-secondary-custom" disabled style={{ cursor: "not-allowed", opacity: 0.6 }}>
-                            回答済み
+                            {isBeforeStart ? "回答開始前" : "回答済み"}
                         </button>
                     </div>
                 )}
