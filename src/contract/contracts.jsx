@@ -887,6 +887,24 @@ class Contracts_MetaMask {
         return 0;
     }
 
+    async readTokenAllowance(ownerAddress, spenderAddress, contractAddress = token_address) {
+        try {
+            return await publicClient.readContract({
+                account: normalizeReadAccount(ownerAddress),
+                address: contractAddress,
+                abi: token_abi,
+                functionName: "allowance",
+                args: [
+                    checksumAddress(String(ownerAddress || "").trim()),
+                    checksumAddress(String(spenderAddress || "").trim()),
+                ],
+            });
+        } catch (error) {
+            console.log(error);
+            return 0n;
+        }
+    }
+
     async get_address() {
         try {
             const provider = await this.getEthereumProviderReady();
@@ -1436,30 +1454,37 @@ class Contracts_MetaMask {
         let res = null;
         let hash = null;
         const respondentLimit = Number(correct_limit || 0);
-        reward = Number(reward || 0) * 10 ** 18;
+        const rewardWei = parseUnits(String(reward || 0), 18);
         try {
-            if (ethereum) {
-                let account = await this.get_address();
-                if (!account) {
-                    throw new Error("wallet_not_connected");
-                }
-                if (respondentLimit <= 0) {
-                    throw new Error("student_count_unavailable");
-                }
-                let approval = await token.read.allowance({ account, args: [account, quiz_address] });
-
-                if (Number(approval) >= Number(reward * respondentLimit)) {
-                    hash = await this._create_quiz(account, title, explanation, thumbnail_url, content, answer_type, answer_data, correct, reply_startline, reply_deadline, reward, respondentLimit);
-                    res = await publicClient.waitForTransactionReceipt({ hash });
-                } else {
-                    hash = await this.approve(account, reward * respondentLimit);
-                    res = await publicClient.waitForTransactionReceipt({ hash });
-                    hash = await this._create_quiz(account, title, explanation, thumbnail_url, content, answer_type, answer_data, correct, reply_startline, reply_deadline, reward, respondentLimit);
-                    res = await publicClient.waitForTransactionReceipt({ hash });
-                }
-            } else {
+            const provider = await this.getEthereumProviderReady();
+            if (!provider) {
                 throw new Error("ethereum_not_found");
             }
+
+            let account = await this.get_address();
+            if (!account) {
+                throw new Error("wallet_not_connected");
+            }
+            if (respondentLimit <= 0) {
+                throw new Error("student_count_unavailable");
+            }
+
+            const requiredAmount = rewardWei * BigInt(respondentLimit);
+            const approval = await this.readTokenAllowance(account, quiz_address);
+
+            if (approval < requiredAmount) {
+                hash = await this.approve(account, requiredAmount);
+                if (!hash) {
+                    throw new Error("approve_rejected");
+                }
+                res = await publicClient.waitForTransactionReceipt({ hash });
+            }
+
+            hash = await this._create_quiz(account, title, explanation, thumbnail_url, content, answer_type, answer_data, correct, reply_startline, reply_deadline, rewardWei, respondentLimit);
+            if (!hash) {
+                throw new Error("create_quiz_rejected");
+            }
+            res = await publicClient.waitForTransactionReceipt({ hash });
         } catch (err) {
             console.log(err);
             throw err;

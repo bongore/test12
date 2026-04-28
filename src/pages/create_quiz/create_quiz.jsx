@@ -1,11 +1,11 @@
 import { Contracts_MetaMask } from "../../contract/contracts";
 import Form from "react-bootstrap/Form";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import MDEditor from "@uiw/react-md-editor";
 import Answer_select from "./components/answer_select";
 import Wait_Modal from "../../contract/wait_Modal";
-import { ACTION_TYPES, appendActivityLog } from "../../utils/activityLog";
+import { ACTION_TYPES, appendActivityLog, clearDraft, getDraft, saveDraft } from "../../utils/activityLog";
 import { setRegisteredCorrectAnswer } from "../../utils/quizCorrectAnswerStore";
 import { quiz_address } from "../../contract/config";
 import { MAX_TFT_PER_LECTURE, MAX_TFT_TOTAL, QUIZ_RATE_OPTIONS, TOTAL_LECTURE_COUNT, convertTftToPoint, TFT_PER_POINT } from "../../utils/quizRewardRate";
@@ -13,6 +13,8 @@ import { buildAnswerQuizPath } from "../../utils/quizLinks";
 import { createDefaultQuizContentMeta, withQuizContentMeta } from "../../utils/quizContentMeta";
 import { appendColoredText } from "../../utils/quizEditorHelpers";
 import "./create_quiz.css";
+
+const CREATE_QUIZ_DRAFT_KEY = "create_quiz_form_v1";
 
 function Create_quiz() {
     const navigate = useNavigate();
@@ -37,12 +39,13 @@ function Create_quiz() {
     const [reply_deadline, setReply_deadline] = useState(getLocalizedDateTimeString(addDays(new Date(), 1)));
     const [reward, setReward] = useState(QUIZ_RATE_OPTIONS[0].reward);
 
-    let Contract = new Contracts_MetaMask();
-
     const [correct_limit, setCorrect_limit] = useState(null);
     const [state, setState] = useState("Null");
     const [now, setnow] = useState(null);
     const [show, setShow] = useState(false);
+    const [isDraftLoaded, setIsDraftLoaded] = useState(false);
+
+    const Contract = useMemo(() => new Contracts_MetaMask(), []);
 
     const convertFullWidthNumbersToHalf = (() => {
         const diff = "０".charCodeAt(0) - "0".charCodeAt(0);
@@ -51,6 +54,10 @@ function Create_quiz() {
             , m => String.fromCharCode(m.charCodeAt(0) - diff)
         );
     })();
+
+    const clearCreateQuizDraft = () => {
+        clearDraft(CREATE_QUIZ_DRAFT_KEY);
+    };
 
     const create_quiz = async () => {
         if (correct !== "") {
@@ -89,6 +96,7 @@ function Create_quiz() {
                 if (createdQuizId) {
                     const normalizedQuizId = BigInt(createdQuizId).toString();
                     setRegisteredCorrectAnswer(normalizedQuizId, convertFullWidthNumbersToHalf(correct), quiz_address);
+                    clearCreateQuizDraft();
                     navigate(buildAnswerQuizPath(normalizedQuizId, quiz_address));
                     return;
                 }
@@ -97,6 +105,7 @@ function Create_quiz() {
                 alert(error?.shortMessage || error?.message || "問題作成に失敗しました。MetaMask の承認状態と教員権限を確認してください。");
                 return;
             }
+            clearCreateQuizDraft();
             navigate("/list_quiz");
         } else {
             alert("正解を入力してください");
@@ -135,7 +144,79 @@ function Create_quiz() {
         }
         get_contract();
         setnow(getLocalizedDateTimeString());
+    }, [Contract]);
+
+    useEffect(() => {
+        try {
+            const rawDraft = getDraft(CREATE_QUIZ_DRAFT_KEY);
+            if (!rawDraft) {
+                setIsDraftLoaded(true);
+                return;
+            }
+
+            const parsedDraft = JSON.parse(rawDraft);
+            if (parsedDraft && typeof parsedDraft === "object") {
+                setTitle(String(parsedDraft.title || ""));
+                setExplanation(String(parsedDraft.explanation || ""));
+                setThumbnail_url(String(parsedDraft.thumbnail_url || ""));
+                setContent(String(parsedDraft.content || ""));
+                setAllowMultipleAnswers(Boolean(parsedDraft.allowMultipleAnswers));
+                setHighlightText(String(parsedDraft.highlightText || ""));
+                setAnswer_type(Number(parsedDraft.answer_type || 0));
+                setAnswer_data(Array.isArray(parsedDraft.answer_data) ? parsedDraft.answer_data : []);
+                setCorrect(String(parsedDraft.correct || ""));
+                setScoreTier(String(parsedDraft.scoreTier || QUIZ_RATE_OPTIONS[0].id));
+                setIsManualReward(Boolean(parsedDraft.isManualReward));
+                setReply_startline(String(parsedDraft.reply_startline || getLocalizedDateTimeString()));
+                setReply_deadline(String(parsedDraft.reply_deadline || getLocalizedDateTimeString(addDays(new Date(), 1))));
+                setReward(Number(parsedDraft.reward ?? QUIZ_RATE_OPTIONS[0].reward));
+            }
+        } catch (error) {
+            console.error("Failed to restore create quiz draft", error);
+        } finally {
+            setIsDraftLoaded(true);
+        }
     }, []);
+
+    useEffect(() => {
+        if (!isDraftLoaded) return;
+        try {
+            saveDraft(CREATE_QUIZ_DRAFT_KEY, JSON.stringify({
+                title,
+                explanation,
+                thumbnail_url,
+                content,
+                allowMultipleAnswers,
+                highlightText,
+                answer_type,
+                answer_data,
+                correct,
+                scoreTier,
+                isManualReward,
+                reply_startline,
+                reply_deadline,
+                reward,
+            }));
+        } catch (error) {
+            console.error("Failed to save create quiz draft", error);
+        }
+    }, [
+        isDraftLoaded,
+        title,
+        explanation,
+        thumbnail_url,
+        content,
+        allowMultipleAnswers,
+        highlightText,
+        answer_type,
+        answer_data,
+        correct,
+        scoreTier,
+        isManualReward,
+        reply_startline,
+        reply_deadline,
+        reward,
+    ]);
 
     const selectedRate = QUIZ_RATE_OPTIONS.find((item) => item.id === scoreTier) || QUIZ_RATE_OPTIONS[0];
 
@@ -198,6 +279,8 @@ function Create_quiz() {
                             0.3点 × 2問、0.6点 × 2問、1.2点 × 1問
                             <br />
                             1講義あたり最大 {MAX_TFT_PER_LECTURE}TFT、全{TOTAL_LECTURE_COUNT}回で最大 {MAX_TFT_TOTAL}TFT
+                            <br />
+                            入力内容は自動で下書き保存され、作成成功時に消去されます。
                         </div>
                     </div>
                 </div>
@@ -400,9 +483,9 @@ function Create_quiz() {
                             <Form.Label>🕐 回答開始日時</Form.Label>
                             <Form.Control
                                 type="datetime-local"
-                                defaultValue={now}
+                                value={String(reply_startline || now || "")}
                                 min={now}
-                                onChange={(event) => setReply_startline(new Date(event.target.value))}
+                                onChange={(event) => setReply_startline(event.target.value)}
                             />
                         </Form.Group>
 
@@ -410,9 +493,9 @@ function Create_quiz() {
                             <Form.Label>⏰ 回答締切日時</Form.Label>
                             <Form.Control
                                 type="datetime-local"
-                                defaultValue={reply_deadline}
+                                value={String(reply_deadline || "")}
                                 min={now}
-                                onChange={(event) => setReply_deadline(new Date(event.target.value))}
+                                onChange={(event) => setReply_deadline(event.target.value)}
                             />
                         </Form.Group>
                     </div>
@@ -420,6 +503,17 @@ function Create_quiz() {
 
                 {/* 送信ボタン */}
                 <div className="submit-area">
+                    <button
+                        type="button"
+                        className="btn-ghost"
+                        style={{ marginRight: "12px" }}
+                        onClick={() => {
+                            clearCreateQuizDraft();
+                            window.location.reload();
+                        }}
+                    >
+                        下書きを削除
+                    </button>
                     <button className="btn-submit-quiz" onClick={() => create_quiz()}>
                         🚀 クイズを作成
                     </button>
