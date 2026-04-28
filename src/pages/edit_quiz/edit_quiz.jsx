@@ -279,6 +279,9 @@ function Edit_quiz() {
                                     締切まで複数回回答可
                                 </label>
                             </div>
+                            <div className="content-helper-note">
+                                複数回回答可では、2回目以降に正解した場合の報酬は初回設定の半額になります。
+                            </div>
                         </Form.Group>
                     </div>
 

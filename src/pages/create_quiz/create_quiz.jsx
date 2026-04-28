@@ -425,7 +425,7 @@ function Create_quiz() {
                             </label>
                         </div>
                         <div className="content-helper-note">
-                            複数回回答可を選ぶと、支払い確定前かつ締切前であれば回答内容を更新できます。
+                            複数回回答可を選ぶと、支払い確定前かつ締切前であれば回答内容を更新できます。2回目以降に正解した場合の報酬は初回設定の半額です。
                         </div>
                     </Form.Group>
                 </div>

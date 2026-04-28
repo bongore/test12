@@ -350,6 +350,24 @@ const GET_STUDENT_ANSWER_DETAIL_ABI = {
         { name: "reward", type: "uint256" },
         { name: "result", type: "bool" },
         { name: "submitted", type: "bool" },
+        { name: "attempt_count", type: "uint256" },
+    ],
+};
+const LEGACY_GET_STUDENT_ANSWER_DETAIL_ABI = {
+    type: "function",
+    name: "get_student_answer_detail",
+    stateMutability: "view",
+    inputs: [
+        { name: "quiz_id", type: "uint256" },
+        { name: "student", type: "address" },
+    ],
+    outputs: [
+        { name: "answer_text", type: "string" },
+        { name: "state", type: "uint256" },
+        { name: "answer_time", type: "uint256" },
+        { name: "reward", type: "uint256" },
+        { name: "result", type: "bool" },
+        { name: "submitted", type: "bool" },
     ],
 };
 const GET_REVEALED_CORRECT_ANSWER_ABI = {
@@ -2843,13 +2861,24 @@ class Contracts_MetaMask {
             if (ethereum) {
                 let account = await this.get_address();
                 const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
-                const result = await publicClient.readContract({
-                    account,
-                    address: targetQuizAddress,
-                    abi: [GET_STUDENT_ANSWER_DETAIL_ABI],
-                    functionName: "get_student_answer_detail",
-                    args: [Number(id), student],
-                });
+                let result = null;
+                try {
+                    result = await publicClient.readContract({
+                        account,
+                        address: targetQuizAddress,
+                        abi: [GET_STUDENT_ANSWER_DETAIL_ABI],
+                        functionName: "get_student_answer_detail",
+                        args: [Number(id), student],
+                    });
+                } catch (extendedError) {
+                    result = await publicClient.readContract({
+                        account,
+                        address: targetQuizAddress,
+                        abi: [LEGACY_GET_STUDENT_ANSWER_DETAIL_ABI],
+                        functionName: "get_student_answer_detail",
+                        args: [Number(id), student],
+                    });
+                }
 
                 return {
                     answerText: String(result?.[0] || ""),
@@ -2858,6 +2887,7 @@ class Contracts_MetaMask {
                     reward: Number(result?.[3] || 0),
                     result: Boolean(result?.[4]),
                     submitted: Boolean(result?.[5]),
+                    attemptCount: Number(result?.[6] || 0),
                 };
             } else {
                 console.log("Ethereum object does not exists");
@@ -2873,6 +2903,7 @@ class Contracts_MetaMask {
                     reward: 0,
                     result: false,
                     submitted: Boolean(answerHash && String(answerHash) !== "0x0000000000000000000000000000000000000000000000000000000000000000"),
+                    attemptCount: 0,
                 };
             } catch (fallbackError) {
                 console.log(fallbackError);
@@ -2885,6 +2916,7 @@ class Contracts_MetaMask {
             reward: 0,
             result: false,
             submitted: false,
+            attemptCount: 0,
         };
     }
 

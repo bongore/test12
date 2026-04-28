@@ -62,6 +62,26 @@ function buildActorDirectory(students, staffs) {
     return directory;
 }
 
+function buildQuizDirectory(quizzes = []) {
+    return (Array.isArray(quizzes) ? quizzes : []).reduce((directory, quiz) => {
+        const quizId = String(Number(quiz?.[0] || 0));
+        const sourceAddress = normalizeAddress(quiz?.sourceAddress || quiz?.[12] || "");
+        const specificKey = `${sourceAddress}:${quizId}`;
+        const fallbackKey = `:${quizId}`;
+        const title = String(quiz?.[2] || `問題 ${quizId}`);
+        directory[specificKey] = {
+            id: quizId,
+            title,
+            sourceAddress,
+            rewardTft: Number(quiz?.[7] || 0) / 10 ** 18,
+        };
+        if (!directory[fallbackKey]) {
+            directory[fallbackKey] = directory[specificKey];
+        }
+        return directory;
+    }, {});
+}
+
 function resolveActorMeta(log, directory) {
     const candidate = normalizeAddress(log.actor && !String(log.actor).startsWith("guest:") ? log.actor : (log.address || ""));
     if (candidate && directory[candidate]) {
@@ -91,6 +111,28 @@ function resolveActorMeta(log, directory) {
     };
 }
 
+function resolveQuizMeta(log, quizDirectory) {
+    const quizId = String(log.quizId || "").trim();
+    if (!quizId) {
+        return {
+            id: "",
+            title: "-",
+            sourceAddress: "",
+            rewardTft: 0,
+        };
+    }
+
+    const sourceAddress = normalizeAddress(log.sourceAddress || "");
+    const exact = quizDirectory[`${sourceAddress}:${quizId}`];
+    const fallback = quizDirectory[`:${quizId}`];
+    return exact || fallback || {
+        id: quizId,
+        title: `問題 ${quizId}`,
+        sourceAddress,
+        rewardTft: 0,
+    };
+}
+
 function stringifyDetails(log) {
     const ignored = new Set([
         "id", "action", "actor", "createdAt", "sessionId", "route", "url", "referrer",
@@ -107,8 +149,10 @@ function stringifyDetails(log) {
 function deriveCategory(action) {
     if (!action) return "other";
     if (action.startsWith("login_") || action.startsWith("wallet_")) return "login";
-    if (action.startsWith("answer_") || action.startsWith("quiz_")) return "answer";
-    if (action.startsWith("live_")) return "live";
+    if (action.startsWith("quiz_")) return "quiz";
+    if (action.startsWith("answer_")) return "answer";
+    if (action.startsWith("live_")) return "board";
+    if (action.startsWith("admin_")) return "admin";
     if (action.startsWith("route_") || action.startsWith("app_")) return "system";
     if (action.startsWith("performance_") || action.startsWith("export_")) return "ops";
     return "other";
@@ -117,8 +161,10 @@ function deriveCategory(action) {
 function formatCategoryLabel(category) {
     switch (category) {
         case "login": return "ログイン";
+        case "quiz": return "問題表示";
         case "answer": return "解答";
-        case "live": return "ライブ";
+        case "board": return "掲示板";
+        case "admin": return "管理操作";
         case "system": return "画面遷移";
         case "ops": return "運用";
         default: return "その他";
@@ -175,6 +221,49 @@ function groupActorActivity(logs) {
         .sort((a, b) => b.count - a.count);
 }
 
+function buildActorLogSections(logs) {
+    const map = new Map();
+
+    logs.forEach((log) => {
+        const key = log.actorMeta.internalId;
+        const current = map.get(key) || {
+            actorMeta: log.actorMeta,
+            logs: [],
+            quizTitles: new Set(),
+            categories: new Set(),
+        };
+
+        current.logs.push(log);
+        current.categories.add(formatCategoryLabel(log.category));
+        if (log.quizMeta?.title && log.quizMeta.title !== "-") {
+            current.quizTitles.add(log.quizMeta.title);
+        }
+        map.set(key, current);
+    });
+
+    return [...map.values()]
+        .map((item) => {
+            const answerLogs = item.logs.filter((log) => log.category === "answer");
+            const solveDurations = answerLogs
+                .map((log) => Number(log.solvingDurationSeconds || 0))
+                .filter((value) => Number.isFinite(value) && value > 0);
+            const averageSolveSeconds = solveDurations.length
+                ? Math.round(solveDurations.reduce((sum, value) => sum + value, 0) / solveDurations.length)
+                : 0;
+
+            return {
+                actorMeta: item.actorMeta,
+                logs: item.logs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
+                quizTitles: [...item.quizTitles],
+                categories: [...item.categories],
+                totalCount: item.logs.length,
+                averageSolveSeconds,
+                latestAt: item.logs.reduce((latest, log) => (log.createdAt > latest ? log.createdAt : latest), ""),
+            };
+        })
+        .sort((a, b) => b.totalCount - a.totalCount);
+}
+
 function Analytics_dashboard({ cont }) {
     const [refreshKey, setRefreshKey] = useState(0);
     const [actionFilter, setActionFilter] = useState("all");
@@ -186,6 +275,7 @@ function Analytics_dashboard({ cont }) {
     const [selectedLogId, setSelectedLogId] = useState("");
     const [students, setStudents] = useState([]);
     const [staffs, setStaffs] = useState([]);
+    const [quizzes, setQuizzes] = useState([]);
     const logs = getActivityLogs();
 
     useEffect(() => {
@@ -193,18 +283,21 @@ function Analytics_dashboard({ cont }) {
 
         const loadActors = async () => {
             try {
-                const [studentList, staffList] = await Promise.all([
+                const [studentList, staffList, quizList] = await Promise.all([
                     cont?.get_student_list?.(),
                     cont?.get_teachers?.(),
+                    cont?.get_all_quiz_simple_list?.(),
                 ]);
                 if (!mounted) return;
                 setStudents(Array.isArray(studentList) ? studentList : []);
                 setStaffs(Array.isArray(staffList) ? staffList : []);
+                setQuizzes(Array.isArray(quizList) ? quizList : []);
             } catch (error) {
                 console.error("Failed to load actor directory", error);
                 if (!mounted) return;
                 setStudents([]);
                 setStaffs([]);
+                setQuizzes([]);
             }
         };
 
@@ -215,17 +308,19 @@ function Analytics_dashboard({ cont }) {
     }, [cont]);
 
     const actorDirectory = useMemo(() => buildActorDirectory(students, staffs), [students, staffs]);
+    const quizDirectory = useMemo(() => buildQuizDirectory(quizzes), [quizzes]);
 
     const enrichedLogs = useMemo(() => logs
         .map((log) => ({
             ...log,
             actorMeta: resolveActorMeta(log, actorDirectory),
+            quizMeta: resolveQuizMeta(log, quizDirectory),
             category: deriveCategory(log.action),
         }))
         .filter((log) => (
             log.actorMeta
             && !HIDDEN_ANALYTICS_ACTIONS.has(log.action)
-        )), [logs, actorDirectory]);
+        )), [logs, actorDirectory, quizDirectory]);
 
     const summary = useMemo(() => {
         const loginSuccess = enrichedLogs.filter((log) => log.action === ACTION_TYPES.LOGIN_SUCCESS).length;
@@ -318,6 +413,15 @@ function Analytics_dashboard({ cont }) {
     }, [enrichedLogs, categoryFilter, actionFilter, pageFilter, roleFilter, actorFilter, searchTerm]);
 
     const actorSummary = useMemo(() => groupActorActivity(filteredLogs), [filteredLogs]);
+    const actorSections = useMemo(() => buildActorLogSections(filteredLogs), [filteredLogs]);
+    const registeredActorSections = useMemo(
+        () => actorSections.filter((section) => ["admin", "teacher", "student"].includes(section.actorMeta.role)),
+        [actorSections]
+    );
+    const extraActorSections = useMemo(
+        () => actorSections.filter((section) => !["admin", "teacher", "student"].includes(section.actorMeta.role)),
+        [actorSections]
+    );
 
     useEffect(() => {
         if (!filteredLogs.length) {
@@ -466,7 +570,7 @@ function Analytics_dashboard({ cont }) {
                                     <div className="analytics-log-meta">
                                         <span>{log.actorMeta.internalId}</span>
                                         <span>{log.page || "-"}</span>
-                                        <span>{log.quizId || "-"}</span>
+                                        <span>{log.quizMeta?.title || (log.quizId || "-")}</span>
                                     </div>
                                     <div className="analytics-log-preview">{stringifyDetails(log) || "詳細なし"}</div>
                                 </button>
@@ -490,7 +594,7 @@ function Analytics_dashboard({ cont }) {
                                 <div className="analytics-detail-card"><div className="analytics-label">識別補足</div><div className="analytics-detail-value">{selectedLog.actorMeta.actorHint || "-"}</div></div>
                                 <div className="analytics-detail-card"><div className="analytics-label">ウォレット</div><div className="analytics-detail-value analytics-text">{selectedLog.actorMeta.address}</div></div>
                                 <div className="analytics-detail-card"><div className="analytics-label">ページ</div><div className="analytics-detail-value">{selectedLog.page || "-"}</div></div>
-                                <div className="analytics-detail-card"><div className="analytics-label">対象ID</div><div className="analytics-detail-value">{selectedLog.quizId || "-"}</div></div>
+                                <div className="analytics-detail-card"><div className="analytics-label">対象問題</div><div className="analytics-detail-value">{selectedLog.quizMeta?.title || selectedLog.quizId || "-"}</div></div>
                                 <div className="analytics-detail-card"><div className="analytics-label">経過時間</div><div className="analytics-detail-value">{selectedLog.durationMs || selectedLog.submitDurationMs || "-"}</div></div>
                             </div>
                         ) : (
@@ -517,6 +621,88 @@ function Analytics_dashboard({ cont }) {
                                 </div>
                             </div>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {registeredActorSections.length > 0 && (
+                <div className="analytics-detail-block">
+                    <div className="analytics-label">登録ユーザー別ログ</div>
+                    <div className="analytics-accordion-list">
+                        {registeredActorSections.map((section) => (
+                            <details key={section.actorMeta.internalId} className="analytics-accordion-item">
+                                <summary className="analytics-accordion-summary">
+                                    <div>
+                                        <strong>{section.actorMeta.internalId}</strong>
+                                        <div className="analytics-actor-meta">
+                                            {section.actorMeta.roleLabel} / {section.actorMeta.actorHint || formatShortAddress(section.actorMeta.address)}
+                                        </div>
+                                    </div>
+                                    <div className="analytics-accordion-summary-meta">
+                                        <span>{section.totalCount} 件</span>
+                                        <span>{section.averageSolveSeconds > 0 ? `平均 ${section.averageSolveSeconds}秒` : "平均ログなし"}</span>
+                                        <span>{formatDateTime(section.latestAt)}</span>
+                                    </div>
+                                </summary>
+                                <div className="analytics-accordion-body">
+                                    <div className="analytics-actor-meta" style={{ marginBottom: "10px" }}>
+                                        カテゴリ: {section.categories.join(" / ") || "-"}
+                                    </div>
+                                    <div className="analytics-actor-meta" style={{ marginBottom: "10px" }}>
+                                        関連問題: {section.quizTitles.length ? section.quizTitles.join(" / ") : "なし"}
+                                    </div>
+                                    <div className="analytics-mini-table">
+                                        {section.logs.slice(0, 40).map((log) => (
+                                            <div key={log.id} className="analytics-mini-row" style={{ alignItems: "start" }}>
+                                                <span style={{ maxWidth: "75%" }}>
+                                                    {formatDateTime(log.createdAt)} / {formatActionLabel(log.action)}
+                                                    <br />
+                                                    {log.quizMeta?.title && log.quizMeta.title !== "-" ? `${log.quizMeta.title} / ` : ""}
+                                                    {stringifyDetails(log) || "詳細なし"}
+                                                </span>
+                                                <strong>{formatCategoryLabel(log.category)}</strong>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </details>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {extraActorSections.length > 0 && (
+                <div className="analytics-detail-block">
+                    <div className="analytics-label">未登録・一時ユーザーのログ</div>
+                    <div className="analytics-accordion-list">
+                        {extraActorSections.map((section) => (
+                            <details key={section.actorMeta.internalId} className="analytics-accordion-item">
+                                <summary className="analytics-accordion-summary">
+                                    <div>
+                                        <strong>{section.actorMeta.internalId}</strong>
+                                        <div className="analytics-actor-meta">{section.actorMeta.roleLabel}</div>
+                                    </div>
+                                    <div className="analytics-accordion-summary-meta">
+                                        <span>{section.totalCount} 件</span>
+                                        <span>{formatDateTime(section.latestAt)}</span>
+                                    </div>
+                                </summary>
+                                <div className="analytics-accordion-body">
+                                    <div className="analytics-mini-table">
+                                        {section.logs.slice(0, 20).map((log) => (
+                                            <div key={log.id} className="analytics-mini-row" style={{ alignItems: "start" }}>
+                                                <span style={{ maxWidth: "75%" }}>
+                                                    {formatDateTime(log.createdAt)} / {formatActionLabel(log.action)}
+                                                    <br />
+                                                    {stringifyDetails(log) || "詳細なし"}
+                                                </span>
+                                                <strong>{formatCategoryLabel(log.category)}</strong>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </details>
+                        ))}
                     </div>
                 </div>
             )}

@@ -49,6 +49,7 @@ contract Quiz_Dapp {
         string confirm_answer;
         mapping(address => uint) respondents_map;
         mapping(address => uint) respondents_state;
+        mapping(address => uint) respondent_attempt_counts;
         Answer[] answers;
         mapping(address => bytes32) students_answer_hashs;
     }
@@ -270,6 +271,7 @@ contract Quiz_Dapp {
     function save_answer(uint quiz_id, string memory answer) public returns (uint answer_id) {
         Quiz storage quiz = quizs[quiz_id];
         require(class_room._isStudent(msg.sender) || class_room._isTeacher(msg.sender), "auth");
+        require(!quiz.is_payment, "paid");
         require(quiz.start_time_epoch <= block.timestamp, "start");
         require(quiz.time_limit_epoch >= block.timestamp, "closed");
 
@@ -277,9 +279,12 @@ contract Quiz_Dapp {
 
         if (quiz.respondents_map[msg.sender] == 0) {
             quiz.respondent_count += 1;
-            quiz.students_answer_hashs[msg.sender] = answer_hash;
             users[msg.sender].answer_count += 1;
+            quiz.respondent_attempt_counts[msg.sender] = 1;
+        } else {
+            quiz.respondent_attempt_counts[msg.sender] += 1;
         }
+        quiz.students_answer_hashs[msg.sender] = answer_hash;
 
         answer_id = quiz.answers.length;
         quiz.respondents_state[msg.sender] = answer_id;
@@ -302,6 +307,7 @@ contract Quiz_Dapp {
         quiz.students_answer_hashs[msg.sender] = bytes32(0);
         quiz.respondents_map[msg.sender] = 0;
         quiz.respondents_state[msg.sender] = 0;
+        quiz.respondent_attempt_counts[msg.sender] = 0;
 
         if (answer_id < quiz.answers.length && quiz.answers[answer_id].respondent == msg.sender) {
             quiz.answers[answer_id].respondent = address(0);
@@ -322,20 +328,22 @@ contract Quiz_Dapp {
             uint answer_time,
             uint reward,
             bool result,
-            bool submitted
+            bool submitted,
+            uint attempt_count
         )
     {
         Quiz storage quiz = quizs[quiz_id];
         state = quiz.respondents_map[student];
         submitted = state != 0;
+        attempt_count = quiz.respondent_attempt_counts[student];
 
         if (!submitted) {
-            return ("", 0, 0, 0, false, false);
+            return ("", 0, 0, 0, false, false, 0);
         }
 
         uint answer_id = quiz.respondents_state[student];
         if (answer_id >= quiz.answers.length || quiz.answers[answer_id].respondent != student) {
-            return ("", state, 0, 0, false, true);
+            return ("", state, 0, 0, false, true, attempt_count);
         }
 
         Answer storage answer_data = quiz.answers[answer_id];
@@ -343,6 +351,14 @@ contract Quiz_Dapp {
         answer_time = answer_data.answer_time;
         reward = answer_data.reward;
         result = answer_data.result;
+    }
+
+    function _resolve_reward_for_student(Quiz storage quiz, address student) internal view returns (uint resolved_reward) {
+        uint attempt_count = quiz.respondent_attempt_counts[student];
+        if (attempt_count <= 1) {
+            return quiz.reward;
+        }
+        return quiz.reward / 2;
     }
 
     function _settle_reward_for_student(
@@ -362,7 +378,7 @@ contract Quiz_Dapp {
         bool result = false;
 
         if (answer_hash == student_answer_hash) {
-            reward = quiz.reward;
+            reward = _resolve_reward_for_student(quiz, student);
             users[student].result += reward;
             token.transfer_explanation(student, reward, "correct answer");
             quiz.respondents_map[student] = 2;
@@ -396,7 +412,7 @@ contract Quiz_Dapp {
 
         if (is_correct) {
             if (previousState != 2) {
-                reward = quiz.reward;
+                reward = _resolve_reward_for_student(quiz, student);
                 users[student].result += reward;
                 token.transfer_explanation(student, reward, "correct answer");
             } else if (answer_id < quiz.answers.length) {

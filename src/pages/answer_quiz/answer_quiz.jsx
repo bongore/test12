@@ -285,6 +285,8 @@ function Answer_quiz() {
             appendActivityLog(ACTION_TYPES.QUIZ_LOAD_SUCCESS, {
                 page: "answer_quiz",
                 quizId: id,
+                quizTitle: quizData?.[2] || "",
+                sourceAddress: resolvedSource || "",
                 durationMs,
             });
             appendActivityLog(ACTION_TYPES.PERFORMANCE_SAMPLE, {
@@ -317,6 +319,7 @@ function Answer_quiz() {
             appendActivityLog(ACTION_TYPES.ANSWER_BLOCKED_BEFORE_START, {
                 page: "answer_quiz",
                 quizId: id,
+                quizTitle: quiz?.[2] || "",
                 now: currentEpoch,
                 replyStart: startEpoch,
                 practiceMode: isPracticeMode,
@@ -341,6 +344,7 @@ function Answer_quiz() {
             appendActivityLog(ACTION_TYPES.ANSWER_PRACTICE_SUBMITTED, {
                 page: "answer_quiz",
                 quizId: id,
+                quizTitle: quiz?.[2] || "",
                 answerLength: finalAnswer.length,
                 isCorrect,
             });
@@ -385,6 +389,8 @@ function Answer_quiz() {
         appendActivityLog(ACTION_TYPES.ANSWER_SUBMIT_CLICKED, {
             page: "answer_quiz",
             quizId: id,
+            quizTitle: quiz?.[2] || "",
+            sourceAddress,
             answerLength: finalAnswer.length,
             answerType: Number(quiz[13]) === 0 ? "choice" : "text",
         });
@@ -402,6 +408,9 @@ function Answer_quiz() {
             appendActivityLog(ACTION_TYPES.ANSWER_SUBMITTED, {
                 page: "answer_quiz",
                 quizId: id,
+                quizTitle: quiz?.[2] || "",
+                sourceAddress,
+                rewardPolicy: allowMultipleAnswers ? "repeat_half_after_first" : "single_full_reward",
                 answerLength: finalAnswer.length,
                 answerType: Number(quiz[13]) === 0 ? "choice" : "text",
                 openedAt: new Date(pageOpenedAtRef.current).toISOString(),
@@ -418,6 +427,8 @@ function Answer_quiz() {
             appendActivityLog(ACTION_TYPES.ANSWER_SUBMIT_FAILED, {
                 page: "answer_quiz",
                 quizId: id,
+                quizTitle: quiz?.[2] || "",
+                sourceAddress,
                 answerLength: finalAnswer.length,
                 errorMessage: error?.message || "answer_submit_failed",
                 submitDurationMs: Math.round(performance.now() - startedAt),
@@ -584,6 +595,11 @@ function Answer_quiz() {
                     <span className="reward-edit-summary" style={{ marginTop: 0 }}>
                         <span>回答設定: {allowMultipleAnswers ? "複数回回答可" : "初回のみ"}</span>
                     </span>
+                    {allowMultipleAnswers ? (
+                        <span className="reward-edit-summary" style={{ marginTop: 0 }}>
+                            <span>2回目以降に正解した場合の報酬は半額です</span>
+                        </span>
+                    ) : null}
                     {isBeforeStart ? (
                         <span className="reward-edit-summary" style={{ marginTop: 0 }}>
                             <span>回答開始前です</span>

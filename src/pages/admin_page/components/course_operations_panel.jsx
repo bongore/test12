@@ -29,6 +29,7 @@ function Course_operations_panel({ cont }) {
     const [students, setStudents] = useState([]);
     const [quizzes, setQuizzes] = useState([]);
     const [snapshot, setSnapshot] = useState(() => getCourseEnhancementSnapshot());
+    const [showAllWeakness, setShowAllWeakness] = useState(false);
 
     useEffect(() => {
         appendActivityLog(ACTION_TYPES.ADMIN_TA_HELPER_VIEWED, { page: "admin", panel: "course_operations" });
@@ -167,17 +168,27 @@ function Course_operations_panel({ cont }) {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {weaknessSummary.quizzes.slice(0, 8).map((item) => (
+                                    {(showAllWeakness ? weaknessSummary.quizzes : weaknessSummary.quizzes.slice(0, 8)).map((item) => (
                                         <tr key={item.quizId}>
-                                            <td>{item.title}</td>
+                                            <td>#{item.quizId} {item.title}</td>
                                             <td>{item.responseRate}%</td>
                                             <td>{item.respondents}</td>
-                                            <td>{item.avgDuration || "-"}</td>
+                                            <td>{item.avgDurationLabel}</td>
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
                         </div>
+                        {weaknessSummary.quizzes.length > 8 ? (
+                            <button
+                                type="button"
+                                className="btn-action"
+                                style={{ marginTop: "12px" }}
+                                onClick={() => setShowAllWeakness((current) => !current)}
+                            >
+                                {showAllWeakness ? "問題一覧を折りたたむ" : `すべての問題を表示 (${weaknessSummary.quizzes.length}件)`}
+                            </button>
+                        ) : null}
                     </div>
 
                     <div className="analytics-detail-block">

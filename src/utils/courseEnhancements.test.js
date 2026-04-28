@@ -3,6 +3,7 @@ import {
     buildExtendedCsvData,
     buildFraudAlerts,
     buildReviewList,
+    buildWeaknessSummary,
     getAnnouncements,
     getPracticeAttempts,
     publishAnnouncement,
@@ -111,5 +112,31 @@ describe("courseEnhancements utilities", () => {
         ]);
         expect(csvData.gradeRows).toContainEqual(["0xuser", "1.6", "3", "3", "2"]);
         expect(csvData.reactionRows).toContainEqual(["第3回", "2026-04-07T09:00:00.000Z", "2026-04-07T10:30:00.000Z", "10", "2", "1", "0"]);
+    });
+
+    test("builds weakness summary for all quizzes and keeps avg duration labels", () => {
+        const summary = buildWeaknessSummary({
+            quizzes: [
+                [1, "", "第1問", "", "", "", "", 0, 4, 10, 0],
+                [2, "", "第2問", "", "", "", "", 0, 0, 10, 0],
+            ],
+            logs: [
+                { action: "answer_submitted", quizId: "1", solvingDurationSeconds: 12 },
+                { action: "answer_submitted", quizId: "1", totalDurationSeconds: 18 },
+            ],
+            reactionHistory: [],
+        });
+
+        expect(summary.quizzes).toHaveLength(2);
+        expect(summary.quizzes.find((item) => item.quizId === "1")).toMatchObject({
+            avgDuration: 15,
+            avgDurationLabel: "15秒",
+            submissionCount: 2,
+        });
+        expect(summary.quizzes.find((item) => item.quizId === "2")).toMatchObject({
+            avgDuration: 0,
+            avgDurationLabel: "ログなし",
+            submissionCount: 0,
+        });
     });
 });

@@ -216,8 +216,17 @@ function buildWeaknessSummary({ quizzes = [], logs = [], reactionHistory = [] })
     const byQuiz = quizzes.map((quiz) => {
         const quizId = String(Number(quiz?.[0] ?? ""));
         const submissions = answerLogs.filter((log) => String(log.quizId || "") === quizId);
-        const avgDuration = submissions.length
-            ? Math.round(submissions.reduce((sum, item) => sum + Number(item.solvingDurationSeconds || 0), 0) / submissions.length)
+        const durations = submissions
+            .map((item) => {
+                const solvingDuration = Number(item.solvingDurationSeconds || 0);
+                if (Number.isFinite(solvingDuration) && solvingDuration > 0) return solvingDuration;
+                const totalDuration = Number(item.totalDurationSeconds || 0);
+                if (Number.isFinite(totalDuration) && totalDuration > 0) return totalDuration;
+                return 0;
+            })
+            .filter((value) => Number.isFinite(value) && value > 0);
+        const avgDuration = durations.length
+            ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length)
             : 0;
 
         return {
@@ -228,12 +237,17 @@ function buildWeaknessSummary({ quizzes = [], logs = [], reactionHistory = [] })
             statusCount: Number(quiz?.[10] || 0),
             reward: Number(quiz?.[7] || 0) / 10 ** 18,
             avgDuration,
+            avgDurationLabel: avgDuration > 0 ? `${avgDuration}秒` : "ログなし",
+            submissionCount: submissions.length,
             responseRate: Number(quiz?.[9] || 0) > 0 ? Math.round((Number(quiz?.[8] || 0) / Number(quiz?.[9] || 1)) * 100) : 0,
         };
     });
 
     return {
-        quizzes: byQuiz.sort((a, b) => a.responseRate - b.responseRate),
+        quizzes: byQuiz.sort((a, b) => {
+            if (a.responseRate !== b.responseRate) return a.responseRate - b.responseRate;
+            return Number(a.quizId) - Number(b.quizId);
+        }),
         reactionHistory,
     };
 }

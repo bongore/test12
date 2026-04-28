@@ -140,6 +140,7 @@ function View_answers() {
             const answerData = quizData[6] || ""; // answer_data (カンマ区切りの選択肢)
             const answerOptions = answerData.split(",");
             const answerType = Number(quizData[13]); // answer_type: 0=選択式, 1=記述式
+            const rewardTft = Number(quizData[10] || 0) / 10 ** 18;
 
             // 生徒一覧を取得
             const students = await contract.get_student_list();
@@ -170,6 +171,8 @@ function View_answers() {
                         state: Number(detail?.state || 0),
                         reward: Number(detail?.reward || 0),
                         result: Boolean(detail?.result),
+                        attemptCount: Number(detail?.attemptCount || 0),
+                        rewardPreviewTft: Number(detail?.attemptCount || 0) > 1 ? rewardTft / 2 : rewardTft,
                     });
                 }
                 setAnswers(result);
@@ -268,6 +271,7 @@ function View_answers() {
                                         <th style={{ width: "50px" }}>#</th>
                                         <th>ウォレットアドレス</th>
                                         <th>回答内容</th>
+                                        <th>試行回数</th>
                                         <th>判定</th>
                                         <th>報酬</th>
                                     </tr>
@@ -287,10 +291,17 @@ function View_answers() {
                                             }}>
                                                 {item.answer || "未回答"}
                                             </td>
+                                            <td>{item.attemptCount || 0}</td>
                                             <td>
                                                 {item.state === 2 ? "正解" : item.state === 1 ? "不正解" : item.state === 3 ? "回答済み" : "未回答"}
                                             </td>
-                                            <td>{Number(item.reward || 0) / 10 ** 18} TFT</td>
+                                            <td>
+                                                {Number(item.reward || 0) > 0
+                                                    ? `${Number(item.reward || 0) / 10 ** 18} TFT`
+                                                    : item.attemptCount > 0
+                                                        ? `予定 ${item.rewardPreviewTft} TFT`
+                                                        : "-"}
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -310,6 +321,7 @@ function View_answers() {
                                 <span>👥 全生徒: <strong style={{ color: "#fff" }}>{answers.length}人</strong></span>
                                 <span>✅ 回答済: <strong style={{ color: "#4caf50" }}>{answers.filter(a => a.answer).length}人</strong></span>
                                 <span>⬜ 未回答: <strong style={{ color: "#ff9800" }}>{answers.filter(a => !a.answer).length}人</strong></span>
+                                <span>🔁 複数回答: <strong style={{ color: "#ffd27d" }}>{answers.filter((a) => Number(a.attemptCount || 0) > 1).length}人</strong></span>
                             </div>
                         </div>
                     ) : (
