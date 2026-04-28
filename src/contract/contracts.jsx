@@ -1779,16 +1779,15 @@ class Contracts_MetaMask {
     }
 
     async get_quiz_all_data(id, sourceAddress = "") {
+        const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
         const [quizData, answerType, simpleData] = await Promise.all([
             this.get_quiz(id, sourceAddress),
-            this.resolveQuizAddress(sourceAddress) === quiz_address
-                ? quiz.read.get_quiz_answer_type({ args: [id] })
-                : publicClient.readContract({
-                    address: this.resolveQuizAddress(sourceAddress),
-                    abi: quiz_abi,
-                    functionName: "get_quiz_answer_type",
-                    args: [id],
-                }),
+            publicClient.readContract({
+                address: targetQuizAddress,
+                abi: quiz_abi,
+                functionName: "get_quiz_answer_type",
+                args: [id],
+            }),
             this.get_quiz_simple(id, sourceAddress),
         ]);
         return [
@@ -1811,14 +1810,10 @@ class Contracts_MetaMask {
 
     async get_quiz(id, sourceAddress = "") {
         const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
-        const targetQuizContract = targetQuizAddress === quiz_address ? quiz : null;
+        const account = normalizeReadAccount(await this.get_address());
         const [answer_typr, res, res2, registeredCorrectAnswer] = await Promise.all([
-            targetQuizContract
-                ? targetQuizContract.read.get_quiz_answer_type({ args: [id] })
-                : publicClient.readContract({ address: targetQuizAddress, abi: quiz_abi, functionName: "get_quiz_answer_type", args: [id] }),
-            targetQuizContract
-                ? targetQuizContract.read.get_quiz({ args: [id] })
-                : publicClient.readContract({ address: targetQuizAddress, abi: quiz_abi, functionName: "get_quiz", args: [id] }),
+            publicClient.readContract({ account, address: targetQuizAddress, abi: quiz_abi, functionName: "get_quiz_answer_type", args: [id] }),
+            publicClient.readContract({ account, address: targetQuizAddress, abi: quiz_abi, functionName: "get_quiz", args: [id] }),
             this.get_confirm_answer(id, targetQuizAddress),
             this.get_revealed_correct_answer(id, targetQuizAddress),
         ]);
@@ -1855,15 +1850,9 @@ class Contracts_MetaMask {
     async get_quiz_simple(id, sourceAddress = "") {
         try {
             const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
-            const account = await this.get_address();
-            if (targetQuizAddress === quiz_address) {
-                if (account) {
-                    return withQuizSourceMetadata(toQuizSimpleArray(await quiz.read.get_quiz_simple({ account, args: [id] })), targetQuizAddress);
-                }
-                return withQuizSourceMetadata(toQuizSimpleArray(await quiz.read.get_quiz_simple({ args: [id] })), targetQuizAddress);
-            }
+            const account = normalizeReadAccount(await this.get_address());
             const result = await publicClient.readContract({
-                account: account || undefined,
+                account,
                 address: targetQuizAddress,
                 abi: quiz_abi,
                 functionName: "get_quiz_simple",
@@ -1878,9 +1867,6 @@ class Contracts_MetaMask {
 
     async get_is_payment(id, sourceAddress = "") {
         const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
-        if (targetQuizAddress === quiz_address) {
-            return await quiz.read.get_is_payment({ args: [id] });
-        }
         return await publicClient.readContract({
             address: targetQuizAddress,
             abi: quiz_abi,
@@ -1891,9 +1877,6 @@ class Contracts_MetaMask {
 
     async get_confirm_answer(id, sourceAddress = "") {
         const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
-        if (targetQuizAddress === quiz_address) {
-            return await quiz.read.get_confirm_answer({ args: [id] });
-        }
         return await publicClient.readContract({
             address: targetQuizAddress,
             abi: quiz_abi,
@@ -1971,9 +1954,6 @@ class Contracts_MetaMask {
         try {
             const targetQuizAddress = sourceAddress ? this.resolveQuizAddress(sourceAddress) : "";
             if (targetQuizAddress) {
-                if (targetQuizAddress === quiz_address) {
-                    return await quiz.read.get_quiz_length();
-                }
                 return await publicClient.readContract({
                     address: targetQuizAddress,
                     abi: quiz_abi,
