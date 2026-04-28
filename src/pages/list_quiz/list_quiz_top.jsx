@@ -5,7 +5,7 @@ import Quiz_list from "./components/quiz_list";
 import { useAccessControl } from "../../utils/accessControl";
 import { toGlobalId } from "../../utils/quizGlobalId";
 import { getRegisteredCorrectAnswer } from "../../utils/quizCorrectAnswerStore";
-import { getCreatedQuizzes, getDeletedQuizzes, normalizeDeletedQuizKey, removeCreatedQuiz, saveDeletedQuiz } from "../../utils/liveSignalApi";
+import { getCreatedQuizzes, getDeletedQuizCacheSnapshot, getDeletedQuizzes, normalizeDeletedQuizKey, removeCreatedQuiz, saveDeletedQuiz } from "../../utils/liveSignalApi";
 import { getPendingCreatedQuizzes, pruneResolvedPendingCreatedQuizzes, subscribePendingCreatedQuizzes, toPendingQuizSimple } from "../../utils/pendingCreatedQuizzes";
 import "./list_quiz_top.css";
 
@@ -20,7 +20,7 @@ function List_quiz_top(props) {
     const [currentEpoch, setCurrentEpoch] = useState(() => Math.floor(Date.now() / 1000));
     const [correctAnswerMap, setCorrectAnswerMap] = useState({});
     const [loadError, setLoadError] = useState("");
-    const [deletedQuizMap, setDeletedQuizMap] = useState({});
+    const [deletedQuizMap, setDeletedQuizMap] = useState(() => getDeletedQuizCacheSnapshot());
     const [pendingCreatedQuizzes, setPendingCreatedQuizzes] = useState([]);
     const [listRefreshKey, setListRefreshKey] = useState(0);
     const targetRef = useRef(null);

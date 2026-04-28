@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import Simple_quiz from "./components/quiz_simple";
 import Quiz_list from "./components/quiz_list";
 import { useAccessControl } from "../../utils/accessControl";
-import { getCreatedQuizzes, getDeletedQuizzes, normalizeDeletedQuizKey, removeCreatedQuiz, removeDeletedQuiz, saveDeletedQuiz } from "../../utils/liveSignalApi";
+import { getCreatedQuizzes, getDeletedQuizCacheSnapshot, getDeletedQuizzes, normalizeDeletedQuizKey, removeCreatedQuiz, removeDeletedQuiz, saveDeletedQuiz } from "../../utils/liveSignalApi";
 import { getPendingCreatedQuizzes, pruneResolvedPendingCreatedQuizzes, subscribePendingCreatedQuizzes, toPendingQuizSimple } from "../../utils/pendingCreatedQuizzes";
 import "./edit_list_top.css";
 
@@ -16,7 +16,7 @@ function Edit_list_top(props) {
     const [quiz_list, Set_quiz_list] = useState([]);
     const [add_num, Set_add_num] = useState(7);
     const [loadError, setLoadError] = useState("");
-    const [deletedQuizMap, setDeletedQuizMap] = useState({});
+    const [deletedQuizMap, setDeletedQuizMap] = useState(() => getDeletedQuizCacheSnapshot());
     const [pendingCreatedQuizzes, setPendingCreatedQuizzes] = useState([]);
     const [listRefreshKey, setListRefreshKey] = useState(0);
     const quizSumRef = useRef(0);

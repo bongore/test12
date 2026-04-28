@@ -104,6 +104,10 @@ function readDeletedQuizCache() {
     }
 }
 
+function getDeletedQuizCacheSnapshot() {
+    return readDeletedQuizCache();
+}
+
 function writeDeletedQuizCache(nextMap = {}) {
     try {
         if (typeof localStorage === "undefined") return;
@@ -345,6 +349,7 @@ export {
     getLiveSignalApiBaseUrl,
     getLiveSignalWebSocketUrl,
     fetchLiveSignalJson,
+    getDeletedQuizCacheSnapshot,
     getCreatedQuizzes,
     getDeletedQuizzes,
     removeCreatedQuiz,
