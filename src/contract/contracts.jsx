@@ -375,6 +375,15 @@ const PAYMENT_OF_REWARD_MANUAL_ABI = {
     ],
     outputs: [{ name: "correct_count", type: "uint256" }],
 };
+const CREATE_QUIZ_EVENT_ABI = {
+    type: "event",
+    name: "Create_quiz",
+    anonymous: false,
+    inputs: [
+        { indexed: true, name: "_sender", type: "address" },
+        { indexed: true, name: "id", type: "uint256" },
+    ],
+};
 
 const ROLE_CODE = {
     NONE: 0,
@@ -1542,7 +1551,7 @@ class Contracts_MetaMask {
             if (this.normalizeAddress(log?.address) !== normalizedTarget) continue;
             try {
                 const decoded = decodeEventLog({
-                    abi: quiz_abi,
+                    abi: [CREATE_QUIZ_EVENT_ABI],
                     data: log.data,
                     topics: log.topics,
                 });
