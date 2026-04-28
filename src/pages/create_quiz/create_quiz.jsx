@@ -42,6 +42,7 @@ function Create_quiz() {
     const [reward, setReward] = useState(QUIZ_RATE_OPTIONS[0].reward);
 
     const [correct_limit, setCorrect_limit] = useState(null);
+    const [currentStudentCount, setCurrentStudentCount] = useState(0);
     const [state, setState] = useState("Null");
     const [now, setnow] = useState(null);
     const [show, setShow] = useState(false);
@@ -65,6 +66,10 @@ function Create_quiz() {
     const create_quiz = async () => {
         if (isSubmitting) return;
         if (correct !== "") {
+            if (!Number(correct_limit) || Number(correct_limit) <= 0) {
+                alert("報酬を確保する人数を1以上で入力してください");
+                return;
+            }
             setIsSubmitting(true);
             try {
                 const { receipt, createdQuizId, hash } = await Contract.create_quiz(
@@ -156,7 +161,9 @@ function Create_quiz() {
     useEffect(() => {
         async function get_contract() {
             const studentCount = await Contract.get_num_of_students();
-            setCorrect_limit(Math.max(Number(studentCount || 0) + 30, 30));
+            const normalizedStudentCount = Number(studentCount || 0);
+            setCurrentStudentCount(normalizedStudentCount);
+            setCorrect_limit(Math.max(normalizedStudentCount + 200, 200));
         }
         get_contract();
         setnow(getLocalizedDateTimeString());
@@ -186,6 +193,9 @@ function Create_quiz() {
                 setReply_startline(String(parsedDraft.reply_startline || getLocalizedDateTimeString()));
                 setReply_deadline(String(parsedDraft.reply_deadline || getLocalizedDateTimeString(addDays(new Date(), 1))));
                 setReward(Number(parsedDraft.reward ?? QUIZ_RATE_OPTIONS[0].reward));
+                if (parsedDraft.correct_limit != null) {
+                    setCorrect_limit(Number(parsedDraft.correct_limit));
+                }
             }
         } catch (error) {
             console.error("Failed to restore create quiz draft", error);
@@ -212,6 +222,7 @@ function Create_quiz() {
                 reply_startline,
                 reply_deadline,
                 reward,
+                correct_limit,
             }));
         } catch (error) {
             console.error("Failed to save create quiz draft", error);
@@ -232,6 +243,7 @@ function Create_quiz() {
         reply_startline,
         reply_deadline,
         reward,
+        correct_limit,
     ]);
 
     const selectedRate = QUIZ_RATE_OPTIONS.find((item) => item.id === scoreTier) || QUIZ_RATE_OPTIONS[0];
@@ -490,6 +502,28 @@ function Create_quiz() {
                             <div style={{ fontWeight: 700 }}>{reward} TFT</div>
                         </div>
                     </div>
+                </div>
+
+                <div className="quiz-form-group">
+                    <Form.Group style={{ textAlign: "left", maxWidth: "360px" }}>
+                        <Form.Label>👥 報酬を確保する人数</Form.Label>
+                        <Form.Control
+                            type="number"
+                            min={Math.max(currentStudentCount, 1)}
+                            step="1"
+                            value={correct_limit ?? ""}
+                            onChange={(event) => {
+                                const nextValue = Number(event.target.value || 0);
+                                setCorrect_limit(Number.isFinite(nextValue) ? nextValue : 0);
+                            }}
+                        />
+                        <div className="content-helper-note" style={{ marginTop: "8px" }}>
+                            現在の登録学生数は {currentStudentCount} 人です。あとから追加される学生にも報酬を配布したい場合は、この人数を多めに設定してください。
+                        </div>
+                        <div style={{ marginTop: "10px", color: "rgba(255,255,255,0.75)", fontSize: "13px" }}>
+                            今回プラットフォームに預ける合計: {(Number(reward || 0) * Number(correct_limit || 0)).toLocaleString()} TFT
+                        </div>
+                    </Form.Group>
                 </div>
 
                 {/* 日時設定 */}
