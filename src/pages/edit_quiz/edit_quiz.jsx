@@ -44,6 +44,12 @@ function Edit_quiz() {
     const rewardBurnPreview = Number.isFinite(nextReward) ? Math.max(originalReward - nextReward, 0) * respondentLimit : 0;
     const rewardDepositPreview = rewardDelta * respondentLimit;
     const isRewardDecrease = Number.isFinite(nextReward) && nextReward < originalReward;
+    const isSuccessfulReceipt = (receipt) => {
+        if (!receipt) return false;
+        if (receipt.status === "success") return true;
+        if (receipt.status === 1 || receipt.status === 1n) return true;
+        return false;
+    };
 
     const edit_quiz = async () => {
         console.log(id, owner, title, explanation, thumbnail_url, content, reply_startline, reply_deadline);
@@ -66,7 +72,7 @@ function Edit_quiz() {
             }
 
             const editReceipt = await Contract.edit_quiz(id, owner, title, explanation, thumbnail_url, withQuizContentMeta(content, { allowMultipleAnswers }), reply_startline, reply_deadline, setShow, sourceAddress);
-            if (!editReceipt || editReceipt.status !== "success") {
+            if (!isSuccessfulReceipt(editReceipt)) {
                 alert(delta < 0 ? "報酬の減額は完了しましたが、クイズ内容の編集が完了していません。" : "クイズ編集のトランザクションが完了していません。報酬は変更していません。");
                 return;
             }
@@ -272,8 +278,8 @@ function Edit_quiz() {
                                 <Form.Label>🕐 回答開始日時</Form.Label>
                                 <Form.Control
                                     type="datetime-local"
-                                    defaultValue={reply_startline}
-                                    onChange={(event) => setReply_startline(new Date(event.target.value))}
+                                    value={reply_startline}
+                                    onChange={(event) => setReply_startline(event.target.value)}
                                 />
                             </Form.Group>
 
@@ -281,8 +287,8 @@ function Edit_quiz() {
                                 <Form.Label>⏰ 回答締切日時</Form.Label>
                                 <Form.Control
                                     type="datetime-local"
-                                    defaultValue={reply_deadline}
-                                    onChange={(event) => setReply_deadline(new Date(event.target.value))}
+                                    value={reply_deadline}
+                                    onChange={(event) => setReply_deadline(event.target.value)}
                                 />
                             </Form.Group>
                         </div>

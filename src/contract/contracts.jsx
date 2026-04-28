@@ -1663,31 +1663,42 @@ class Contracts_MetaMask {
 
     async edit_quiz(id, owner, title, explanation, thumbnail_url, content, reply_startline, reply_deadline, setShow, sourceAddress = "") {
         setShow(true);
-        //console.log([id, owner, title, explanation, thumbnail_url, content, reply_startline, reply_deadline]);
         let res = null;
-        let hash = null;
         try {
-            if (ethereum) {
-                let account = await this.get_address();
-                let approval = await token.read.allowance({ account, args: [account, quiz_address] });
-
-                hash = await this._edit_quiz(account, id, owner, title, explanation, thumbnail_url, content, reply_startline, reply_deadline, sourceAddress);
-                console.log(hash);
-                if (hash) {
-                    res = await publicClient.waitForTransactionReceipt({ hash });
-                }
-                console.log(res);
-
-                console.log("create_quiz_cont");
-            } else {
-                setShow(false);
-                console.log("Ethereum object does not exist");
+            const provider = await this.getEthereumProviderReady();
+            if (!provider) {
+                throw new Error("ethereum_not_found");
             }
+
+            const account = await this.get_address();
+            if (!account) {
+                throw new Error("wallet_not_connected");
+            }
+
+            const hash = await this._edit_quiz(
+                account,
+                id,
+                owner,
+                title,
+                explanation,
+                thumbnail_url,
+                content,
+                reply_startline,
+                reply_deadline,
+                sourceAddress
+            );
+            if (!hash) {
+                throw new Error("edit_quiz_rejected");
+            }
+
+            res = await publicClient.waitForTransactionReceipt({ hash });
+            return res;
         } catch (err) {
-            setShow(false);
             console.log(err);
+            throw err;
+        } finally {
+            setShow(false);
         }
-        return res;
     }
 
     async _edit_quiz(account, id, owner, title, explanation, thumbnail_url, content, reply_startline, reply_deadline, sourceAddress = "") {
