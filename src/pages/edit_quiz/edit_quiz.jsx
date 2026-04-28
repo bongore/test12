@@ -71,7 +71,15 @@ function Edit_quiz() {
                 }
             }
 
-            const editReceipt = await Contract.edit_quiz(id, owner, title, explanation, thumbnail_url, withQuizContentMeta(content, { allowMultipleAnswers }), reply_startline, reply_deadline, setShow, sourceAddress);
+            let editReceipt = null;
+            try {
+                editReceipt = await Contract.edit_quiz(id, owner, title, explanation, thumbnail_url, withQuizContentMeta(content, { allowMultipleAnswers }), reply_startline, reply_deadline, setShow, sourceAddress);
+            } catch (error) {
+                console.error("Failed to submit quiz edit transaction", error);
+                alert(error?.shortMessage || error?.message || "クイズ編集のトランザクション送信に失敗しました。MetaMask の接続状態と承認画面を確認してください。");
+                return;
+            }
+
             if (!isSuccessfulReceipt(editReceipt)) {
                 alert(delta < 0 ? "報酬の減額は完了しましたが、クイズ内容の編集が完了していません。" : "クイズ編集のトランザクションが完了していません。報酬は変更していません。");
                 return;

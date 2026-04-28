@@ -1708,25 +1708,18 @@ class Contracts_MetaMask {
         // Date オブジェクトをエポック秒に変換する
         const epochStartSeconds = Math.floor(dateStartObj.getTime() / 1000);
         const epochEndSeconds = Math.floor(dateEndObj.getTime() / 1000);
-        try {
-            if (ethereum) {
-                try {
-                    return await this.writeContractDirect({
-                        account,
-                        address: this.resolveQuizAddress(sourceAddress),
-                        abi: quiz_abi,
-                        functionName: "edit_quiz",
-                        args: [id, owner, title, explanation, thumbnail_url, content, epochStartSeconds, epochEndSeconds],
-                    });
-                } catch (e) {
-                    console.log(e);
-                }
-            } else {
-                console.log("Ethereum object does not exist");
-            }
-        } catch (err) {
-            console.log(err);
+        const provider = await this.getEthereumProviderReady();
+        if (!provider) {
+            throw new Error("ethereum_not_found");
         }
+
+        return await this.writeContractDirect({
+            account,
+            address: this.resolveQuizAddress(sourceAddress),
+            abi: quiz_abi,
+            functionName: "edit_quiz",
+            args: [id, owner, title, explanation, thumbnail_url, content, epochStartSeconds, epochEndSeconds],
+        });
     }
 
     async create_answer(id, answer, setShow, setContent, sourceAddress = "") {
