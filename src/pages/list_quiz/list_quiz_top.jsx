@@ -4,7 +4,7 @@ import Simple_quiz from "./components/quiz_simple";
 import Quiz_list from "./components/quiz_list";
 import { useAccessControl } from "../../utils/accessControl";
 import { getRegisteredCorrectAnswer } from "../../utils/quizCorrectAnswerStore";
-import { getDeletedQuizzes, normalizeDeletedQuizKey, saveDeletedQuiz } from "../../utils/liveSignalApi";
+import { getCreatedQuizzes, getDeletedQuizzes, normalizeDeletedQuizKey, removeCreatedQuiz, saveDeletedQuiz } from "../../utils/liveSignalApi";
 import { getPendingCreatedQuizzes, pruneResolvedPendingCreatedQuizzes, subscribePendingCreatedQuizzes, toPendingQuizSimple } from "../../utils/pendingCreatedQuizzes";
 import "./list_quiz_top.css";
 
@@ -26,12 +26,23 @@ function List_quiz_top(props) {
     const quizSumRef = useRef(0);
     const getQuizCacheKey = (quiz) => normalizeDeletedQuizKey(`${quiz?.sourceAddress || quiz?.[12] || ""}:${Number(quiz?.[0])}`);
 
-    const syncPendingCreatedQuizzes = () => {
-        const nextPending = getPendingCreatedQuizzes().map((entry) => toPendingQuizSimple(entry)).filter(Boolean);
+    const syncPendingCreatedQuizzes = async () => {
+        const localPending = getPendingCreatedQuizzes().map((entry) => toPendingQuizSimple(entry)).filter(Boolean);
+        const sharedPendingMap = await getCreatedQuizzes();
+        const sharedPending = Object.values(sharedPendingMap || {}).map((entry) => toPendingQuizSimple(entry)).filter(Boolean);
+        const mergedPending = [...localPending];
+        const mergedKeys = new Set(localPending.map((quiz) => getQuizCacheKey(quiz)));
+        sharedPending.forEach((quiz) => {
+            const quizKey = getQuizCacheKey(quiz);
+            if (!mergedKeys.has(quizKey)) {
+                mergedPending.push(quiz);
+                mergedKeys.add(quizKey);
+            }
+        });
         setPendingCreatedQuizzes((current) => {
             const currentKeys = current.map((quiz) => getQuizCacheKey(quiz)).join("|");
-            const nextKeys = nextPending.map((quiz) => getQuizCacheKey(quiz)).join("|");
-            return currentKeys === nextKeys ? current : nextPending;
+            const nextKeys = mergedPending.map((quiz) => getQuizCacheKey(quiz)).join("|");
+            return currentKeys === nextKeys ? current : mergedPending;
         });
     };
 
@@ -77,7 +88,9 @@ function List_quiz_top(props) {
         syncPendingCreatedQuizzes();
         syncDeletedQuizzes();
         const timer = window.setInterval(syncDeletedQuizzes, 15000);
-        const unsubscribePending = subscribePendingCreatedQuizzes(syncPendingCreatedQuizzes);
+        const unsubscribePending = subscribePendingCreatedQuizzes(() => {
+            syncPendingCreatedQuizzes();
+        });
         const handleVisible = () => {
             if (document.visibilityState === "visible") {
                 syncDeletedQuizzes();
@@ -161,8 +174,16 @@ function List_quiz_top(props) {
 
     useEffect(() => {
         pruneResolvedPendingCreatedQuizzes(quiz_list);
+        const pendingKeys = new Set(pendingCreatedQuizzes.map((quiz) => getQuizCacheKey(quiz)));
+        quiz_list.forEach((quiz) => {
+            if (!Array.isArray(quiz)) return;
+            const quizKey = getQuizCacheKey(quiz);
+            if (pendingKeys.has(quizKey)) {
+                removeCreatedQuiz(quizKey).catch(() => {});
+            }
+        });
         syncPendingCreatedQuizzes();
-    }, [quiz_list]);
+    }, [pendingCreatedQuizzes, quiz_list]);
 
     useEffect(() => {
         const expiredWithoutAnswer = quiz_list.filter((quiz) => {

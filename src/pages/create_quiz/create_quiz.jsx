@@ -14,6 +14,7 @@ import { buildAnswerQuizPath } from "../../utils/quizLinks";
 import { createDefaultQuizContentMeta, withQuizContentMeta } from "../../utils/quizContentMeta";
 import { appendColoredText } from "../../utils/quizEditorHelpers";
 import { savePendingCreatedQuiz } from "../../utils/pendingCreatedQuizzes";
+import { normalizeCreatedQuizKey, saveCreatedQuiz } from "../../utils/liveSignalApi";
 import "./create_quiz.css";
 
 const CREATE_QUIZ_DRAFT_KEY = "create_quiz_form_v1";
@@ -115,6 +116,25 @@ function Create_quiz() {
                         txHash: String(hash || ""),
                         createdAt: new Date().toISOString(),
                     });
+                    await saveCreatedQuiz(
+                        normalizeCreatedQuizKey(`${quiz_address}:${Number(normalizedQuizId)}`),
+                        {
+                            quizId: Number(normalizedQuizId),
+                            sourceAddress: quiz_address,
+                            title,
+                            explanation,
+                            thumbnail_url,
+                            startTime: startEpoch,
+                            deadline: deadlineEpoch,
+                            rewardWei: String(parseUnits(String(reward || 0), 18)),
+                            respondentCount: 0,
+                            respondentLimit: Number(correct_limit || 0),
+                            status: 0,
+                            isPayment: false,
+                            txHash: String(hash || ""),
+                            createdAt: new Date().toISOString(),
+                        }
+                    );
                     clearCreateQuizDraft();
                     navigate(buildAnswerQuizPath(normalizedQuizId, quiz_address));
                     return;

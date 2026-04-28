@@ -12,6 +12,7 @@ const REACTION_KEYS = ["understood", "repeat", "slow", "fast"];
 const STATE_FILE_PATH = path.join(__dirname, ".live-board-state.json");
 let tokenGrantLedger = {};
 let deletedQuizzes = {};
+let pendingCreatedQuizzes = {};
 
 function inferGrantHistoryType(source = "", isRemove = false) {
     if (isRemove) return "clear";
@@ -67,6 +68,25 @@ function normalizeDeletedQuizzes(rawMap = {}) {
     return normalized;
 }
 
+function normalizeCreatedQuizKey(quizKey = "") {
+    const [sourceAddress = "", quizId = ""] = String(quizKey || "").split(":");
+    return `${sourceAddress.toLowerCase()}:${quizId}`;
+}
+
+function normalizePendingCreatedQuizzes(rawMap = {}) {
+    const normalized = {};
+    Object.entries(rawMap || {}).forEach(([quizKey, value]) => {
+        const normalizedKey = normalizeCreatedQuizKey(quizKey);
+        if (!normalizedKey || normalizedKey === ":") return;
+        normalized[normalizedKey] = {
+            ...(value || {}),
+            sourceAddress: String(value?.sourceAddress || normalizedKey.split(":")[0] || "").toLowerCase(),
+            quizId: value?.quizId ?? Number(normalizedKey.split(":")[1]),
+        };
+    });
+    return normalized;
+}
+
 function writeJson(res, statusCode, payload) {
     res.writeHead(statusCode, {
         "Content-Type": "application/json",
@@ -107,6 +127,11 @@ const server = http.createServer((req, res) => {
 
     if (req.url === "/deleted-quizzes" && req.method === "GET") {
         writeJson(res, 200, { ok: true, deletedQuizzes });
+        return;
+    }
+
+    if (req.url === "/created-quizzes" && req.method === "GET") {
+        writeJson(res, 200, { ok: true, createdQuizzes: pendingCreatedQuizzes });
         return;
     }
 
@@ -208,6 +233,47 @@ const server = http.createServer((req, res) => {
                 };
                 persistState();
                 writeJson(res, 200, { ok: true, deletedQuizzes });
+            })
+            .catch(() => {
+                writeJson(res, 400, { ok: false, error: "invalid_json" });
+            });
+        return;
+    }
+
+    if (req.url === "/created-quizzes" && req.method === "POST") {
+        readRequestBody(req)
+            .then((body) => {
+                const quizKey = normalizeCreatedQuizKey(body?.quizKey || "");
+                if (!quizKey || quizKey === ":") {
+                    writeJson(res, 400, { ok: false, error: "invalid_payload" });
+                    return;
+                }
+                if (body?.remove) {
+                    pendingCreatedQuizzes = normalizePendingCreatedQuizzes(pendingCreatedQuizzes);
+                    delete pendingCreatedQuizzes[quizKey];
+                    persistState();
+                    writeJson(res, 200, { ok: true, createdQuizzes: pendingCreatedQuizzes });
+                    return;
+                }
+                pendingCreatedQuizzes = normalizePendingCreatedQuizzes(pendingCreatedQuizzes);
+                pendingCreatedQuizzes[quizKey] = {
+                    createdAt: body?.payload?.createdAt || new Date().toISOString(),
+                    txHash: body?.payload?.txHash || "",
+                    title: body?.payload?.title || "",
+                    explanation: body?.payload?.explanation || "",
+                    thumbnail_url: body?.payload?.thumbnail_url || "",
+                    startTime: body?.payload?.startTime ?? 0,
+                    deadline: body?.payload?.deadline ?? 0,
+                    rewardWei: body?.payload?.rewardWei || "0",
+                    respondentCount: body?.payload?.respondentCount ?? 0,
+                    respondentLimit: body?.payload?.respondentLimit ?? 0,
+                    status: body?.payload?.status ?? 0,
+                    isPayment: body?.payload?.isPayment === true,
+                    sourceAddress: String(body?.payload?.sourceAddress || quizKey.split(":")[0] || "").toLowerCase(),
+                    quizId: body?.payload?.quizId ?? null,
+                };
+                persistState();
+                writeJson(res, 200, { ok: true, createdQuizzes: pendingCreatedQuizzes });
             })
             .catch(() => {
                 writeJson(res, 400, { ok: false, error: "invalid_json" });
@@ -335,6 +401,7 @@ function persistState() {
             currentBoardSession: serializeBoardSessionForStorage(currentBoardSession),
             tokenGrantLedger,
             deletedQuizzes,
+            pendingCreatedQuizzes,
             deletedBoardMessagesBySession: Object.fromEntries(
                 Object.entries(deletedBoardMessagesBySession).map(([sessionId, entries]) => [
                     sessionId,
@@ -368,6 +435,7 @@ function loadPersistedState() {
         currentBoardSession = reviveBoardSession(payload?.currentBoardSession, "現在の授業");
         tokenGrantLedger = payload?.tokenGrantLedger && typeof payload.tokenGrantLedger === "object" ? payload.tokenGrantLedger : {};
         deletedQuizzes = normalizeDeletedQuizzes(payload?.deletedQuizzes && typeof payload.deletedQuizzes === "object" ? payload.deletedQuizzes : {});
+        pendingCreatedQuizzes = normalizePendingCreatedQuizzes(payload?.pendingCreatedQuizzes && typeof payload.pendingCreatedQuizzes === "object" ? payload.pendingCreatedQuizzes : {});
         deletedBoardMessagesBySession = Object.fromEntries(
             Object.entries(payload?.deletedBoardMessagesBySession || {}).map(([sessionId, entries]) => [
                 String(sessionId),

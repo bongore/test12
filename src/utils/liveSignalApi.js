@@ -1,4 +1,5 @@
 const DELETED_QUIZ_STORAGE_KEY = "web3_quiz_deleted_quizzes_v1";
+const CREATED_QUIZ_STORAGE_KEY = "web3_quiz_created_quizzes_v1";
 const DEFAULT_RENDER_HTTP_URL = "https://test12-live-signal.onrender.com";
 const DEFAULT_RENDER_WS_URL = "wss://test12-live-signal.onrender.com";
 
@@ -73,6 +74,25 @@ function normalizeDeletedQuizMap(rawMap = {}) {
     return normalized;
 }
 
+function normalizeCreatedQuizKey(quizKey = "") {
+    const [sourceAddress = "", quizId = ""] = String(quizKey || "").split(":");
+    return `${sourceAddress.toLowerCase()}:${quizId}`;
+}
+
+function normalizeCreatedQuizMap(rawMap = {}) {
+    const normalized = {};
+    Object.entries(rawMap || {}).forEach(([quizKey, value]) => {
+        const normalizedKey = normalizeCreatedQuizKey(quizKey);
+        if (!normalizedKey || normalizedKey === ":") return;
+        normalized[normalizedKey] = {
+            ...(value || {}),
+            sourceAddress: String(value?.sourceAddress || normalizedKey.split(":")[0] || "").toLowerCase(),
+            quizId: value?.quizId ?? Number(normalizedKey.split(":")[1]),
+        };
+    });
+    return normalized;
+}
+
 function readDeletedQuizCache() {
     try {
         if (typeof localStorage === "undefined") return {};
@@ -93,10 +113,37 @@ function writeDeletedQuizCache(nextMap = {}) {
     }
 }
 
+function readCreatedQuizCache() {
+    try {
+        if (typeof localStorage === "undefined") return {};
+        const raw = localStorage.getItem(CREATED_QUIZ_STORAGE_KEY);
+        return normalizeCreatedQuizMap(raw ? JSON.parse(raw) : {});
+    } catch (error) {
+        console.error("Failed to read created quiz cache", error);
+        return {};
+    }
+}
+
+function writeCreatedQuizCache(nextMap = {}) {
+    try {
+        if (typeof localStorage === "undefined") return;
+        localStorage.setItem(CREATED_QUIZ_STORAGE_KEY, JSON.stringify(normalizeCreatedQuizMap(nextMap)));
+    } catch (error) {
+        console.error("Failed to write created quiz cache", error);
+    }
+}
+
 function mergeDeletedQuizMaps(baseMap = {}, nextMap = {}) {
     return normalizeDeletedQuizMap({
         ...normalizeDeletedQuizMap(baseMap),
         ...normalizeDeletedQuizMap(nextMap),
+    });
+}
+
+function mergeCreatedQuizMaps(baseMap = {}, nextMap = {}) {
+    return normalizeCreatedQuizMap({
+        ...normalizeCreatedQuizMap(baseMap),
+        ...normalizeCreatedQuizMap(nextMap),
     });
 }
 
@@ -230,12 +277,80 @@ async function removeDeletedQuiz(quizKey) {
     }
 }
 
+async function getCreatedQuizzes() {
+    const cachedMap = readCreatedQuizCache();
+    try {
+        const response = await fetchLiveSignalJson("/created-quizzes");
+        const mergedMap = mergeCreatedQuizMaps(response?.createdQuizzes || {}, cachedMap);
+        writeCreatedQuizCache(mergedMap);
+        return mergedMap;
+    } catch (error) {
+        console.error("Failed to fetch created quizzes from server", error);
+        return cachedMap;
+    }
+}
+
+async function saveCreatedQuiz(quizKey, payload = {}) {
+    const normalizedKey = normalizeCreatedQuizKey(quizKey);
+    const localMap = mergeCreatedQuizMaps(readCreatedQuizCache(), {
+        [normalizedKey]: {
+            ...payload,
+            createdAt: payload?.createdAt || new Date().toISOString(),
+        },
+    });
+    writeCreatedQuizCache(localMap);
+
+    try {
+        const response = await fetchLiveSignalJson("/created-quizzes", {
+            method: "POST",
+            body: JSON.stringify({
+                quizKey: normalizedKey,
+                payload,
+            }),
+        });
+        const mergedMap = mergeCreatedQuizMaps(response?.createdQuizzes || {}, localMap);
+        writeCreatedQuizCache(mergedMap);
+        return { ...response, createdQuizzes: mergedMap };
+    } catch (error) {
+        console.error("Failed to save created quiz to server", error);
+        return { ok: false, offline: true, createdQuizzes: localMap };
+    }
+}
+
+async function removeCreatedQuiz(quizKey) {
+    const normalizedKey = normalizeCreatedQuizKey(quizKey);
+    const localMap = readCreatedQuizCache();
+    delete localMap[normalizedKey];
+    writeCreatedQuizCache(localMap);
+
+    try {
+        const response = await fetchLiveSignalJson("/created-quizzes", {
+            method: "POST",
+            body: JSON.stringify({
+                quizKey: normalizedKey,
+                remove: true,
+            }),
+        });
+        const serverMap = mergeCreatedQuizMaps(response?.createdQuizzes || {}, localMap);
+        delete serverMap[normalizedKey];
+        writeCreatedQuizCache(serverMap);
+        return { ...response, createdQuizzes: serverMap };
+    } catch (error) {
+        console.error("Failed to remove created quiz from server", error);
+        return { ok: false, offline: true, createdQuizzes: localMap };
+    }
+}
+
 export {
     getLiveSignalApiBaseUrl,
     getLiveSignalWebSocketUrl,
     fetchLiveSignalJson,
+    getCreatedQuizzes,
     getDeletedQuizzes,
+    removeCreatedQuiz,
     saveDeletedQuiz,
+    saveCreatedQuiz,
     removeDeletedQuiz,
+    normalizeCreatedQuizKey,
     normalizeDeletedQuizKey,
 };
