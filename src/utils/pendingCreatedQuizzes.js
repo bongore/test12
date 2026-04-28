@@ -2,6 +2,7 @@ import { quiz_address } from "../contract/config";
 
 const STORAGE_KEY = "web3_pending_created_quizzes_v1";
 const MAX_AGE_MS = 6 * 60 * 60 * 1000;
+const UPDATED_EVENT = "pending-created-quizzes-updated";
 
 function normalizeAddress(value = "") {
     return String(value || "").trim().toLowerCase();
@@ -32,6 +33,9 @@ function readStorage() {
 function writeStorage(nextMap) {
     if (typeof localStorage === "undefined") return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(nextMap));
+    if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event(UPDATED_EVENT));
+    }
 }
 
 function normalizePendingQuiz(entry = {}) {
@@ -155,6 +159,21 @@ function toPendingQuizSimple(entry) {
     return quiz;
 }
 
+function subscribePendingCreatedQuizzes(handler) {
+    if (typeof window === "undefined") return () => {};
+    const onStorage = (event) => {
+        if (event.key === STORAGE_KEY) {
+            handler();
+        }
+    };
+    window.addEventListener("storage", onStorage);
+    window.addEventListener(UPDATED_EVENT, handler);
+    return () => {
+        window.removeEventListener("storage", onStorage);
+        window.removeEventListener(UPDATED_EVENT, handler);
+    };
+}
+
 export {
     buildPendingQuizKey,
     clearPendingCreatedQuizzes,
@@ -162,5 +181,6 @@ export {
     pruneResolvedPendingCreatedQuizzes,
     removePendingCreatedQuiz,
     savePendingCreatedQuiz,
+    subscribePendingCreatedQuizzes,
     toPendingQuizSimple,
 };

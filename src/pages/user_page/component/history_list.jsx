@@ -1,9 +1,5 @@
-import Form from "react-bootstrap/Form";
-import {useState, useEffect, useRef} from "react";
-import MDEditor, {selectWord} from "@uiw/react-md-editor";
-import {resolvePath, useParams} from "react-router-dom";
+import { useEffect, useRef } from "react";
 import Simple_history from "./history_simple";
-import {Link} from "react-router-dom";
 
 function getInitialBatchSize() {
     if (typeof window === "undefined") return 8;
@@ -11,43 +7,32 @@ function getInitialBatchSize() {
 }
 
 function History_list(props) {
-    //1回の更新で追加で表示する個数
-    //画面を満たす個数を計算して、add_numに代入
     const add_num = useRef(getInitialBatchSize());
+    const isLoadingRef = useRef(false);
 
-    const history_list = props.history_list;
-    const Set_history_list = props.Set_history_list;
-
-    //クイズのリストを取得
     const get_history_list = async (now_sum) => {
-        //追加分のクイズ用のリスト
+        if (isLoadingRef.current || now_sum <= 0) return;
+        isLoadingRef.current = true;
         let add_history_list = [];
+        try {
+            if (now_sum - add_num.current < 0) {
+                add_history_list = await props.cont.get_token_history(props.address, now_sum, 0);
+                props.now_numRef.current = 0;
+            } else {
+                add_history_list = await props.cont.get_token_history(props.address, now_sum, now_sum - add_num.current);
+                props.now_numRef.current = now_sum - add_num.current;
+            }
 
-        //クイズの総数を超えていたら
-
-        if (now_sum - add_num.current < 0) {
-            //now_numからquiz_numまでのクイズを取得
-            add_history_list = await props.cont.get_token_history(props.address, now_sum, 0);
-            //now_numを0にする
-            props.now_numRef.current = 0;
-        } else {
-            //クイズの総数を超えていなかったら
-            //now_numからnow_num+add_numまでのクイズを取得
-
-            add_history_list = await props.cont.get_token_history(props.address, now_sum, now_sum - add_num.current);
-            //now_numをnow_num+add_numにする
-            props.now_numRef.current = now_sum - add_num.current;
+            const nextHistoryItems = (Array.isArray(add_history_list) ? add_history_list : []).map((history, index) => (
+                <Simple_history
+                    key={`${props.address}_${props.now_numRef.current}_${index}_${history?.[0] || history?._from || "history"}`}
+                    history={history}
+                />
+            ));
+            props.Set_history_list((history_list) => [...history_list, ...nextHistoryItems]);
+        } finally {
+            isLoadingRef.current = false;
         }
-        //new_quiz_listをmapで展開して、quiz_listに追加
-        let now_history_list = [];
-
-        //add_quiz_listをmapで展開して、now_quiz_listに追加
-
-        console.log(add_history_list);
-        add_history_list.map((history) => {
-            now_history_list.push(<Simple_history history={history} />); //DOMとして追加
-        });
-        Set_history_list((history_list) => [...history_list, ...now_history_list]);
     };
 
     const options = {
@@ -57,6 +42,7 @@ function History_list(props) {
     };
 
     useEffect(() => {
+        props.Set_history_list([]);
         if (typeof window === "undefined" || typeof IntersectionObserver === "undefined") {
             get_history_list(props.now_numRef.current);
             return undefined;
@@ -80,6 +66,8 @@ function History_list(props) {
             }
             observer.disconnect();
         };
-    }, []); // []を指定して初期状態のみで実行されるようにする
+    }, [props.address, props.history_sum]);
+
+    return null;
 }
 export default History_list;

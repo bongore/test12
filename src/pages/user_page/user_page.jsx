@@ -6,7 +6,7 @@ import "./user_page.css";
 import History_list from "./component/history_list";
 import User_card from "./component/user_card";
 import { useRef } from "react";
-import { buildBadgeSet, buildReviewList, getCourseEnhancementSnapshot } from "../../utils/courseEnhancements";
+import { buildBadgeSet, getCourseEnhancementSnapshot } from "../../utils/courseEnhancements";
 import { bootstrap_teacher_addresses } from "../../contract/config";
 import { MAX_TFT_PER_LECTURE, MAX_TFT_TOTAL, QUIZ_RATE_OPTIONS, TOTAL_LECTURE_COUNT, TFT_PER_POINT } from "../../utils/quizRewardRate";
 import { buildAnswerQuizPath, buildAnswerQuizState, rememberQuizSource } from "../../utils/quizLinks";
@@ -47,6 +47,43 @@ function getCachedBalances(address) {
     return cache[normalizeAddress(address)] || {};
 }
 
+function buildReviewItemsFromSources({ reviewQuizIds = [], reviewQuizzes = [], practiceAttempts = [] }) {
+    const practiceMap = new Map();
+    practiceAttempts.forEach((item) => {
+        const quizId = String(item.quizId || "");
+        if (!quizId || practiceMap.has(quizId)) return;
+        if (item.isCorrect) return;
+        practiceMap.set(quizId, item);
+    });
+
+    const reviewItems = [];
+    const addedKeys = new Set();
+
+    reviewQuizzes.forEach((quiz) => {
+        const quizId = String(Number(quiz?.[0] ?? ""));
+        if (!quizId || addedKeys.has(quizId)) return;
+        addedKeys.add(quizId);
+        reviewItems.push({
+            quizId,
+            sourceAddress: quiz?.sourceAddress || quiz?.[12] || "",
+            title: quiz?.[2] || `問題 ${quizId}`,
+            reason: reviewQuizIds.includes(Number(quizId)) ? "不正解だった問題" : "練習モードで再確認が必要",
+        });
+    });
+
+    practiceMap.forEach((attempt, quizId) => {
+        if (addedKeys.has(quizId)) return;
+        reviewItems.push({
+            quizId,
+            sourceAddress: "",
+            title: attempt.title || `問題 ${quizId}`,
+            reason: "練習モードで再確認が必要",
+        });
+    });
+
+    return reviewItems;
+}
+
 function User_page(props) {
     const { address } = useParams();
 
@@ -76,6 +113,8 @@ function User_page(props) {
         try {
             setLoadError("");
             setIsPageLoading(true);
+            Set_history_list([]);
+            setReviewItems([]);
 
             const cachedBalances = getCachedBalances(address);
             if (cachedBalances.token != null) {
@@ -166,15 +205,27 @@ function User_page(props) {
             try {
                 const snapshot = getCourseEnhancementSnapshot();
                 const ownPractice = snapshot.practiceAttempts.filter((item) => String(item.address || "").toLowerCase() === String(address || "").toLowerCase());
+                const practiceIncorrectQuizIds = ownPractice
+                    .filter((item) => !item.isCorrect)
+                    .map((item) => Number(item.quizId))
+                    .filter((quizId) => Number.isFinite(quizId));
 
-                const [quizData, nextRank] = await Promise.all([
-                    cont.get_all_quiz_simple_list(),
+                const [reviewQuizIds, nextRank] = await Promise.all([
+                    cont.getReviewQuizIds(address),
                     Number(result || 0) > 0 ? cont.get_rank(Number(result || 0)) : Promise.resolve(0),
                 ]);
+                const targetQuizIds = [...new Set([...(Array.isArray(reviewQuizIds) ? reviewQuizIds : []), ...practiceIncorrectQuizIds])];
+                const reviewQuizzes = await Promise.all(
+                    targetQuizIds.slice(0, 30).map((quizId) => cont.get_quiz_simple(quizId))
+                );
 
                 if (cancelled) return;
                 setRank(nextRank || 0);
-                setReviewItems(buildReviewList({ quizzes: quizData, address, practiceAttempts: ownPractice }));
+                setReviewItems(buildReviewItemsFromSources({
+                    reviewQuizIds: Array.isArray(reviewQuizIds) ? reviewQuizIds : [],
+                    reviewQuizzes: reviewQuizzes.filter((quiz) => Array.isArray(quiz) && (quiz?.[2] || quiz?.[1] || quiz?.[5])),
+                    practiceAttempts: ownPractice,
+                }));
             } catch (error) {
                 console.error("Failed to load deferred user page data", error);
             }

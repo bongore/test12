@@ -5,7 +5,7 @@ import Quiz_list from "./components/quiz_list";
 import { useAccessControl } from "../../utils/accessControl";
 import { getRegisteredCorrectAnswer } from "../../utils/quizCorrectAnswerStore";
 import { getDeletedQuizzes, normalizeDeletedQuizKey, saveDeletedQuiz } from "../../utils/liveSignalApi";
-import { getPendingCreatedQuizzes, pruneResolvedPendingCreatedQuizzes, toPendingQuizSimple } from "../../utils/pendingCreatedQuizzes";
+import { getPendingCreatedQuizzes, pruneResolvedPendingCreatedQuizzes, subscribePendingCreatedQuizzes, toPendingQuizSimple } from "../../utils/pendingCreatedQuizzes";
 import "./list_quiz_top.css";
 
 function List_quiz_top(props) {
@@ -22,14 +22,17 @@ function List_quiz_top(props) {
     const [deletedQuizMap, setDeletedQuizMap] = useState({});
     const [pendingCreatedQuizzes, setPendingCreatedQuizzes] = useState([]);
     const [listRefreshKey, setListRefreshKey] = useState(0);
-    const containerRef = useRef(null);
     const targetRef = useRef(null);
     const quizSumRef = useRef(0);
     const getQuizCacheKey = (quiz) => normalizeDeletedQuizKey(`${quiz?.sourceAddress || quiz?.[12] || ""}:${Number(quiz?.[0])}`);
 
     const syncPendingCreatedQuizzes = () => {
         const nextPending = getPendingCreatedQuizzes().map((entry) => toPendingQuizSimple(entry)).filter(Boolean);
-        setPendingCreatedQuizzes(nextPending);
+        setPendingCreatedQuizzes((current) => {
+            const currentKeys = current.map((quiz) => getQuizCacheKey(quiz)).join("|");
+            const nextKeys = nextPending.map((quiz) => getQuizCacheKey(quiz)).join("|");
+            return currentKeys === nextKeys ? current : nextPending;
+        });
     };
 
     const refreshQuizLength = async () => {
@@ -43,7 +46,7 @@ function List_quiz_top(props) {
                 Set_quiz_sum(nextLength);
                 Set_quiz_list([]);
                 setListRefreshKey((current) => current + 1);
-            } else if (quiz_sum == null) {
+            } else if (quizSumRef.current === 0 && quiz_sum == null) {
                 Set_quiz_sum(nextLength);
                 now_numRef.current = nextLength;
             }
@@ -73,7 +76,8 @@ function List_quiz_top(props) {
 
         syncPendingCreatedQuizzes();
         syncDeletedQuizzes();
-        const timer = window.setInterval(syncDeletedQuizzes, 5000);
+        const timer = window.setInterval(syncDeletedQuizzes, 15000);
+        const unsubscribePending = subscribePendingCreatedQuizzes(syncPendingCreatedQuizzes);
         const handleVisible = () => {
             if (document.visibilityState === "visible") {
                 syncDeletedQuizzes();
@@ -85,6 +89,7 @@ function List_quiz_top(props) {
         return () => {
             mounted = false;
             window.clearInterval(timer);
+            unsubscribePending();
             document.removeEventListener("visibilitychange", handleVisible);
             window.removeEventListener("focus", handleVisible);
         };
@@ -126,11 +131,6 @@ function List_quiz_top(props) {
     useEffect(() => {
         refreshQuizLength();
 
-        const timer = window.setInterval(() => {
-            refreshQuizLength();
-            syncPendingCreatedQuizzes();
-        }, 12000);
-
         const handleVisible = () => {
             if (document.visibilityState === "visible") {
                 refreshQuizLength();
@@ -140,11 +140,12 @@ function List_quiz_top(props) {
 
         document.addEventListener("visibilitychange", handleVisible);
         window.addEventListener("focus", handleVisible);
+        window.addEventListener("pending-created-quizzes-updated", refreshQuizLength);
 
         return () => {
-            window.clearInterval(timer);
             document.removeEventListener("visibilitychange", handleVisible);
             window.removeEventListener("focus", handleVisible);
+            window.removeEventListener("pending-created-quizzes-updated", refreshQuizLength);
         };
         // cont is stable for this page lifecycle.
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -233,7 +234,6 @@ function List_quiz_top(props) {
                     targetRef={targetRef}
                     now_numRef={now_numRef}
                     setLoadError={setLoadError}
-                    quiz_sum={quiz_sum}
                     refreshKey={listRefreshKey}
                 />
 

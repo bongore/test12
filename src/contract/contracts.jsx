@@ -46,6 +46,22 @@ function getTokenHistoryValueTft(entry) {
     return Number(entry?._value || entry?.[4] || 0) / 10 ** 18;
 }
 
+const SCORE_CACHE_KEY = "web3_quiz_reward_cache_v1";
+
+function readScoreCache() {
+    if (typeof localStorage === "undefined") return {};
+    try {
+        return JSON.parse(localStorage.getItem(SCORE_CACHE_KEY) || "{}");
+    } catch (error) {
+        return {};
+    }
+}
+
+function writeScoreCache(nextCache) {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(SCORE_CACHE_KEY, JSON.stringify(nextCache));
+}
+
 async function retryReadContractBalance(readFn, attempts = 3) {
     let lastError = null;
     for (let index = 0; index < attempts; index += 1) {
@@ -925,36 +941,34 @@ class Contracts_MetaMask {
     }
 
     async get_token_history(address, start, end) {
-        console.log(address, start, end);
         try {
             const account = await this.get_address();
             const normalizedAccount = normalizeReadAccount(account);
-            const res = [];
+            const indexes = [];
 
-            console.log(start, end);
             if (start <= end) {
-                for (let i = start; i < end; i++) {
-                    res.push(await publicClient.readContract({
-                        account: normalizedAccount,
-                        address: token_address,
-                        abi: token_abi,
-                        functionName: "get_user_history",
-                        args: [address, i],
-                    }));
+                for (let i = start; i < end; i += 1) {
+                    indexes.push(i);
                 }
             } else {
-                for (let i = start - 1; i >= end; i--) {
-                    res.push(await publicClient.readContract({
-                        account: normalizedAccount,
-                        address: token_address,
-                        abi: token_abi,
-                        functionName: "get_user_history",
-                        args: [address, i],
-                    }));
+                for (let i = start - 1; i >= end; i -= 1) {
+                    indexes.push(i);
                 }
             }
 
-            return res;
+            const settled = await Promise.allSettled(
+                indexes.map((historyIndex) => publicClient.readContract({
+                    account: normalizedAccount,
+                    address: token_address,
+                    abi: token_abi,
+                    functionName: "get_user_history",
+                    args: [address, historyIndex],
+                }))
+            );
+
+            return settled
+                .filter((entry) => entry.status === "fulfilled")
+                .map((entry) => entry.value);
         } catch (err) {
             console.log(err);
         }
@@ -966,14 +980,28 @@ class Contracts_MetaMask {
             const historyLength = await this.get_user_history_len(address);
             if (!historyLength || historyLength <= 0) return 0;
 
+            const cacheKey = this.normalizeAddress(address);
+            const scoreCache = readScoreCache();
+            const cached = scoreCache[cacheKey];
+            if (cached && Number(cached.historyLength || 0) === Number(historyLength)) {
+                return Number(cached.score || 0);
+            }
+
             const history = await this.get_token_history(address, historyLength, 0);
-            return (Array.isArray(history) ? history : []).reduce((sum, entry) => {
+            const score = (Array.isArray(history) ? history : []).reduce((sum, entry) => {
                 const explanation = getTokenHistoryExplanation(entry).toLowerCase();
                 if (!explanation.includes("correct answer")) {
                     return sum;
                 }
                 return sum + getTokenHistoryValueTft(entry);
             }, 0);
+            scoreCache[cacheKey] = {
+                historyLength: Number(historyLength),
+                score: Number(score || 0),
+                updatedAt: new Date().toISOString(),
+            };
+            writeScoreCache(scoreCache);
+            return Number(score || 0);
         } catch (error) {
             console.log(error);
             return 0;
@@ -982,7 +1010,6 @@ class Contracts_MetaMask {
 
     async get_user_history_len(address) {
         try {
-            console.log(token_address);
             const account = await this.get_address();
             const res = await publicClient.readContract({
                 account: account || undefined,
@@ -1003,7 +1030,6 @@ class Contracts_MetaMask {
         try {
             if (this.getEthereumProvider()) {
                 let account = await this.get_address();
-                console.log(token_address);
                 const sources = this.getQuizReadAddresses();
                 for (const source of sources) {
                     try {
