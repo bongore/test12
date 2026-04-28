@@ -108,6 +108,10 @@ function getDeletedQuizCacheSnapshot() {
     return readDeletedQuizCache();
 }
 
+function hasDeletedQuizCache() {
+    return Object.keys(readDeletedQuizCache()).length > 0;
+}
+
 function writeDeletedQuizCache(nextMap = {}) {
     try {
         if (typeof localStorage === "undefined") return;
@@ -223,6 +227,27 @@ async function getDeletedQuizzes() {
     } catch (error) {
         console.error("Failed to fetch deleted quizzes from server", error);
         return cachedMap;
+    }
+}
+
+async function getDeletedQuizzesWithStatus() {
+    const cachedMap = await flushPendingDeletedQuizzes();
+    try {
+        const response = await fetchLiveSignalJson("/deleted-quizzes");
+        const mergedMap = mergeDeletedQuizMaps(response?.deletedQuizzes || {}, getPendingDeletedQuizMap(cachedMap));
+        writeDeletedQuizCache(mergedMap);
+        return {
+            deletedQuizzes: mergedMap,
+            ready: true,
+            fromServer: true,
+        };
+    } catch (error) {
+        console.error("Failed to fetch deleted quizzes from server", error);
+        return {
+            deletedQuizzes: cachedMap,
+            ready: Object.keys(cachedMap).length > 0,
+            fromServer: false,
+        };
     }
 }
 
@@ -350,6 +375,8 @@ export {
     getLiveSignalWebSocketUrl,
     fetchLiveSignalJson,
     getDeletedQuizCacheSnapshot,
+    getDeletedQuizzesWithStatus,
+    hasDeletedQuizCache,
     getCreatedQuizzes,
     getDeletedQuizzes,
     removeCreatedQuiz,

@@ -16,6 +16,15 @@
   overflow: hidden;
 }
 
+.quiz-card--interactive {
+  cursor: pointer;
+}
+
+.quiz-card--interactive:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.85);
+  outline-offset: 2px;
+}
+
 .quiz-card::before {
   content: '';
   position: absolute;

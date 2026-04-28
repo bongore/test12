@@ -212,4 +212,25 @@ describe("Answer_quiz practice mode", () => {
         expect(screen.getByRole("button", { name: "回答開始前" })).toBeDisabled();
         expect(mockContract.create_answer).not.toHaveBeenCalled();
     });
+
+    test("shows quiz content in view-only mode when the user cannot answer", async () => {
+        useAccessControl.mockReturnValue({
+            isLoading: false,
+            canAnswerQuiz: false,
+            address: "",
+        });
+
+        render(
+            <MemoryRouter initialEntries={["/answer_quiz/c-1"]} future={routerFuture}>
+                <Routes>
+                    <Route path="/answer_quiz/:id" element={<Answer_quiz />} />
+                </Routes>
+            </MemoryRouter>
+        );
+
+        expect(await screen.findByText("練習問題")).toBeInTheDocument();
+        expect(screen.getByText("問題本文")).toBeInTheDocument();
+        expect(screen.getByRole("heading", { name: "閲覧のみ" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "閲覧のみ" })).toBeDisabled();
+    });
 });

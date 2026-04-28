@@ -307,6 +307,10 @@ function Answer_quiz() {
 
     const create_answer = async () => {
         if (!quiz) return;
+        if (!access.canAnswerQuiz) {
+            alert("このアカウントは閲覧のみです。回答するには MetaMask 接続後に教員登録を受けてください。");
+            return;
+        }
 
         const startEpoch = Number(quiz?.[8] || 0);
         if (startEpoch > 0 && currentEpoch < startEpoch) {
@@ -425,7 +429,7 @@ function Answer_quiz() {
     };
 
     useEffect(() => {
-        if (access.isLoading || !access.canAnswerQuiz) return;
+        if (access.isLoading) return;
         pageOpenedAtRef.current = Date.now();
         answerStartedAtRef.current = null;
         textChangeCountRef.current = 0;
@@ -489,19 +493,6 @@ function Answer_quiz() {
         );
     }
 
-    if (!access.canAnswerQuiz) {
-        return (
-            <div className="answer-page">
-                <div className="glass-card" style={{ padding: "var(--space-6)" }}>
-                    <h3 className="heading-md">解答権限がありません</h3>
-                    <p style={{ color: "var(--text-secondary)", marginBottom: 0 }}>
-                        問題解答を利用するには、MetaMask 接続後に教員から登録してもらってください。
-                    </p>
-                </div>
-            </div>
-        );
-    }
-
     if (!quiz || !simpleQuiz) {
         return (
             <div className="answer-page">
@@ -540,7 +531,7 @@ function Answer_quiz() {
     const renderedContent = stripQuizContentMeta(quiz?.[5] || "");
     const allowMultipleAnswers = Boolean(quizMeta.allowMultipleAnswers);
     const canUpdateSubmittedAnswer = !isPracticeMode && allowMultipleAnswers && status === 3 && !Boolean(simpleQuiz?.[11]) && deadlineEpoch >= currentEpoch;
-    const canEditAnswer = !isBeforeStart && (isPracticeMode || status === 0 || canUpdateSubmittedAnswer);
+    const canEditAnswer = access.canAnswerQuiz && !isBeforeStart && (isPracticeMode || status === 0 || canUpdateSubmittedAnswer);
     const savedAnswerDisplay = savedAnswerStr || localCachedAnswer || "";
     const visibleDraft = status === 0 ? answer : "";
     const statusMessages = {
@@ -556,6 +547,15 @@ function Answer_quiz() {
             {statusInfo.text && (
                 <div className={`answer-status-banner glass-card ${statusInfo.className}`} style={{ color: "#ffffff", fontWeight: "600", fontSize: "16px", textShadow: "0 1px 3px rgba(0,0,0,0.4)" }}>
                     {statusInfo.text}
+                </div>
+            )}
+
+            {!access.canAnswerQuiz && (
+                <div className="glass-card" style={{ padding: "var(--space-4)", marginBottom: "var(--space-4)" }}>
+                    <h3 className="heading-md" style={{ marginBottom: "var(--space-2)" }}>閲覧のみ</h3>
+                    <p style={{ color: "#ffffff", opacity: 0.9, marginBottom: 0 }}>
+                        このアカウントは問題本文の確認だけできます。回答するには MetaMask 接続後に教員から登録を受けてください。
+                    </p>
                 </div>
             )}
 
@@ -587,6 +587,11 @@ function Answer_quiz() {
                     {isBeforeStart ? (
                         <span className="reward-edit-summary" style={{ marginTop: 0 }}>
                             <span>回答開始前です</span>
+                        </span>
+                    ) : null}
+                    {!access.canAnswerQuiz ? (
+                        <span className="reward-edit-summary" style={{ marginTop: 0 }}>
+                            <span>この画面では閲覧のみ可能です</span>
                         </span>
                     ) : null}
                 </div>
@@ -622,7 +627,7 @@ function Answer_quiz() {
                 ) : (
                     <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "var(--space-6)" }}>
                         <button className="btn-secondary-custom" disabled style={{ cursor: "not-allowed", opacity: 0.6 }}>
-                            {isBeforeStart ? "回答開始前" : "回答済み"}
+                            {!access.canAnswerQuiz ? "閲覧のみ" : isBeforeStart ? "回答開始前" : "回答済み"}
                         </button>
                     </div>
                 )}

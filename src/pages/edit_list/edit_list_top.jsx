@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import Simple_quiz from "./components/quiz_simple";
 import Quiz_list from "./components/quiz_list";
 import { useAccessControl } from "../../utils/accessControl";
-import { getCreatedQuizzes, getDeletedQuizCacheSnapshot, getDeletedQuizzes, normalizeDeletedQuizKey, removeCreatedQuiz, removeDeletedQuiz, saveDeletedQuiz } from "../../utils/liveSignalApi";
+import { getCreatedQuizzes, getDeletedQuizCacheSnapshot, getDeletedQuizzesWithStatus, hasDeletedQuizCache, normalizeDeletedQuizKey, removeCreatedQuiz, removeDeletedQuiz, saveDeletedQuiz } from "../../utils/liveSignalApi";
 import { getPendingCreatedQuizzes, pruneResolvedPendingCreatedQuizzes, subscribePendingCreatedQuizzes, toPendingQuizSimple } from "../../utils/pendingCreatedQuizzes";
 import "./edit_list_top.css";
 
@@ -17,6 +17,7 @@ function Edit_list_top(props) {
     const [add_num, Set_add_num] = useState(7);
     const [loadError, setLoadError] = useState("");
     const [deletedQuizMap, setDeletedQuizMap] = useState(() => getDeletedQuizCacheSnapshot());
+    const [deletedQuizReady, setDeletedQuizReady] = useState(() => hasDeletedQuizCache());
     const [pendingCreatedQuizzes, setPendingCreatedQuizzes] = useState([]);
     const [listRefreshKey, setListRefreshKey] = useState(0);
     const quizSumRef = useRef(0);
@@ -93,9 +94,10 @@ function Edit_list_top(props) {
         let mounted = true;
         const syncDeletedQuizzes = async () => {
             try {
-                const nextDeleted = await getDeletedQuizzes();
+                const nextDeletedState = await getDeletedQuizzesWithStatus();
                 if (mounted) {
-                    setDeletedQuizMap(nextDeleted || {});
+                    setDeletedQuizMap(nextDeletedState?.deletedQuizzes || {});
+                    setDeletedQuizReady(Boolean(nextDeletedState?.ready));
                 }
             } catch (error) {
                 console.error("Failed to load deleted quizzes", error);
@@ -230,7 +232,14 @@ function Edit_list_top(props) {
                 </div>
             ) : null}
 
-            {mergedQuizList.some((quiz) => deletedQuizMap[getQuizCacheKey(quiz)]) ? (
+            {!deletedQuizReady ? (
+                <div className="glass-card" style={{ padding: "var(--space-5)", color: "#fff", marginBottom: "var(--space-4)" }}>
+                    <div style={{ fontWeight: 700, marginBottom: "10px" }}>削除済み問題の同期中です...</div>
+                    <div style={{ color: "rgba(255,255,255,0.8)" }}>
+                        教員側で非表示にした問題を全端末で揃えるため、管理一覧の表示を待機しています。
+                    </div>
+                </div>
+            ) : mergedQuizList.some((quiz) => deletedQuizMap[getQuizCacheKey(quiz)]) ? (
                 <div className="deleted-quiz-panel glass-card">
                     <div className="deleted-quiz-panel__header">
                         <h2 className="deleted-quiz-panel__title">削除済みクイズ</h2>
@@ -269,7 +278,7 @@ function Edit_list_top(props) {
                 </div>
             ) : null}
 
-            {mergedQuizList
+            {deletedQuizReady && mergedQuizList
                 .filter((quiz) => !deletedQuizMap[getQuizCacheKey(quiz)])
                 .map((quiz, index) => (
                     <Simple_quiz

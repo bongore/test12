@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { buildAnswerQuizPath, buildAnswerQuizState, rememberQuizSource } from "../../../utils/quizLinks";
 import { buildQuizStorageKey } from "../../../utils/quizCorrectAnswerStore";
 import "./quiz_simple.css";
@@ -98,6 +98,7 @@ function Time_diff(props) {
 }
 
 function Simple_quiz(props) {
+    const navigate = useNavigate();
     const [isreward, setIsreward] = useState(true);
     const [ispayment, setIspayment] = useState(false);
 
@@ -118,8 +119,11 @@ function Simple_quiz(props) {
     const currentEpoch = props.currentEpoch ?? Math.floor(Date.now() / 1000);
     const isBeforeStart = startTime > 0 && currentEpoch < startTime;
     const canOpenAnswer = props.canAnswerQuiz && !isBeforeStart;
+    const canViewQuiz = true;
     const correctAnswer = props.correctAnswer || "";
     const scheduleLabel = currentEpoch < startTime ? "公開予約" : (currentEpoch > deadline ? "締切済み" : "公開中");
+    const quizPath = buildAnswerQuizPath(quizId, sourceAddress);
+    const quizState = buildAnswerQuizState(sourceAddress);
 
     useEffect(() => {
         if (reward === 0) setIsreward(false);
@@ -144,8 +148,36 @@ function Simple_quiz(props) {
         return null;
     }
 
+    const handleRememberSource = () => {
+        rememberQuizSource(quizId, sourceAddress);
+    };
+
+    const handleCardOpen = (event) => {
+        if (!canViewQuiz) return;
+        if (event.target.closest("a,button,input,label")) {
+            return;
+        }
+        handleRememberSource();
+        navigate(quizPath, { state: quizState });
+    };
+
+    const handleCardKeyDown = (event) => {
+        if (!canViewQuiz) return;
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        handleRememberSource();
+        navigate(quizPath, { state: quizState });
+    };
+
     const card = (
-        <div className={`quiz-card glass-card ${statusClass} animate-slideUp`}>
+        <div
+            className={`quiz-card glass-card ${statusClass} animate-slideUp ${canViewQuiz ? "quiz-card--interactive" : ""}`}
+            role={canViewQuiz ? "button" : undefined}
+            tabIndex={canViewQuiz ? 0 : undefined}
+            onClick={handleCardOpen}
+            onKeyDown={handleCardKeyDown}
+            aria-label={canViewQuiz ? `${title} を開く` : undefined}
+        >
             <div className="quiz-card-inner">
                 {thumbnail && (
                     <div className="quiz-thumbnail">
@@ -224,9 +256,24 @@ function Simple_quiz(props) {
                             {canOpenAnswer ? (
                                 <>
                                     <Link
-                                        to={buildAnswerQuizPath(quizId, sourceAddress)}
-                                        state={buildAnswerQuizState(sourceAddress)}
-                                        onClick={() => rememberQuizSource(quizId, sourceAddress)}
+                                        to={quizPath}
+                                        state={quizState}
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            handleRememberSource();
+                                        }}
+                                        className="btn-secondary-custom"
+                                        style={{ textDecoration: "none", minWidth: "140px", textAlign: "center", padding: "10px 14px" }}
+                                    >
+                                        問題を見る
+                                    </Link>
+                                    <Link
+                                        to={quizPath}
+                                        state={quizState}
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            handleRememberSource();
+                                        }}
                                         className="btn-primary-custom"
                                         style={{ textDecoration: "none", flex: 1, minWidth: "140px", textAlign: "center", padding: "10px 14px" }}
                                     >
@@ -234,8 +281,11 @@ function Simple_quiz(props) {
                                     </Link>
                                     <Link
                                         to={buildAnswerQuizPath(quizId, sourceAddress, { practice: true })}
-                                        state={buildAnswerQuizState(sourceAddress)}
-                                        onClick={() => rememberQuizSource(quizId, sourceAddress)}
+                                        state={quizState}
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            handleRememberSource();
+                                        }}
                                         className="btn-secondary-custom"
                                         style={{ textDecoration: "none", flex: 1, minWidth: "140px", textAlign: "center", padding: "10px 14px" }}
                                     >
@@ -243,15 +293,46 @@ function Simple_quiz(props) {
                                     </Link>
                                 </>
                             ) : (
-                                <button
-                                    type="button"
-                                    className="btn-secondary-custom"
-                                    disabled
-                                    style={{ flex: 1, minWidth: "140px", textAlign: "center", padding: "10px 14px", cursor: "not-allowed", opacity: 0.7 }}
-                                >
-                                    回答開始前
-                                </button>
+                                <>
+                                    <Link
+                                        to={quizPath}
+                                        state={quizState}
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            handleRememberSource();
+                                        }}
+                                        className="btn-primary-custom"
+                                        style={{ textDecoration: "none", flex: 1, minWidth: "140px", textAlign: "center", padding: "10px 14px" }}
+                                    >
+                                        問題を見る
+                                    </Link>
+                                    <button
+                                        type="button"
+                                        className="btn-secondary-custom"
+                                        disabled
+                                        style={{ flex: 1, minWidth: "140px", textAlign: "center", padding: "10px 14px", cursor: "not-allowed", opacity: 0.7 }}
+                                    >
+                                        回答開始前
+                                    </button>
+                                </>
                             )}
+                        </div>
+                    )}
+
+                    {!props.canAnswerQuiz && (
+                        <div style={{ display: "flex", gap: "8px", marginTop: "var(--space-3)", flexWrap: "wrap" }}>
+                            <Link
+                                to={quizPath}
+                                state={quizState}
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    handleRememberSource();
+                                }}
+                                className="btn-primary-custom"
+                                style={{ textDecoration: "none", minWidth: "140px", textAlign: "center", padding: "10px 14px" }}
+                            >
+                                問題を見る
+                            </Link>
                         </div>
                     )}
 
@@ -262,6 +343,7 @@ function Simple_quiz(props) {
                                 className="btn-secondary-custom"
                                 onClick={(event) => {
                                     event.preventDefault();
+                                    event.stopPropagation();
                                     props.onDeleteQuiz(quiz);
                                 }}
                                 style={{
@@ -281,10 +363,6 @@ function Simple_quiz(props) {
             </div>
         </div>
     );
-
-    if (!props.canAnswerQuiz) {
-        return <div className="quiz-card-link" style={{ cursor: "not-allowed" }}>{card}</div>;
-    }
 
     return <div className="quiz-card-link">{card}</div>;
 }

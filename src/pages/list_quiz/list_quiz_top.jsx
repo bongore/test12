@@ -5,7 +5,7 @@ import Quiz_list from "./components/quiz_list";
 import { useAccessControl } from "../../utils/accessControl";
 import { toGlobalId } from "../../utils/quizGlobalId";
 import { getRegisteredCorrectAnswer } from "../../utils/quizCorrectAnswerStore";
-import { getCreatedQuizzes, getDeletedQuizCacheSnapshot, getDeletedQuizzes, normalizeDeletedQuizKey, removeCreatedQuiz, saveDeletedQuiz } from "../../utils/liveSignalApi";
+import { getCreatedQuizzes, getDeletedQuizCacheSnapshot, getDeletedQuizzesWithStatus, hasDeletedQuizCache, normalizeDeletedQuizKey, removeCreatedQuiz, saveDeletedQuiz } from "../../utils/liveSignalApi";
 import { getPendingCreatedQuizzes, pruneResolvedPendingCreatedQuizzes, subscribePendingCreatedQuizzes, toPendingQuizSimple } from "../../utils/pendingCreatedQuizzes";
 import "./list_quiz_top.css";
 
@@ -21,6 +21,7 @@ function List_quiz_top(props) {
     const [correctAnswerMap, setCorrectAnswerMap] = useState({});
     const [loadError, setLoadError] = useState("");
     const [deletedQuizMap, setDeletedQuizMap] = useState(() => getDeletedQuizCacheSnapshot());
+    const [deletedQuizReady, setDeletedQuizReady] = useState(() => hasDeletedQuizCache());
     const [pendingCreatedQuizzes, setPendingCreatedQuizzes] = useState([]);
     const [listRefreshKey, setListRefreshKey] = useState(0);
     const targetRef = useRef(null);
@@ -77,9 +78,10 @@ function List_quiz_top(props) {
         let mounted = true;
         const syncDeletedQuizzes = async () => {
             try {
-                const nextDeleted = await getDeletedQuizzes();
+                const nextDeletedState = await getDeletedQuizzesWithStatus();
                 if (mounted) {
-                    setDeletedQuizMap(nextDeleted || {});
+                    setDeletedQuizMap(nextDeletedState?.deletedQuizzes || {});
+                    setDeletedQuizReady(Boolean(nextDeletedState?.ready));
                 }
             } catch (error) {
                 console.error("Failed to load deleted quizzes", error);
@@ -271,7 +273,14 @@ function List_quiz_top(props) {
                             </button>
                         </div>
                     ) : null}
-                    {mergedQuizList
+                    {!deletedQuizReady ? (
+                        <div className="glass-card" style={{ padding: "var(--space-5)", color: "#fff" }}>
+                            <div style={{ fontWeight: 700, marginBottom: "10px" }}>削除済み問題の同期中です...</div>
+                            <div style={{ color: "rgba(255,255,255,0.8)" }}>
+                                教員側で非表示にした問題を全端末で揃えるため、一覧表示を待機しています。
+                            </div>
+                        </div>
+                    ) : mergedQuizList
                         .filter((quiz) => !deletedQuizMap[getQuizCacheKey(quiz)])
                         .filter((quiz) => {
                             const localId = Number(quiz?.[0]);
