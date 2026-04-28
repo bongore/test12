@@ -1835,10 +1835,19 @@ class Contracts_MetaMask {
         let lastError = null;
         for (const source of sources) {
             try {
-                const [quizData, simpleQuizData] = await Promise.all([
-                    this.get_quiz(id, source),
-                    this.get_quiz_simple(id, source),
-                ]);
+                let quizData;
+                let simpleQuizData;
+                try {
+                    [quizData, simpleQuizData] = await Promise.all([
+                        this.get_quiz(id, source),
+                        this.get_quiz_simple(id, source),
+                    ]);
+                } catch (firstErr) {
+                    [quizData, simpleQuizData] = await Promise.all([
+                        this.get_quiz_all_data(id, source),
+                        this.get_quiz_simple(id, source),
+                    ]);
+                }
                 if (quizData?.[2] || simpleQuizData?.[2]) {
                     return { quizData, simpleQuizData, sourceAddress: source };
                 }

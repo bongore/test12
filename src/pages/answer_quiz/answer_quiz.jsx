@@ -40,7 +40,7 @@ function Answer_type1(props) {
         <div className="answer-section">
             <h4 className="heading-md" style={{ marginBottom: "var(--space-4)", color: "#ffffff" }}>選択式回答</h4>
             <div className="answer-options">
-                {props.quiz[6]
+                {(props.quiz[6] || "")
                     .split(",")
                     .filter((item) => item.trim() !== "")
                     .map((item) => (
