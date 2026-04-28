@@ -17,6 +17,7 @@ import {
 import { recordPracticeAttempt } from "../../utils/courseEnhancements";
 import { buildQuizStorageKey } from "../../utils/quizCorrectAnswerStore";
 import { getRememberedQuizSource, rememberQuizSource } from "../../utils/quizLinks";
+import { resolveGlobalId } from "../../utils/quizGlobalId";
 import { parseQuizContentMeta, stripQuizContentMeta } from "../../utils/quizContentMeta";
 import {
     QUIZ_INPUT_MODE_PLAIN,

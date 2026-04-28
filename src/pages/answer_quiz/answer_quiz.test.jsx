@@ -110,7 +110,7 @@ describe("Answer_quiz practice mode", () => {
 
     test("records attempts and does not reveal the correct answer text", async () => {
         render(
-            <MemoryRouter initialEntries={["/answer_quiz/1?practice=1"]} future={routerFuture}>
+            <MemoryRouter initialEntries={["/answer_quiz/c-1?practice=1"]} future={routerFuture}>
                 <Routes>
                     <Route path="/answer_quiz/:id" element={<Answer_quiz />} />
                 </Routes>
@@ -125,7 +125,7 @@ describe("Answer_quiz practice mode", () => {
         await waitFor(() => {
             expect(mockRecordPracticeAttempt).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    quizId: "1",
+                    quizId: 1,
                     address: "0xpractice",
                     answer: "B",
                     isCorrect: false,
@@ -141,7 +141,7 @@ describe("Answer_quiz practice mode", () => {
 
     test("submits a normal answer and returns to the quiz list", async () => {
         render(
-            <MemoryRouter initialEntries={["/answer_quiz/1"]} future={routerFuture}>
+            <MemoryRouter initialEntries={["/answer_quiz/c-1"]} future={routerFuture}>
                 <Routes>
                     <Route path="/answer_quiz/:id" element={<Answer_quiz />} />
                 </Routes>
@@ -155,11 +155,11 @@ describe("Answer_quiz practice mode", () => {
 
         await waitFor(() => {
             expect(mockContract.create_answer).toHaveBeenCalledWith(
-                "1",
+                1,
                 "A",
                 expect.any(Function),
                 expect.any(Function),
-                ""
+                "0x55B3977C7B7b913eaf175A7364c8375732d22241"
             );
         });
         await waitFor(() => {
@@ -176,7 +176,7 @@ describe("Answer_quiz practice mode", () => {
         });
 
         render(
-            <MemoryRouter initialEntries={["/answer_quiz/1"]} future={routerFuture}>
+            <MemoryRouter initialEntries={["/answer_quiz/c-1"]} future={routerFuture}>
                 <Routes>
                     <Route path="/answer_quiz/:id" element={<Answer_quiz />} />
                 </Routes>
@@ -201,7 +201,7 @@ describe("Answer_quiz practice mode", () => {
         });
 
         render(
-            <MemoryRouter initialEntries={["/answer_quiz/1"]} future={routerFuture}>
+            <MemoryRouter initialEntries={["/answer_quiz/c-1"]} future={routerFuture}>
                 <Routes>
                     <Route path="/answer_quiz/:id" element={<Answer_quiz />} />
                 </Routes>

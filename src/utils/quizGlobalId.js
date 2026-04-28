@@ -1,15 +1,20 @@
-import { quiz_address } from "../contract/config";
+import { legacy_quiz_addresses, quiz_address } from "../contract/config";
 
-const LEGACY_ADDRESS = "0xEbBD4E3276bcb847838E18DDA7585Ac8925a5eA6";
+function normalizeAddress(value = "") {
+    return String(value || "").trim().toLowerCase();
+}
 
-// Hardcoded mapping of logical sequence to (address, localId)
-// ID 0-6: Legacy contract quizzes (0 to 6)
-// ID 7: Current contract quiz 0 ("第二回(1)")
-// ID 8: Current contract quiz 3 ("第二回(2)")
-// ID 9: Current contract quiz 4
-// ID 10: Current contract quiz 5
-// ID 11: Current contract quiz 6
-const MAPPED_QUIZZES = [
+const uniqueLegacyAddresses = (legacy_quiz_addresses || []).filter(
+    (address, index, list) => {
+        const normalized = normalizeAddress(address);
+        return Boolean(normalized) && list.findIndex((item) => normalizeAddress(item) === normalized) === index;
+    }
+);
+
+const LEGACY_ADDRESS = uniqueLegacyAddresses[0] || "";
+
+// Backward-compatible mapping for older numeric URLs that were already shared.
+const LEGACY_NUMERIC_MAPPED_QUIZZES = [
     { address: LEGACY_ADDRESS, id: 0 },
     { address: LEGACY_ADDRESS, id: 1 },
     { address: LEGACY_ADDRESS, id: 2 },
@@ -24,57 +29,68 @@ const MAPPED_QUIZZES = [
     { address: quiz_address, id: 6 },
 ];
 
-/**
- * Converts a Local ID and Contract Address into a unified Global ID for continuous URL routing.
- * Returns -1 if the local quiz is an ignored duplicate.
- */
 export function toGlobalId(localId, sourceAddress) {
-    const normAddress = String(sourceAddress || quiz_address).toLowerCase();
+    const normAddress = normalizeAddress(sourceAddress || quiz_address);
     const numericLocalId = Number(localId);
 
-    // Check hardcoded map first
-    const index = MAPPED_QUIZZES.findIndex(
-        q => String(q.address).toLowerCase() === normAddress && q.id === numericLocalId
-    );
-    if (index !== -1) return index;
-
-    // Explicitly ignore duplicates created on the current contract (Local IDs 1 and 2)
-    if (normAddress === String(quiz_address).toLowerCase()) {
-        if (numericLocalId === 1 || numericLocalId === 2) {
-            return -1;
-        }
-        
-        // For newly created quizzes (Local ID 7 and above)
-        if (numericLocalId >= 7) {
-            const offset = numericLocalId - 7;
-            return MAPPED_QUIZZES.length + offset;
-        }
+    if (!Number.isFinite(numericLocalId) || numericLocalId < 0) {
+        return String(localId ?? "");
     }
 
-    // Fallback
-    return numericLocalId;
+    if (normAddress === normalizeAddress(quiz_address)) {
+        return `c-${numericLocalId}`;
+    }
+
+    const legacyIndex = uniqueLegacyAddresses.findIndex(
+        (address) => normalizeAddress(address) === normAddress
+    );
+    if (legacyIndex >= 0) {
+        return `l${legacyIndex}-${numericLocalId}`;
+    }
+
+    return `u-${normAddress}-${numericLocalId}`;
 }
 
-/**
- * Resolves a unified Global ID from the URL back to its Local ID and Contract Address.
- */
 export function resolveGlobalId(globalId) {
-    const numericGlobalId = Number(globalId);
-    
-    // Within hardcoded map
-    if (numericGlobalId >= 0 && numericGlobalId < MAPPED_QUIZZES.length) {
-        return MAPPED_QUIZZES[numericGlobalId];
-    }
-    
-    // For newly created quizzes beyond the mapped list
-    if (numericGlobalId >= MAPPED_QUIZZES.length) {
-        const offset = numericGlobalId - MAPPED_QUIZZES.length;
+    const raw = String(globalId ?? "").trim();
+
+    const currentMatch = raw.match(/^c-(\d+)$/i);
+    if (currentMatch) {
         return {
             address: quiz_address,
-            id: 7 + offset
+            id: Number(currentMatch[1]),
         };
     }
 
-    // Fallback
-    return { id: numericGlobalId, address: quiz_address };
+    const legacyMatch = raw.match(/^l(\d+)-(\d+)$/i);
+    if (legacyMatch) {
+        const legacyAddress = uniqueLegacyAddresses[Number(legacyMatch[1])] || quiz_address;
+        return {
+            address: legacyAddress,
+            id: Number(legacyMatch[2]),
+        };
+    }
+
+    const customMatch = raw.match(/^u-(0x[a-f0-9]+)-(\d+)$/i);
+    if (customMatch) {
+        return {
+            address: customMatch[1],
+            id: Number(customMatch[2]),
+        };
+    }
+
+    const numericGlobalId = Number(raw);
+    if (Number.isFinite(numericGlobalId) && numericGlobalId >= 0) {
+        if (numericGlobalId < LEGACY_NUMERIC_MAPPED_QUIZZES.length) {
+            return LEGACY_NUMERIC_MAPPED_QUIZZES[numericGlobalId];
+        }
+
+        const offset = numericGlobalId - LEGACY_NUMERIC_MAPPED_QUIZZES.length;
+        return {
+            address: quiz_address,
+            id: 7 + offset,
+        };
+    }
+
+    return { id: Number(raw) || 0, address: quiz_address };
 }

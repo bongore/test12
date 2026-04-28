@@ -166,6 +166,14 @@ function Simple_quiz(props) {
             </Link>
             <div className="quiz-card-actions">
                 <Link 
+                    to={buildAnswerQuizPath(quizId, sourceAddress)}
+                    state={{ back_page: 0, ...(buildAnswerQuizState(sourceAddress) || {}) }}
+                    onClick={() => rememberQuizSource(quizId, sourceAddress)}
+                    className="btn-edit"
+                >
+                    👁 問題を見る
+                </Link>
+                <Link 
                     to={buildEditQuizPath(quizId, sourceAddress)} 
                     className="btn-edit"
                 >

@@ -14,17 +14,18 @@ describe("pendingCreatedQuizzes", () => {
     });
 
     test("saves and reads pending quizzes in newest-first order", () => {
+        const now = Date.now();
         savePendingCreatedQuiz({
             quizId: 1,
             sourceAddress: "0xabc",
             title: "first",
-            createdAt: "2026-04-28T10:00:00.000Z",
+            createdAt: new Date(now - 60 * 1000).toISOString(),
         });
         savePendingCreatedQuiz({
             quizId: 2,
             sourceAddress: "0xabc",
             title: "second",
-            createdAt: "2026-04-28T11:00:00.000Z",
+            createdAt: new Date(now).toISOString(),
         });
 
         const entries = getPendingCreatedQuizzes();
