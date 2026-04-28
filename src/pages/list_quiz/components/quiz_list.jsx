@@ -75,7 +75,7 @@ function Quiz_list(props) {
         };
         // location is intentionally referenced so list resets on route change.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [location.key]);
+    }, [location.key, props.quiz_sum, props.refreshKey]);
 
     return null;
 }

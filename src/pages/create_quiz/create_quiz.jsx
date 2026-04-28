@@ -2,6 +2,7 @@ import { Contracts_MetaMask } from "../../contract/contracts";
 import Form from "react-bootstrap/Form";
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { parseUnits } from "viem";
 import MDEditor from "@uiw/react-md-editor";
 import Answer_select from "./components/answer_select";
 import Wait_Modal from "../../contract/wait_Modal";
@@ -12,6 +13,7 @@ import { MAX_TFT_PER_LECTURE, MAX_TFT_TOTAL, QUIZ_RATE_OPTIONS, TOTAL_LECTURE_CO
 import { buildAnswerQuizPath } from "../../utils/quizLinks";
 import { createDefaultQuizContentMeta, withQuizContentMeta } from "../../utils/quizContentMeta";
 import { appendColoredText } from "../../utils/quizEditorHelpers";
+import { savePendingCreatedQuiz } from "../../utils/pendingCreatedQuizzes";
 import "./create_quiz.css";
 
 const CREATE_QUIZ_DRAFT_KEY = "create_quiz_form_v1";
@@ -44,6 +46,7 @@ function Create_quiz() {
     const [now, setnow] = useState(null);
     const [show, setShow] = useState(false);
     const [isDraftLoaded, setIsDraftLoaded] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const Contract = useMemo(() => new Contracts_MetaMask(), []);
 
@@ -60,10 +63,11 @@ function Create_quiz() {
     };
 
     const create_quiz = async () => {
+        if (isSubmitting) return;
         if (correct !== "") {
+            setIsSubmitting(true);
             try {
-                const previousLength = Number(await Contract.get_quiz_lenght(quiz_address));
-                const receipt = await Contract.create_quiz(
+                const { receipt, createdQuizId, hash } = await Contract.create_quiz(
                     title,
                     explanation,
                     thumbnail_url,
@@ -85,17 +89,27 @@ function Create_quiz() {
                     allowMultipleAnswers,
                 });
 
-                let createdQuizId = receipt?.logs?.[2]?.topics?.[2];
-                if (!createdQuizId) {
-                    const latestLength = Number(await Contract.get_quiz_lenght(quiz_address));
-                    if (latestLength > previousLength) {
-                        createdQuizId = String(latestLength - 1);
-                    }
-                }
-
-                if (createdQuizId) {
+                if (createdQuizId !== null && createdQuizId !== undefined) {
                     const normalizedQuizId = BigInt(createdQuizId).toString();
+                    const startEpoch = Math.floor(new Date(reply_startline).getTime() / 1000);
+                    const deadlineEpoch = Math.floor(new Date(reply_deadline).getTime() / 1000);
                     setRegisteredCorrectAnswer(normalizedQuizId, convertFullWidthNumbersToHalf(correct), quiz_address);
+                    savePendingCreatedQuiz({
+                        quizId: Number(normalizedQuizId),
+                        sourceAddress: quiz_address,
+                        title,
+                        explanation,
+                        thumbnail_url,
+                        startTime: startEpoch,
+                        deadline: deadlineEpoch,
+                        rewardWei: String(parseUnits(String(reward || 0), 18)),
+                        respondentCount: 0,
+                        respondentLimit: Number(correct_limit || 0),
+                        status: 0,
+                        isPayment: false,
+                        txHash: String(hash || ""),
+                        createdAt: new Date().toISOString(),
+                    });
                     clearCreateQuizDraft();
                     navigate(buildAnswerQuizPath(normalizedQuizId, quiz_address));
                     return;
@@ -104,6 +118,8 @@ function Create_quiz() {
                 console.error("Failed to create quiz", error);
                 alert(error?.shortMessage || error?.message || "問題作成に失敗しました。MetaMask の承認状態と教員権限を確認してください。");
                 return;
+            } finally {
+                setIsSubmitting(false);
             }
             clearCreateQuizDraft();
             navigate("/list_quiz");
@@ -507,6 +523,7 @@ function Create_quiz() {
                         type="button"
                         className="btn-ghost"
                         style={{ marginRight: "12px" }}
+                        disabled={isSubmitting}
                         onClick={() => {
                             clearCreateQuizDraft();
                             window.location.reload();
@@ -514,8 +531,8 @@ function Create_quiz() {
                     >
                         下書きを削除
                     </button>
-                    <button className="btn-submit-quiz" onClick={() => create_quiz()}>
-                        🚀 クイズを作成
+                    <button className="btn-submit-quiz" disabled={isSubmitting} onClick={() => create_quiz()}>
+                        {isSubmitting ? "送信中..." : "🚀 クイズを作成"}
                     </button>
                 </div>
             </div>

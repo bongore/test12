@@ -5,6 +5,7 @@ import Quiz_list from "./components/quiz_list";
 import { useAccessControl } from "../../utils/accessControl";
 import { getRegisteredCorrectAnswer } from "../../utils/quizCorrectAnswerStore";
 import { getDeletedQuizzes, normalizeDeletedQuizKey, saveDeletedQuiz } from "../../utils/liveSignalApi";
+import { getPendingCreatedQuizzes, pruneResolvedPendingCreatedQuizzes, toPendingQuizSimple } from "../../utils/pendingCreatedQuizzes";
 import "./list_quiz_top.css";
 
 function List_quiz_top(props) {
@@ -19,9 +20,43 @@ function List_quiz_top(props) {
     const [correctAnswerMap, setCorrectAnswerMap] = useState({});
     const [loadError, setLoadError] = useState("");
     const [deletedQuizMap, setDeletedQuizMap] = useState({});
+    const [pendingCreatedQuizzes, setPendingCreatedQuizzes] = useState([]);
+    const [listRefreshKey, setListRefreshKey] = useState(0);
     const containerRef = useRef(null);
     const targetRef = useRef(null);
+    const quizSumRef = useRef(0);
     const getQuizCacheKey = (quiz) => normalizeDeletedQuizKey(`${quiz?.sourceAddress || quiz?.[12] || ""}:${Number(quiz?.[0])}`);
+
+    const syncPendingCreatedQuizzes = () => {
+        const nextPending = getPendingCreatedQuizzes().map((entry) => toPendingQuizSimple(entry)).filter(Boolean);
+        setPendingCreatedQuizzes(nextPending);
+    };
+
+    const refreshQuizLength = async () => {
+        try {
+            const data = await cont.get_quiz_lenght();
+            const nextLength = parseInt(Number(data), 10) || 0;
+
+            if (quizSumRef.current !== nextLength) {
+                quizSumRef.current = nextLength;
+                now_numRef.current = nextLength;
+                Set_quiz_sum(nextLength);
+                Set_quiz_list([]);
+                setListRefreshKey((current) => current + 1);
+            } else if (quiz_sum == null) {
+                Set_quiz_sum(nextLength);
+                now_numRef.current = nextLength;
+            }
+            setLoadError("");
+        } catch (error) {
+            console.error("Failed to load quiz length", error);
+            if (quiz_sum == null) {
+                Set_quiz_sum(0);
+                now_numRef.current = 0;
+            }
+            setLoadError("問題一覧の読み込みに失敗しました。");
+        }
+    };
 
     useEffect(() => {
         let mounted = true;
@@ -36,11 +71,13 @@ function List_quiz_top(props) {
             }
         };
 
+        syncPendingCreatedQuizzes();
         syncDeletedQuizzes();
         const timer = window.setInterval(syncDeletedQuizzes, 5000);
         const handleVisible = () => {
             if (document.visibilityState === "visible") {
                 syncDeletedQuizzes();
+                syncPendingCreatedQuizzes();
             }
         };
         document.addEventListener("visibilitychange", handleVisible);
@@ -87,19 +124,30 @@ function List_quiz_top(props) {
     };
 
     useEffect(() => {
-        cont.get_quiz_lenght()
-            .then((data) => {
-                let now = parseInt(Number(data));
-                Set_quiz_sum(now);
-                now_numRef.current = now;
-                setLoadError("");
-            })
-            .catch((error) => {
-                console.error("Failed to load quiz length", error);
-                Set_quiz_sum(0);
-                now_numRef.current = 0;
-                setLoadError("問題一覧の読み込みに失敗しました。");
-            });
+        refreshQuizLength();
+
+        const timer = window.setInterval(() => {
+            refreshQuizLength();
+            syncPendingCreatedQuizzes();
+        }, 12000);
+
+        const handleVisible = () => {
+            if (document.visibilityState === "visible") {
+                refreshQuizLength();
+                syncPendingCreatedQuizzes();
+            }
+        };
+
+        document.addEventListener("visibilitychange", handleVisible);
+        window.addEventListener("focus", handleVisible);
+
+        return () => {
+            window.clearInterval(timer);
+            document.removeEventListener("visibilitychange", handleVisible);
+            window.removeEventListener("focus", handleVisible);
+        };
+        // cont is stable for this page lifecycle.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [cont]);
 
     useEffect(() => {
@@ -109,6 +157,11 @@ function List_quiz_top(props) {
 
         return () => window.clearInterval(timer);
     }, []);
+
+    useEffect(() => {
+        pruneResolvedPendingCreatedQuizzes(quiz_list);
+        syncPendingCreatedQuizzes();
+    }, [quiz_list]);
 
     useEffect(() => {
         const expiredWithoutAnswer = quiz_list.filter((quiz) => {
@@ -155,6 +208,12 @@ function List_quiz_top(props) {
         };
     }, [cont, correctAnswerMap, currentEpoch, quiz_list]);
 
+    const visibleQuizKeys = new Set(quiz_list.map((quiz) => getQuizCacheKey(quiz)));
+    const mergedQuizList = [
+        ...pendingCreatedQuizzes.filter((quiz) => !visibleQuizKeys.has(getQuizCacheKey(quiz))),
+        ...quiz_list,
+    ];
+
     if (quiz_sum != null) {
         return (
             <div className="quiz-list-page animate-fadeIn">
@@ -174,6 +233,8 @@ function List_quiz_top(props) {
                     targetRef={targetRef}
                     now_numRef={now_numRef}
                     setLoadError={setLoadError}
+                    quiz_sum={quiz_sum}
+                    refreshKey={listRefreshKey}
                 />
 
                 <div className="quiz-list-items">
@@ -188,7 +249,7 @@ function List_quiz_top(props) {
                             </button>
                         </div>
                     ) : null}
-                    {quiz_list
+                    {mergedQuizList
                         .filter((quiz) => !deletedQuizMap[getQuizCacheKey(quiz)])
                         .map((quiz, index) => (
                         <div key={`${quiz?.sourceAddress || quiz?.[12] || "default"}-${Number(quiz?.[0] ?? index)}-${index}`}>

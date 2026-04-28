@@ -5,7 +5,7 @@
  * This file contains the Contracts_MetaMask class with all blockchain interaction methods.
  */
 /* global BigInt */
-import { getAddress as checksumAddress, parseEther, parseUnits } from "viem";
+import { decodeEventLog, getAddress as checksumAddress, parseEther, parseUnits } from "viem";
 import {
     ethereum,
     walletClient,
@@ -1455,6 +1455,7 @@ class Contracts_MetaMask {
         let hash = null;
         const respondentLimit = Number(correct_limit || 0);
         const rewardWei = parseUnits(String(reward || 0), 18);
+        let previousLength = 0;
         try {
             const provider = await this.getEthereumProviderReady();
             if (!provider) {
@@ -1469,6 +1470,7 @@ class Contracts_MetaMask {
                 throw new Error("student_count_unavailable");
             }
 
+            previousLength = Number(await this.get_quiz_lenght(quiz_address));
             const requiredAmount = rewardWei * BigInt(respondentLimit);
             const approval = await this.readTokenAllowance(account, quiz_address);
 
@@ -1491,7 +1493,43 @@ class Contracts_MetaMask {
         } finally {
             setShow(false);
         }
-        return res;
+        let createdQuizId = this.extractCreatedQuizIdFromReceipt(res, quiz_address);
+        if (createdQuizId == null) {
+            for (let index = 0; index < 4; index += 1) {
+                const latestLength = Number(await this.get_quiz_lenght(quiz_address));
+                if (latestLength > previousLength) {
+                    createdQuizId = latestLength - 1;
+                    break;
+                }
+                await sleep(400 * (index + 1));
+            }
+        }
+        return { receipt: res, hash, createdQuizId };
+    }
+
+    extractCreatedQuizIdFromReceipt(receipt, sourceAddress = quiz_address) {
+        const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
+        const normalizedTarget = this.normalizeAddress(targetQuizAddress);
+        const logs = Array.isArray(receipt?.logs) ? receipt.logs : [];
+
+        for (const log of logs) {
+            if (this.normalizeAddress(log?.address) !== normalizedTarget) continue;
+            try {
+                const decoded = decodeEventLog({
+                    abi: quiz_abi,
+                    data: log.data,
+                    topics: log.topics,
+                });
+                if (decoded?.eventName !== "Create_quiz") continue;
+                const rawId = decoded?.args?.id ?? decoded?.args?.[1];
+                if (rawId == null) continue;
+                return Number(rawId);
+            } catch (error) {
+                continue;
+            }
+        }
+
+        return null;
     }
 
     async _create_quiz(account, title, explanation, thumbnail_url, content, answer_type, answer_data, correct, reply_startline, reply_deadline, reward, correct_limit) {
