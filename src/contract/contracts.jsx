@@ -1530,16 +1530,85 @@ class Contracts_MetaMask {
         }
         let createdQuizId = this.extractCreatedQuizIdFromReceipt(res, quiz_address);
         if (createdQuizId == null) {
-            for (let index = 0; index < 4; index += 1) {
-                const latestLength = Number(await this.get_quiz_lenght(quiz_address));
-                if (latestLength > previousLength) {
-                    createdQuizId = latestLength - 1;
-                    break;
-                }
-                await sleep(400 * (index + 1));
-            }
+            createdQuizId = await this.findCreatedQuizIdAfterCreate({
+                previousLength,
+                title,
+                explanation,
+                thumbnail_url,
+                reply_startline,
+                reply_deadline,
+                rewardWei,
+                respondentLimit,
+            });
         }
         return { receipt: res, hash, createdQuizId };
+    }
+
+    async findCreatedQuizIdAfterCreate({
+        previousLength = 0,
+        title = "",
+        explanation = "",
+        thumbnail_url = "",
+        reply_startline = "",
+        reply_deadline = "",
+        rewardWei = 0n,
+        respondentLimit = 0,
+    } = {}) {
+        const startEpoch = Math.floor(new Date(reply_startline).getTime() / 1000);
+        const deadlineEpoch = Math.floor(new Date(reply_deadline).getTime() / 1000);
+        const expectedReward = String(rewardWei || 0n);
+        const expectedRespondentLimit = Number(respondentLimit || 0);
+        const attempts = 8;
+
+        for (let attempt = 0; attempt < attempts; attempt += 1) {
+            let latestLength = 0;
+            try {
+                latestLength = Number(await this.get_quiz_lenght(quiz_address));
+            } catch (error) {
+                latestLength = 0;
+            }
+
+            if (latestLength > 0) {
+                const scanWindow = Math.max(6, latestLength - Math.max(0, previousLength) + 4);
+                const startId = Math.max(0, latestLength - scanWindow);
+                const ids = [];
+
+                for (let id = latestLength - 1; id >= startId; id -= 1) {
+                    ids.push(id);
+                }
+
+                const settled = await Promise.allSettled(
+                    ids.map((id) => this.get_quiz_simple(id, quiz_address))
+                );
+
+                for (const result of settled) {
+                    if (result.status !== "fulfilled") continue;
+                    const quiz = result.value;
+                    if (!Array.isArray(quiz)) continue;
+
+                    const isMatch =
+                        String(quiz?.[2] || "") === String(title || "")
+                        && String(quiz?.[3] || "") === String(explanation || "")
+                        && String(quiz?.[4] || "") === String(thumbnail_url || "")
+                        && Number(quiz?.[5] || 0) === startEpoch
+                        && Number(quiz?.[6] || 0) === deadlineEpoch
+                        && String(quiz?.[7] || 0) === expectedReward
+                        && Number(quiz?.[9] || 0) === expectedRespondentLimit;
+
+                    if (isMatch) {
+                        return Number(quiz?.[0]);
+                    }
+                }
+
+                if (latestLength > previousLength && latestLength - previousLength === 1) {
+                    return latestLength - 1;
+                }
+            }
+
+            await sleep(700 * (attempt + 1));
+        }
+
+        return null;
     }
 
     extractCreatedQuizIdFromReceipt(receipt, sourceAddress = quiz_address) {
