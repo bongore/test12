@@ -150,11 +150,16 @@ function Answer_quiz() {
     const [currentEpoch, setCurrentEpoch] = useState(() => Math.floor(Date.now() / 1000));
     const contract = useMemo(() => new Contracts_MetaMask(), []);
     const access = useAccessControl(contract);
-    const id = useParams().id;
+    
+    const rawId = useParams().id;
+    const { id: localId, address: defaultResolvedAddress } = resolveGlobalId(rawId);
+    const id = localId;
+
     const searchParams = new URLSearchParams(location.search);
     const querySourceAddress = searchParams.get("c") || "";
     const stateSourceAddress = location.state?.sourceAddress || "";
-    const initialSourceAddress = querySourceAddress || stateSourceAddress || getRememberedQuizSource(id) || "";
+    const initialSourceAddress = querySourceAddress || stateSourceAddress || defaultResolvedAddress || getRememberedQuizSource(rawId) || "";
+    
     const [resolvedSourceAddress, setResolvedSourceAddress] = useState(initialSourceAddress);
     const sourceAddress = resolvedSourceAddress || initialSourceAddress;
     const isPracticeMode = searchParams.get("practice") === "1";
@@ -170,18 +175,18 @@ function Answer_quiz() {
 
     useEffect(() => {
         if (sourceAddress) {
-            rememberQuizSource(id, sourceAddress);
+            rememberQuizSource(rawId, sourceAddress);
         }
         if (querySourceAddress) {
             const nextParams = new URLSearchParams(location.search);
             nextParams.delete("c");
             const query = nextParams.toString();
-            navigate(`/answer_quiz/${id}${query ? `?${query}` : ""}`, {
+            navigate(`/answer_quiz/${rawId}${query ? `?${query}` : ""}`, {
                 replace: true,
                 state: { ...(location.state || {}), sourceAddress },
             });
         }
-    }, [id, location.search, location.state, navigate, querySourceAddress, sourceAddress]);
+    }, [id, rawId, location.search, location.state, navigate, querySourceAddress, sourceAddress]);
 
     const convertFullWidthNumbersToHalf = (text) => {
         const full = "０１２３４５６７８９";

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { Contracts_MetaMask } from "../../contract/contracts";
 import { useAccessControl } from "../../utils/accessControl";
+import { resolveGlobalId } from "../../utils/quizGlobalId";
 import "./investment_page.css";
 
 const GRADE_LABEL = {
@@ -25,8 +26,10 @@ function formatTxHash(hash) {
 function Investment_to_quiz() {
     const navigate = useNavigate();
     const location = useLocation();
-    const { id } = useParams();
-    const sourceAddress = new URLSearchParams(location.search).get("c") || "";
+    const rawId = useParams().id;
+    const { id, address: defaultResolvedAddress } = resolveGlobalId(rawId);
+    const querySourceAddress = new URLSearchParams(location.search).get("c") || "";
+    const sourceAddress = querySourceAddress || defaultResolvedAddress;
 
     const [amount, setAmount] = useState(0);
     const [isNotPayingOut, setIsNotPayingOut] = useState("true");

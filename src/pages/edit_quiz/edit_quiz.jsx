@@ -8,13 +8,16 @@ import { ACTION_TYPES, appendActivityLog } from "../../utils/activityLog";
 import { useAccessControl } from "../../utils/accessControl";
 import { createDefaultQuizContentMeta, parseQuizContentMeta, stripQuizContentMeta, withQuizContentMeta } from "../../utils/quizContentMeta";
 import { appendColoredText } from "../../utils/quizEditorHelpers";
+import { resolveGlobalId } from "../../utils/quizGlobalId";
 import "../create_quiz/create_quiz.css";
 
 function Edit_quiz() {
     const navigate = useNavigate();
     const location = useLocation();
-    const id = useParams()["id"];
-    const sourceAddress = new URLSearchParams(location.search).get("c") || "";
+    const rawId = useParams()["id"];
+    const { id, address: defaultResolvedAddress } = resolveGlobalId(rawId);
+    const querySourceAddress = new URLSearchParams(location.search).get("c") || "";
+    const sourceAddress = querySourceAddress || defaultResolvedAddress;
     const [owner, setOwner] = useState(null);
 
     const [title, setTitle] = useState("");

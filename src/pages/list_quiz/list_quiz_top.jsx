@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import Simple_quiz from "./components/quiz_simple";
 import Quiz_list from "./components/quiz_list";
 import { useAccessControl } from "../../utils/accessControl";
+import { toGlobalId } from "../../utils/quizGlobalId";
 import { getRegisteredCorrectAnswer } from "../../utils/quizCorrectAnswerStore";
 import { getCreatedQuizzes, getDeletedQuizzes, normalizeDeletedQuizKey, removeCreatedQuiz, saveDeletedQuiz } from "../../utils/liveSignalApi";
 import { getPendingCreatedQuizzes, pruneResolvedPendingCreatedQuizzes, subscribePendingCreatedQuizzes, toPendingQuizSimple } from "../../utils/pendingCreatedQuizzes";
@@ -272,6 +273,11 @@ function List_quiz_top(props) {
                     ) : null}
                     {mergedQuizList
                         .filter((quiz) => !deletedQuizMap[getQuizCacheKey(quiz)])
+                        .filter((quiz) => {
+                            const localId = Number(quiz?.[0]);
+                            const sourceAddress = quiz?.sourceAddress || quiz?.[12] || "";
+                            return toGlobalId(localId, sourceAddress) !== -1;
+                        })
                         .map((quiz, index) => (
                         <div key={`${quiz?.sourceAddress || quiz?.[12] || "default"}-${Number(quiz?.[0] ?? index)}-${index}`}>
                             <Simple_quiz

@@ -2,6 +2,8 @@ import { quiz_address } from "../contract/config";
 
 const QUIZ_SOURCE_STORAGE_KEY = "web3_quiz_source_map_v1";
 
+import { toGlobalId } from "./quizGlobalId";
+
 function normalizeAddress(value = "") {
     return String(value || "").trim().toLowerCase();
 }
@@ -19,12 +21,10 @@ function buildQuizPath(pathPrefix, quizId, sourceAddress = "", searchParams = {}
         }
     });
 
-    if (!isCurrentQuizSource(sourceAddress)) {
-        params.set("c", sourceAddress);
-    }
+    const globalId = toGlobalId(quizId, sourceAddress);
 
     const query = params.toString();
-    return `/${pathPrefix}/${quizId}${query ? `?${query}` : ""}`;
+    return `/${pathPrefix}/${globalId}${query ? `?${query}` : ""}`;
 }
 
 function buildAnswerQuizPath(quizId, sourceAddress = "", options = {}) {
@@ -32,8 +32,9 @@ function buildAnswerQuizPath(quizId, sourceAddress = "", options = {}) {
     if (options.practice) {
         params.set("practice", "1");
     }
+    const globalId = toGlobalId(quizId, sourceAddress);
     const query = params.toString();
-    return `/answer_quiz/${quizId}${query ? `?${query}` : ""}`;
+    return `/answer_quiz/${globalId}${query ? `?${query}` : ""}`;
 }
 
 function buildAnswerQuizState(sourceAddress = "") {
@@ -51,14 +52,15 @@ function readQuizSourceMap() {
 
 function rememberQuizSource(quizId, sourceAddress = "") {
     if (typeof localStorage === "undefined" || isCurrentQuizSource(sourceAddress)) return;
+    const globalId = toGlobalId(quizId, sourceAddress);
     const map = readQuizSourceMap();
-    map[String(quizId)] = sourceAddress;
+    map[String(globalId)] = sourceAddress;
     localStorage.setItem(QUIZ_SOURCE_STORAGE_KEY, JSON.stringify(map));
 }
 
-function getRememberedQuizSource(quizId) {
+function getRememberedQuizSource(globalId) {
     if (typeof localStorage === "undefined") return "";
-    return readQuizSourceMap()[String(quizId)] || "";
+    return readQuizSourceMap()[String(globalId)] || "";
 }
 
 function buildEditQuizPath(quizId, sourceAddress = "") {
