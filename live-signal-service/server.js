@@ -120,6 +120,18 @@ const server = http.createServer((req, res) => {
         return;
     }
 
+    if ((req.url === "/healthz" || req.url === "/health") && req.method === "GET") {
+        writeJson(res, 200, {
+            ok: true,
+            service: "live-signal-server",
+            uptimeSec: Math.floor(process.uptime()),
+            clients: clients.size,
+            hasCurrentBoardSession: Boolean(currentBoardSession),
+            hasCurrentReactionSession: Boolean(currentReactionSession),
+        });
+        return;
+    }
+
     if (req.url === "/token-grants" && req.method === "GET") {
         writeJson(res, 200, { ok: true, ledger: tokenGrantLedger });
         return;
@@ -826,22 +838,23 @@ wss.on("connection", (ws) => {
     });
 
     ws.on("message", (raw) => {
-        let message;
-
         try {
-            message = JSON.parse(raw.toString());
-        } catch (error) {
-            safeSend(ws, {
-                type: "error",
-                code: "bad_json",
-            });
-            return;
-        }
+            let message;
 
-        const client = clients.get(clientId);
-        if (!client) return;
+            try {
+                message = JSON.parse(raw.toString());
+            } catch (error) {
+                safeSend(ws, {
+                    type: "error",
+                    code: "bad_json",
+                });
+                return;
+            }
 
-        switch (message.type) {
+            const client = clients.get(clientId);
+            if (!client) return;
+
+            switch (message.type) {
         case "register":
             client.role = message.role || "viewer";
             client.address = message.address || "";
@@ -1135,6 +1148,13 @@ wss.on("connection", (ws) => {
                 code: "unknown_message_type",
             });
         }
+        } catch (error) {
+            console.error("WebSocket message handling failed", error);
+            safeSend(ws, {
+                type: "error",
+                code: "internal_error",
+            });
+        }
     });
 
     ws.on("close", () => {
@@ -1150,6 +1170,15 @@ server.listen(PORT, () => {
     console.log(`Live signal server listening on http://localhost:${PORT}`);
 });
 
+server.on("clientError", (error, socket) => {
+    console.error("HTTP client error", error);
+    try {
+        socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
+    } catch (endError) {
+        console.error("Failed to end client error socket", endError);
+    }
+});
+
 setInterval(() => {
     const now = Date.now();
     for (const [clientId, client] of clients.entries()) {
@@ -1161,3 +1190,11 @@ setInterval(() => {
         }
     }
 }, 30 * 1000);
+
+process.on("uncaughtException", (error) => {
+    console.error("Uncaught exception in live signal server", error);
+});
+
+process.on("unhandledRejection", (reason) => {
+    console.error("Unhandled rejection in live signal server", reason);
+});
