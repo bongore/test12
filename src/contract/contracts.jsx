@@ -821,6 +821,17 @@ class Contracts_MetaMask {
 
         return [];
     }
+
+    async wait_for_amoy_confirmation(provider, attempts = 8, delayMs = 600) {
+        for (let attempt = 0; attempt < attempts; attempt += 1) {
+            const chainId = await this.read_chain_id_with_provider(provider);
+            if (chainId === amoy.id) {
+                return chainId;
+            }
+            await sleep(delayMs);
+        }
+        return null;
+    }
     async add_token_wallet() {
         if (!this.getEthereumProvider()) return;
         try {
@@ -899,7 +910,12 @@ class Contracts_MetaMask {
                     return true;
                 }
                 await this.add_network();
-                return await this.change_network();
+                const afterAddConfirmation = await this.wait_for_amoy_confirmation(provider, 6, 700);
+                if (afterAddConfirmation === amoy.id) {
+                    return true;
+                }
+                await this.change_network();
+                return (await this.wait_for_amoy_confirmation(provider, 6, 700)) === amoy.id;
             }
             if (error?.code === 4001) {
                 return false;
@@ -948,13 +964,13 @@ class Contracts_MetaMask {
             }
 
             await this.add_network();
-            const chainIdAfterAdd = await this.read_chain_id_with_provider(provider);
+            const chainIdAfterAdd = await this.wait_for_amoy_confirmation(provider, 6, 700);
             if (chainIdAfterAdd !== amoy.id) {
                 await this.change_network();
             }
         }
 
-        const nextChainId = await this.read_chain_id_with_provider(provider);
+        const nextChainId = await this.wait_for_amoy_confirmation(provider, 8, 700);
         if (nextChainId !== amoy.id) {
             throw new Error("amoy_network_switch_failed");
         }
