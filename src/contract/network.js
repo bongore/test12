@@ -12,8 +12,8 @@ export const amoy = {
     rpcUrls: {
         default: {
             http: [
+                "https://rpc-amoy.polygon.technology",
                 "https://polygon-amoy.drpc.org",
-                "https://rpc-amoy.polygon.technology/",
                 "https://polygon-amoy-bor-rpc.publicnode.com",
             ],
         },

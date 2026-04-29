@@ -5,7 +5,7 @@ import "./../../contract/wait_Modal.css";
 const NETWORK_LABEL = "Polygon Amoy Testnet";
 const NETWORK_CONFIG = {
     chainId: "80002",
-    rpcUrl: "https://polygon-amoy.drpc.org",
+    rpcUrl: "https://rpc-amoy.polygon.technology",
     symbol: "POL",
     explorer: "https://amoy.polygonscan.com/",
 };

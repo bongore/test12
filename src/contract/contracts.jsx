@@ -745,7 +745,7 @@ class Contracts_MetaMask {
     }
 
     getAmoyAddChainParams() {
-        const preferredRpcUrl = (amoy.rpcUrls?.default?.http || [])[0] || "https://polygon-amoy.drpc.org";
+        const preferredRpcUrl = "https://rpc-amoy.polygon.technology";
         return {
             chainId: `0x${amoy.id.toString(16)}`,
             chainName: amoy.name,
