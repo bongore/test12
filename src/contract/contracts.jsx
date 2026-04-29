@@ -754,16 +754,26 @@ class Contracts_MetaMask {
         };
     }
 
-    async get_chain_id() {
-        const provider = await this.getEthereumProviderForRead();
+    async read_chain_id_with_provider(provider) {
         if (!provider) return null;
         try {
-            const chainIdHex = await provider.request({ method: "eth_chainId" });
-            return Number(chainIdHex);
+            const chainIdRaw = await provider.request({ method: "eth_chainId" });
+            if (chainIdRaw == null || chainIdRaw === "") return null;
+            if (typeof chainIdRaw === "string" && /^0x/i.test(chainIdRaw)) {
+                const parsedHex = Number.parseInt(chainIdRaw, 16);
+                return Number.isFinite(parsedHex) ? parsedHex : null;
+            }
+            const parsedNumber = Number(chainIdRaw);
+            return Number.isFinite(parsedNumber) ? parsedNumber : null;
         } catch (error) {
-            console.error("Failed to get chain id", error);
+            console.error("Failed to read chain id with provider", error);
             return null;
         }
+    }
+
+    async get_chain_id() {
+        const provider = await this.getEthereumProviderForRead();
+        return await this.read_chain_id_with_provider(provider);
     }
 
     async request_wallet_access() {
@@ -840,10 +850,19 @@ class Contracts_MetaMask {
 
         await this.request_wallet_access();
 
+        const currentChainId = await this.read_chain_id_with_provider(provider);
+        if (currentChainId === amoy.id) {
+            return true;
+        }
+
         try {
             return await this.change_network();
         } catch (error) {
             if (error?.code === 4902 || String(error?.message || "").includes("4902")) {
+                const recheckedChainId = await this.read_chain_id_with_provider(provider);
+                if (recheckedChainId === amoy.id) {
+                    return true;
+                }
                 await this.add_network();
                 return await this.change_network();
             }
@@ -862,7 +881,11 @@ class Contracts_MetaMask {
 
         await this.request_wallet_access();
 
-        const currentChainId = await this.get_chain_id();
+        let currentChainId = await this.read_chain_id_with_provider(provider);
+        if (currentChainId == null) {
+            await sleep(400);
+            currentChainId = await this.read_chain_id_with_provider(provider);
+        }
         if (currentChainId === amoy.id) {
             return { changed: false, chainId: currentChainId };
         }
@@ -883,11 +906,19 @@ class Contracts_MetaMask {
                 throw error;
             }
 
+            const recheckedChainId = await this.read_chain_id_with_provider(provider);
+            if (recheckedChainId === amoy.id) {
+                return { changed: false, chainId: recheckedChainId };
+            }
+
             await this.add_network();
-            await this.change_network();
+            const chainIdAfterAdd = await this.read_chain_id_with_provider(provider);
+            if (chainIdAfterAdd !== amoy.id) {
+                await this.change_network();
+            }
         }
 
-        const nextChainId = await this.get_chain_id();
+        const nextChainId = await this.read_chain_id_with_provider(provider);
         if (nextChainId !== amoy.id) {
             throw new Error("amoy_network_switch_failed");
         }
@@ -1745,28 +1776,30 @@ class Contracts_MetaMask {
     async create_answer(id, answer, setShow, setContent, sourceAddress = "") {
         console.log(id, answer);
         try {
-            if (ethereum) {
-                let account = await this.get_address();
-
-                setShow(true);
-                setContent("書き込み中...");
-                let hash = await this._save_answer(account, id, answer, sourceAddress);
-
-                if (hash) {
-                    let res = await publicClient.waitForTransactionReceipt({ hash });
-                    console.log(res);
-                    // トランザクション成功後にのみローカルに保存
-                    localStorage.setItem(`quiz_${this.normalizeQuizAddress(sourceAddress)}_${id}_answer`, answer);
-                    return res;
-                } else {
-                    // hash が取得できなかった = トランザクションが拒否された
-                    setShow(false);
-                    throw new Error("Transaction was rejected or failed");
-                }
-                console.log("create_answer_cont");
-            } else {
-                console.log("Ethereum object does not exist");
+            const provider = await this.getEthereumProviderReady();
+            if (!provider) {
+                throw new Error("ethereum_not_found");
             }
+
+            let account = await this.get_address();
+            if (!account) {
+                throw new Error("wallet_not_connected");
+            }
+
+            setShow(true);
+            setContent("書き込み中...");
+            let hash = await this._save_answer(account, id, answer, sourceAddress);
+
+            if (hash) {
+                let res = await publicClient.waitForTransactionReceipt({ hash });
+                console.log(res);
+                // トランザクション成功後にのみローカルに保存
+                localStorage.setItem(`quiz_${this.normalizeQuizAddress(sourceAddress)}_${id}_answer`, answer);
+                return res;
+            }
+
+            setShow(false);
+            throw new Error("Transaction was rejected or failed");
         } catch (err) {
             console.log(err);
             setShow(false);

@@ -260,15 +260,20 @@ function Answer_quiz() {
 
             const resolvedAnswerStorageKey = buildQuizStorageKey(id, resolvedSource);
             const resolvedDraftKey = `quiz_answer_${String(resolvedSource || "default").toLowerCase()}_${id}`;
+            const cachedAnswer = localStorage.getItem(resolvedAnswerStorageKey) || "";
+            const hasResolvedConnectedAddress = Boolean(access.address);
             if (Number(simpleQuizData[10]) !== 0) {
-                const cachedAnswer = localStorage.getItem(resolvedAnswerStorageKey) || "";
                 setSavedAnswerStr(cachedAnswer);
                 if (cachedAnswer) {
                     setAnswer(cachedAnswer);
                 }
             } else {
-                localStorage.removeItem(resolvedAnswerStorageKey);
-                setSavedAnswerStr("");
+                if (hasResolvedConnectedAddress) {
+                    localStorage.removeItem(resolvedAnswerStorageKey);
+                    setSavedAnswerStr("");
+                } else if (cachedAnswer) {
+                    setSavedAnswerStr(cachedAnswer);
+                }
                 const draft = getDraft(resolvedDraftKey);
                 if (draft) {
                     setAnswer(draft);
@@ -452,7 +457,7 @@ function Answer_quiz() {
         get_quiz();
         // contract instance is intentionally recreated locally.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [access.canAnswerQuiz, access.isLoading, id, sourceAddress]);
+    }, [access.address, access.canAnswerQuiz, access.isLoading, id, sourceAddress]);
 
     useEffect(() => {
         if (!answer || !simpleQuiz || Number(simpleQuiz[10]) !== 0) return;
