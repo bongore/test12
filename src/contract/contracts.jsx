@@ -798,6 +798,29 @@ class Contracts_MetaMask {
             throw error;
         }
     }
+
+    async ensure_wallet_connected() {
+        let accounts = [];
+        try {
+            accounts = await this.request_wallet_access();
+        } catch (error) {
+            throw error;
+        }
+
+        if (Array.isArray(accounts) && accounts.length > 0) {
+            return accounts;
+        }
+
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+            await sleep(350 * (attempt + 1));
+            const address = await this.get_address();
+            if (address) {
+                return [address];
+            }
+        }
+
+        return [];
+    }
     async add_token_wallet() {
         if (!this.getEthereumProvider()) return;
         try {
@@ -860,7 +883,7 @@ class Contracts_MetaMask {
         const provider = await this.getEthereumProviderReady();
         if (!provider) return false;
 
-        await this.request_wallet_access();
+        await this.ensure_wallet_connected();
 
         const currentChainId = await this.read_chain_id_with_provider(provider);
         if (currentChainId === amoy.id) {
@@ -891,7 +914,7 @@ class Contracts_MetaMask {
             throw new Error("metamask_not_found");
         }
 
-        await this.request_wallet_access();
+        await this.ensure_wallet_connected();
 
         let currentChainId = await this.read_chain_id_with_provider(provider);
         if (currentChainId == null) {

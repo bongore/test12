@@ -108,7 +108,8 @@ function Modal_change_network(props) {
     const handleSwitchNetwork = async () => {
         try {
             await props.cont.add_or_switch_amoy_network();
-            const accounts = await props.cont.request_wallet_access();
+            await new Promise((resolve) => window.setTimeout(resolve, 500));
+            const accounts = await props.cont.ensure_wallet_connected();
             if (!Array.isArray(accounts) || accounts.length === 0) {
                 throw new Error("wallet_not_connected_after_network_switch");
             }

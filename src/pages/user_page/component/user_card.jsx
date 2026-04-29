@@ -42,7 +42,8 @@ function User_card(props) {
 
         try {
             const result = await props.cont.add_or_switch_amoy_network();
-            await props.cont.request_wallet_access();
+            await new Promise((resolve) => window.setTimeout(resolve, 500));
+            await props.cont.ensure_wallet_connected();
             if (result?.changed) {
                 alert("Polygon Amoy を MetaMask に追加し、自動で切り替えました。");
                 return true;
