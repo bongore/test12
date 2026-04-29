@@ -744,8 +744,14 @@ class Contracts_MetaMask {
         }
     }
 
-    getAmoyAddChainParams() {
-        const preferredRpcUrl = "https://rpc-amoy.polygon.technology";
+    getAmoyRpcCandidates() {
+        return Array.from(new Set([
+            "https://rpc-amoy.polygon.technology",
+            ...(amoy.rpcUrls?.default?.http || []),
+        ].filter(Boolean)));
+    }
+
+    getAmoyAddChainParams(preferredRpcUrl = "https://rpc-amoy.polygon.technology") {
         return {
             chainId: `0x${amoy.id.toString(16)}`,
             chainName: amoy.name,
@@ -878,16 +884,23 @@ class Contracts_MetaMask {
     async add_network() {
         const provider = await this.getEthereumProviderReady();
         if (!provider) return false;
-        try {
-            await provider.request({
-                method: "wallet_addEthereumChain",
-                params: [this.getAmoyAddChainParams()],
-            });
-            return true;
-        } catch (e) {
-            console.log(e);
-            throw e;
+        let lastError = null;
+        for (const rpcUrl of this.getAmoyRpcCandidates()) {
+            try {
+                await provider.request({
+                    method: "wallet_addEthereumChain",
+                    params: [this.getAmoyAddChainParams(rpcUrl)],
+                });
+                return true;
+            } catch (e) {
+                lastError = e;
+                console.log(e);
+                if (e?.code === 4001) {
+                    throw e;
+                }
+            }
         }
+        throw lastError || new Error("amoy_network_add_failed");
     }
 
     async ensure_amoy_network() {
