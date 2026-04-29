@@ -685,6 +685,10 @@ class Contracts_MetaMask {
         return await waitForEthereumProvider(2500);
     }
 
+    async getEthereumProviderForRead() {
+        return this.getEthereumProvider() || await waitForEthereumProvider(350);
+    }
+
     async writeContractDirect({ account, address, abi, functionName, args = [] }) {
         const provider = await this.getEthereumProviderReady();
         if (!provider || !walletClient) {
@@ -751,7 +755,7 @@ class Contracts_MetaMask {
     }
 
     async get_chain_id() {
-        const provider = await this.getEthereumProviderReady();
+        const provider = await this.getEthereumProviderForRead();
         if (!provider) return null;
         try {
             const chainIdHex = await provider.request({ method: "eth_chainId" });
@@ -950,7 +954,7 @@ class Contracts_MetaMask {
 
     async get_address() {
         try {
-            const provider = await this.getEthereumProviderReady();
+            const provider = await this.getEthereumProviderForRead();
             if (!provider) {
                 console.log("Ethereum object does not exist");
                 return "";
