@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { WALLET_PROVIDER_CHANGED_EVENT } from "../../contract/contractClients";
 import "./../../contract/wait_Modal.css";
 
 const NETWORK_LABEL = "Polygon Amoy Testnet";
@@ -107,12 +108,26 @@ function Modal_change_network(props) {
     const handleSwitchNetwork = async () => {
         try {
             await props.cont.add_or_switch_amoy_network();
+            const accounts = await props.cont.request_wallet_access();
+            if (!Array.isArray(accounts) || accounts.length === 0) {
+                throw new Error("wallet_not_connected_after_network_switch");
+            }
             setCurrentChainId(await props.cont.get_chain_id());
+            window.dispatchEvent(new CustomEvent(WALLET_PROVIDER_CHANGED_EVENT, {
+                detail: {
+                    type: "networkSwitchCompleted",
+                    accounts,
+                },
+            }));
         } catch (error) {
             console.error("Failed to add or switch Polygon Amoy", error);
             if (error?.message === "metamask_not_found" || error?.message === "ethereum_not_found") {
                 alert("ウォレットが見つかりません。Chrome / Brave の MetaMask または Brave Wallet を有効化し、ページを再読み込みしてください。");
                 setHasEthereumProvider(false);
+                return;
+            }
+            if (error?.message === "wallet_not_connected_after_network_switch") {
+                alert("Polygon Amoy への切り替え後にウォレット接続の確認が取れませんでした。もう一度ボタンを押してください。");
                 return;
             }
             if (error?.code === 4001) {
