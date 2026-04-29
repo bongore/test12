@@ -105,6 +105,35 @@ function Modal_change_network(props) {
         return <></>;
     }
 
+    const copyNetworkField = async (label, value) => {
+        try {
+            if (navigator?.clipboard?.writeText) {
+                await navigator.clipboard.writeText(String(value || ""));
+                alert(`${label} をコピーしました。`);
+                return;
+            }
+        } catch (error) {
+            console.error(`Failed to copy ${label}`, error);
+        }
+
+        try {
+            const input = document.createElement("textarea");
+            input.value = String(value || "");
+            input.setAttribute("readonly", "readonly");
+            input.style.position = "fixed";
+            input.style.opacity = "0";
+            document.body.appendChild(input);
+            input.focus();
+            input.select();
+            document.execCommand("copy");
+            document.body.removeChild(input);
+            alert(`${label} をコピーしました。`);
+        } catch (error) {
+            console.error(`Failed to copy ${label}`, error);
+            alert(`${label} のコピーに失敗しました。手動で入力してください。`);
+        }
+    };
+
     const handleSwitchNetwork = async () => {
         try {
             await props.cont.add_or_switch_amoy_network();
@@ -225,6 +254,24 @@ function Modal_change_network(props) {
                             <div>Chain ID: {NETWORK_CONFIG.chainId}</div>
                             <div>Currency Symbol: {NETWORK_CONFIG.symbol}</div>
                             <div>Block Explorer URL: {NETWORK_CONFIG.explorer}</div>
+                        </div>
+                        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "14px" }}>
+                            <button type="button" className="btn-secondary-custom" onClick={() => copyNetworkField("RPC URL", NETWORK_CONFIG.rpcUrl)}>
+                                RPC URL をコピー
+                            </button>
+                            <button type="button" className="btn-secondary-custom" onClick={() => copyNetworkField("Chain ID", NETWORK_CONFIG.chainId)}>
+                                Chain ID をコピー
+                            </button>
+                        </div>
+                    </div>
+
+                    <div style={{ background: "rgba(255,255,255,0.12)", borderRadius: "20px", padding: "18px 20px", marginBottom: "20px", color: "#fff" }}>
+                        <div style={{ fontWeight: 700, marginBottom: "10px" }}>Edge / Brave でまだ接続できない場合</div>
+                        <div style={{ display: "grid", gap: "8px", fontSize: "14px", lineHeight: 1.8, color: "rgba(255,255,255,0.92)" }}>
+                            <div>1. MetaMask を開き、既存の Polygon Amoy がある場合は RPC URL を `{NETWORK_CONFIG.rpcUrl}` に修正してください。</div>
+                            <div>2. `RPCを更新` が失敗する場合は、既存の Polygon Amoy を削除してから、この画面のボタンで再追加してください。</div>
+                            <div>3. Edge / Brave では MetaMask 拡張を有効化した状態で、このページを強制再読み込みしてから再実行してください。</div>
+                            <div>4. それでも失敗する場合は、MetaMask のネットワーク追加画面で上の値を手動入力してください。</div>
                         </div>
                     </div>
 
