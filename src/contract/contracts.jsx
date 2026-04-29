@@ -745,13 +745,25 @@ class Contracts_MetaMask {
     }
 
     getAmoyAddChainParams() {
+        const preferredRpcUrl = (amoy.rpcUrls?.default?.http || [])[0] || "https://polygon-amoy.drpc.org";
         return {
             chainId: `0x${amoy.id.toString(16)}`,
             chainName: amoy.name,
             nativeCurrency: amoy.nativeCurrency,
-            rpcUrls: amoy.rpcUrls?.default?.http || [],
+            rpcUrls: [preferredRpcUrl],
             blockExplorerUrls: amoy.blockExplorers?.default?.url ? [amoy.blockExplorers.default.url] : [],
         };
+    }
+
+    shouldRefreshAmoyRpc(error) {
+        const message = String(error?.message || "").toLowerCase();
+        return message.includes("rpc")
+            || message.includes("network connection")
+            || message.includes("could not fetch chain id")
+            || message.includes("failed to fetch")
+            || message.includes("internal json-rpc error")
+            || message.includes("amoyに接続できません")
+            || message.includes("rpcを更新");
     }
 
     async read_chain_id_with_provider(provider) {
@@ -858,7 +870,7 @@ class Contracts_MetaMask {
         try {
             return await this.change_network();
         } catch (error) {
-            if (error?.code === 4902 || String(error?.message || "").includes("4902")) {
+            if (error?.code === 4902 || String(error?.message || "").includes("4902") || this.shouldRefreshAmoyRpc(error)) {
                 const recheckedChainId = await this.read_chain_id_with_provider(provider);
                 if (recheckedChainId === amoy.id) {
                     return true;
@@ -900,7 +912,8 @@ class Contracts_MetaMask {
             const shouldAddNetwork =
                 error?.code === 4902
                 || String(error?.message || "").includes("4902")
-                || String(error?.message || "").toLowerCase().includes("unrecognized chain");
+                || String(error?.message || "").toLowerCase().includes("unrecognized chain")
+                || this.shouldRefreshAmoyRpc(error);
 
             if (!shouldAddNetwork) {
                 throw error;
