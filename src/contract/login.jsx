@@ -31,7 +31,7 @@ function Login() {
 
         const provider = await contract.getEthereumProviderReady();
         if (!provider) {
-            setError("MetaMask が見つかりません。Mac の場合は Chrome / Brave に MetaMask 拡張を入れて有効化し、ページを再読み込みしてください。Safari では MetaMask 拡張が使えない場合があります。");
+            setError("ウォレットが見つかりません。Chrome / Brave の MetaMask または Brave Wallet を有効化し、ページを再読み込みしてください。");
             appendActivityLog(ACTION_TYPES.WALLET_PROVIDER_MISSING, {
                 page: "login",
                 wallet: "MetaMask",
@@ -92,7 +92,7 @@ function Login() {
                             Web3 Quiz
                         </h1>
                         <p className="login-subtitle">
-                            MetaMask を接続すると Polygon Amoy Testnet と独自トークンを自動で連携します。
+                            MetaMask / Brave Wallet を接続すると Polygon Amoy Testnet と独自トークンを自動で連携します。
                         </p>
                     </div>
 
@@ -107,8 +107,8 @@ function Login() {
                                     <MetaMaskLogo className="wallet-icon" />
                                 </div>
                                 <div className="wallet-info">
-                                    <span className="wallet-name">MetaMask</span>
-                                    <span className="wallet-desc">推奨ウォレット</span>
+                                    <span className="wallet-name">ウォレット接続</span>
+                                    <span className="wallet-desc">MetaMask / Brave Wallet</span>
                                 </div>
                             </div>
                             <div className="wallet-option-right">

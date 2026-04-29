@@ -951,20 +951,18 @@ class Contracts_MetaMask {
     async get_address() {
         try {
             const provider = await this.getEthereumProviderReady();
-            if (!provider || !walletClient) {
+            if (!provider) {
                 console.log("Ethereum object does not exist");
                 return "";
             }
 
             const accounts = await provider.request({ method: "eth_accounts" });
             if (accounts?.[0]) return accounts[0];
-
-            const requestedAccounts = await walletClient.requestAddresses();
-            return requestedAccounts?.[0] || "";
         } catch (err) {
             console.log(err);
             return "";
         }
+        return "";
     }
 
     async get_token_history(address, start, end) {

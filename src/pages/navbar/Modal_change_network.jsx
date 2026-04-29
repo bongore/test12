@@ -78,7 +78,7 @@ function Modal_change_network(props) {
         } catch (error) {
             console.error("Failed to add or switch Polygon Amoy", error);
             if (error?.message === "metamask_not_found" || error?.message === "ethereum_not_found") {
-                alert("MetaMask が見つかりません。Mac の場合は Chrome / Brave に MetaMask 拡張を入れて有効化し、ページを再読み込みしてください。Safari では MetaMask 拡張が使えない場合があります。");
+                alert("ウォレットが見つかりません。Chrome / Brave の MetaMask または Brave Wallet を有効化し、ページを再読み込みしてください。");
                 setHasEthereumProvider(false);
                 return;
             }
@@ -190,7 +190,7 @@ function Modal_change_network(props) {
                                 lineHeight: 1.7,
                             }}
                         >
-                            MetaMask がこのブラウザで見つかりません。MetaMask 拡張機能をインストールした後に、ページを再読み込みしてください。
+                            このブラウザでウォレットが見つかりません。MetaMask 拡張または Brave Wallet を有効化した後に、ページを再読み込みしてください。
                         </div>
                     )}
 

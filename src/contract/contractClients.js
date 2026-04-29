@@ -74,14 +74,15 @@ function detectEthereumProvider() {
     const eip6963Provider = pickBestProvider(eip6963Providers);
     if (eip6963Provider) return eip6963Provider;
 
-    const injected = window.ethereum || null;
+    const braveFallback = window.braveEthereum || window.braveWalletProvider || null;
+    const injected = window.ethereum || braveFallback || null;
     if (!injected) return null;
 
     if (Array.isArray(injected.providers) && injected.providers.length > 0) {
         return pickBestProvider(injected.providers.map((provider) => ({ provider }))) || injected;
     }
 
-    return injected;
+    return injected || braveFallback;
 }
 
 function syncInjectedClients() {
@@ -131,7 +132,7 @@ function requestEip6963Providers() {
     }
 }
 
-async function waitForEthereumProvider(timeoutMs = 1800) {
+async function waitForEthereumProvider(timeoutMs = 5000) {
     const currentProvider = syncInjectedClients();
     if (currentProvider) return currentProvider;
     if (typeof window === "undefined") return null;
@@ -140,12 +141,18 @@ async function waitForEthereumProvider(timeoutMs = 1800) {
 
     return await new Promise((resolve) => {
         let done = false;
+        let pollTimer = null;
         const finish = (provider) => {
             if (done) return;
             done = true;
             window.removeEventListener("ethereum#initialized", handleEthereumInitialized);
             window.removeEventListener("eip6963:announceProvider", handleEip6963Provider);
+            window.removeEventListener("DOMContentLoaded", handleEthereumInitialized);
+            window.removeEventListener("load", handleEthereumInitialized);
             window.clearTimeout(timer);
+            if (pollTimer) {
+                window.clearInterval(pollTimer);
+            }
             resolve(provider || syncInjectedClients());
         };
 
@@ -162,8 +169,17 @@ async function waitForEthereumProvider(timeoutMs = 1800) {
             finish(syncInjectedClients());
         }, timeoutMs);
 
+        pollTimer = window.setInterval(() => {
+            const detectedProvider = syncInjectedClients();
+            if (detectedProvider) {
+                finish(detectedProvider);
+            }
+        }, 250);
+
         window.addEventListener("ethereum#initialized", handleEthereumInitialized, { once: true });
         window.addEventListener("eip6963:announceProvider", handleEip6963Provider);
+        window.addEventListener("DOMContentLoaded", handleEthereumInitialized, { once: true });
+        window.addEventListener("load", handleEthereumInitialized, { once: true });
     });
 }
 

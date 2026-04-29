@@ -36,7 +36,7 @@ function User_card(props) {
                 alert("iPhone / Android では MetaMask アプリ内ブラウザで開くとネットワーク追加とトークン追加が使いやすくなります。");
                 return;
             }
-            alert("MetaMask が見つかりません。Mac の場合は Chrome / Brave に MetaMask 拡張を入れて有効化し、ページを再読み込みしてください。Safari では MetaMask 拡張が使えない場合があります。");
+            alert("ウォレットが見つかりません。Chrome / Brave の MetaMask または Brave Wallet を有効化し、ページを再読み込みしてください。");
             return;
         }
 
@@ -65,7 +65,7 @@ function User_card(props) {
                 showManualTokenGuide("TFT", token_address);
                 return;
             }
-            alert("MetaMask が見つかりません。Mac の場合は Chrome / Brave に MetaMask 拡張を入れて有効化し、ページを再読み込みしてください。Safari では MetaMask 拡張が使えない場合があります。");
+            alert("ウォレットが見つかりません。Chrome / Brave の MetaMask または Brave Wallet を有効化し、ページを再読み込みしてください。");
             return;
         }
 
@@ -90,7 +90,7 @@ function User_card(props) {
                 showManualTokenGuide("TTT", ttt_token_address);
                 return;
             }
-            alert("MetaMask が見つかりません。Mac の場合は Chrome / Brave に MetaMask 拡張を入れて有効化し、ページを再読み込みしてください。Safari では MetaMask 拡張が使えない場合があります。");
+            alert("ウォレットが見つかりません。Chrome / Brave の MetaMask または Brave Wallet を有効化し、ページを再読み込みしてください。");
             return;
         }
 
