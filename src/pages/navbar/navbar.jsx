@@ -17,8 +17,14 @@ function Nav_menu(props) {
 
     useEffect(() => {
         const get_variable = async () => {
-            setChain_id(await props.cont.get_chain_id());
-            Set_useing_address(await props.cont.get_address());
+            const [nextChainId, nextAddress] = await Promise.all([
+                props.cont.get_chain_id(),
+                props.cont.get_address(),
+            ]);
+            if (nextChainId != null) {
+                setChain_id(nextChainId);
+            }
+            Set_useing_address(nextAddress || null);
         };
         get_variable();
 

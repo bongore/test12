@@ -9,13 +9,34 @@ const NETWORK_CONFIG = {
     explorer: "https://amoy.polygonscan.com/",
 };
 
+function normalizeChainId(chainId) {
+    if (chainId == null || chainId === "") return null;
+    if (typeof chainId === "string") {
+        const trimmed = chainId.trim();
+        if (!trimmed) return null;
+        if (/^0x/i.test(trimmed)) {
+            const parsedHex = Number.parseInt(trimmed, 16);
+            return Number.isFinite(parsedHex) ? parsedHex : null;
+        }
+        const parsedNumber = Number(trimmed);
+        return Number.isFinite(parsedNumber) ? parsedNumber : null;
+    }
+    const parsedNumber = Number(chainId);
+    return Number.isFinite(parsedNumber) ? parsedNumber : null;
+}
+
 function Modal_change_network(props) {
-    const [currentChainId, setCurrentChainId] = useState(props.chain_id);
+    const [currentChainId, setCurrentChainId] = useState(() => normalizeChainId(props.chain_id));
     const [hasEthereumProvider, setHasEthereumProvider] = useState(Boolean(props.cont?.getEthereumProvider?.()));
-    const isVisible = currentChainId !== 80002;
+    const [chainResolved, setChainResolved] = useState(() => normalizeChainId(props.chain_id) != null);
+    const isVisible = hasEthereumProvider && chainResolved && currentChainId !== 80002;
 
     useEffect(() => {
-        setCurrentChainId(props.chain_id);
+        const normalizedChainId = normalizeChainId(props.chain_id);
+        setCurrentChainId(normalizedChainId);
+        if (normalizedChainId != null) {
+            setChainResolved(true);
+        }
     }, [props.chain_id]);
 
     useEffect(() => {
@@ -40,12 +61,17 @@ function Modal_change_network(props) {
         if (!provider) return undefined;
 
         const syncChainId = async () => {
-            const nextChainId = await props.cont?.get_chain_id?.();
-            setCurrentChainId(nextChainId);
+            const nextChainId = normalizeChainId(await props.cont?.get_chain_id?.());
+            if (nextChainId != null) {
+                setCurrentChainId(nextChainId);
+                setChainResolved(true);
+            }
         };
 
         const handleChainChanged = (chainIdHex) => {
-            setCurrentChainId(Number(chainIdHex));
+            const normalizedChainId = normalizeChainId(chainIdHex);
+            setCurrentChainId(normalizedChainId);
+            setChainResolved(normalizedChainId != null);
         };
 
         const handleAccountsChanged = () => {
@@ -58,10 +84,17 @@ function Modal_change_network(props) {
             console.error("Failed to sync chain id", error);
         });
 
+        const timer = window.setInterval(() => {
+            syncChainId().catch((error) => {
+                console.error("Failed to sync chain id", error);
+            });
+        }, 2000);
+
         provider.on?.("chainChanged", handleChainChanged);
         provider.on?.("accountsChanged", handleAccountsChanged);
 
         return () => {
+            window.clearInterval(timer);
             provider.removeListener?.("chainChanged", handleChainChanged);
             provider.removeListener?.("accountsChanged", handleAccountsChanged);
         };
