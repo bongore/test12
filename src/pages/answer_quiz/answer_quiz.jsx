@@ -319,17 +319,33 @@ function Answer_quiz() {
             return;
         }
 
+        const nowEpoch = Math.floor(Date.now() / 1000);
         const startEpoch = Number(quiz?.[8] || 0);
-        if (startEpoch > 0 && currentEpoch < startEpoch) {
+        if (startEpoch > 0 && nowEpoch < startEpoch) {
             appendActivityLog(ACTION_TYPES.ANSWER_BLOCKED_BEFORE_START, {
                 page: "answer_quiz",
                 quizId: id,
                 quizTitle: quiz?.[2] || "",
-                now: currentEpoch,
+                now: nowEpoch,
                 replyStart: startEpoch,
                 practiceMode: isPracticeMode,
             });
             alert("まだ回答開始時間になっていません。");
+            return;
+        }
+
+        const deadlineEpoch = Number(quiz?.[9] || 0);
+        if (deadlineEpoch > 0 && nowEpoch >= deadlineEpoch) {
+            appendActivityLog(ACTION_TYPES.ANSWER_SUBMIT_FAILED, {
+                page: "answer_quiz",
+                quizId: id,
+                quizTitle: quiz?.[2] || "",
+                sourceAddress,
+                answerLength: String(answer || "").length,
+                errorMessage: "deadline_passed",
+                submitDurationMs: 0,
+            });
+            alert("この問題は回答時間が終了しているため、これ以上回答できません。");
             return;
         }
 
@@ -382,7 +398,7 @@ function Answer_quiz() {
         const quizMeta = parseQuizContentMeta(quiz?.[5] || "");
         const allowMultipleAnswers = Boolean(quizMeta.allowMultipleAnswers);
         const currentStatus = Number(simpleQuiz?.[10] || 0);
-        const canUpdateSubmittedAnswer = allowMultipleAnswers && currentStatus === 3 && !Boolean(simpleQuiz?.[11]) && Number(quiz?.[9] || 0) >= currentEpoch;
+        const canUpdateSubmittedAnswer = allowMultipleAnswers && currentStatus === 3 && !Boolean(simpleQuiz?.[11]) && (deadlineEpoch === 0 || deadlineEpoch > nowEpoch);
         if (!isPracticeMode && currentStatus !== 0 && !canUpdateSubmittedAnswer) {
             alert("この問題は現在の設定では再回答できません。");
             return;
@@ -494,7 +510,7 @@ function Answer_quiz() {
     useEffect(() => {
         const timer = window.setInterval(() => {
             setCurrentEpoch(Math.floor(Date.now() / 1000));
-        }, 30000);
+        }, 1000);
 
         return () => window.clearInterval(timer);
     }, []);
@@ -542,16 +558,17 @@ function Answer_quiz() {
     const deadlineEpoch = Number(quiz?.[9] || 0);
     const startEpoch = Number(quiz?.[8] || 0);
     const isBeforeStart = startEpoch > 0 && currentEpoch < startEpoch;
-    const canShowCorrectAnswer = Boolean(quiz?.[14]) && (isCorrectShow || (deadlineEpoch > 0 && currentEpoch > deadlineEpoch));
+    const isClosed = deadlineEpoch > 0 && currentEpoch >= deadlineEpoch;
+    const canShowCorrectAnswer = Boolean(quiz?.[14]) && (isCorrectShow || isClosed);
     const quizMeta = parseQuizContentMeta(quiz?.[5] || "");
     const renderedContent = stripQuizContentMeta(quiz?.[5] || "");
     const allowMultipleAnswers = Boolean(quizMeta.allowMultipleAnswers);
-    const canUpdateSubmittedAnswer = !isPracticeMode && allowMultipleAnswers && status === 3 && !Boolean(simpleQuiz?.[11]) && deadlineEpoch >= currentEpoch;
-    const canEditAnswer = access.canAnswerQuiz && !isBeforeStart && (isPracticeMode || status === 0 || canUpdateSubmittedAnswer);
+    const canUpdateSubmittedAnswer = !isPracticeMode && allowMultipleAnswers && status === 3 && !Boolean(simpleQuiz?.[11]) && !isClosed;
+    const canEditAnswer = access.canAnswerQuiz && !isBeforeStart && !isClosed && (isPracticeMode || status === 0 || canUpdateSubmittedAnswer);
     const savedAnswerDisplay = savedAnswerStr || localCachedAnswer || "";
     const visibleDraft = status === 0 ? answer : "";
     const statusMessages = {
-        0: { text: "未回答です。回答後に結果を確認してください。", className: "status-first" },
+        0: { text: isClosed ? "回答時間が終了しました。未回答のまま締め切られています。" : "未回答です。回答後に結果を確認してください。", className: "status-first" },
         1: { text: "支払い処理後に回答結果が確定しました。必要なら正解を確認してください。", className: "status-wrong" },
         2: { text: "支払い処理後に正解として確定しました。", className: "status-correct" },
         3: { text: canUpdateSubmittedAnswer ? "回答は送信済みです。いまは回答内容を更新できます。" : allowMultipleAnswers ? "回答は送信済みです。締切または支払い確定後のため、いまは更新できません。" : "回答は送信済みです。再回答はできません。", className: "status-first" },
@@ -610,6 +627,11 @@ function Answer_quiz() {
                             <span>回答開始前です</span>
                         </span>
                     ) : null}
+                    {isClosed ? (
+                        <span className="reward-edit-summary" style={{ marginTop: 0 }}>
+                            <span>回答時間は終了しています</span>
+                        </span>
+                    ) : null}
                     {!access.canAnswerQuiz ? (
                         <span className="reward-edit-summary" style={{ marginTop: 0 }}>
                             <span>この画面では閲覧のみ可能です</span>
@@ -648,7 +670,7 @@ function Answer_quiz() {
                 ) : (
                     <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "var(--space-6)" }}>
                         <button className="btn-secondary-custom" disabled style={{ cursor: "not-allowed", opacity: 0.6 }}>
-                            {!access.canAnswerQuiz ? "閲覧のみ" : isBeforeStart ? "回答開始前" : "回答済み"}
+                            {!access.canAnswerQuiz ? "閲覧のみ" : isBeforeStart ? "回答開始前" : isClosed ? "回答締切後" : "回答済み"}
                         </button>
                     </div>
                 )}

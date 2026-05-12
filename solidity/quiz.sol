@@ -273,7 +273,7 @@ contract Quiz_Dapp {
         require(class_room._isStudent(msg.sender) || class_room._isTeacher(msg.sender), "auth");
         require(!quiz.is_payment, "paid");
         require(quiz.start_time_epoch <= block.timestamp, "start");
-        require(quiz.time_limit_epoch >= block.timestamp, "closed");
+        require(quiz.time_limit_epoch > block.timestamp, "closed");
 
         bytes32 answer_hash = keccak256(abi.encodePacked(answer));
 

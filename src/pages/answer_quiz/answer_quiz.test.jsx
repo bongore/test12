@@ -6,17 +6,18 @@ import Answer_quiz from "./answer_quiz";
 
 const mockNavigate = jest.fn();
 const mockRecordPracticeAttempt = jest.fn();
+const mockAlert = jest.spyOn(window, "alert").mockImplementation(() => {});
 const routerFuture = {
     v7_startTransition: true,
     v7_relativeSplatPath: true,
 };
-const buildQuizData = ({ title = "練習問題", deadline = "0", correctAnswer = "A", isPayment = false } = {}) => ([
+const buildQuizData = ({ title = "練習問題", deadline = "0", correctAnswer = "A", isPayment = false, content = "問題本文" } = {}) => ([
     1,
     "0xteacher",
     title,
     "説明",
     "",
-    "問題本文",
+    content,
     "A,B,C",
     0,
     "0",
@@ -139,6 +140,10 @@ describe("Answer_quiz practice mode", () => {
         expect(mockNavigate).not.toHaveBeenCalled();
     });
 
+    afterAll(() => {
+        mockAlert.mockRestore();
+    });
+
     test("submits a normal answer and returns to the quiz list", async () => {
         render(
             <MemoryRouter initialEntries={["/answer_quiz/c-1"]} future={routerFuture}>
@@ -210,6 +215,52 @@ describe("Answer_quiz practice mode", () => {
 
         expect(await screen.findByText("開始前問題")).toBeInTheDocument();
         expect(screen.getByRole("button", { name: "回答開始前" })).toBeDisabled();
+        expect(mockContract.create_answer).not.toHaveBeenCalled();
+    });
+
+    test("blocks unanswered quizzes after the deadline", async () => {
+        const pastDeadline = String(Math.floor(Date.now() / 1000) - 1);
+        mockContract.get_quiz_with_source.mockResolvedValueOnce({
+            quizData: buildQuizData({ title: "締切済み未回答", deadline: pastDeadline }),
+            simpleQuizData: buildSimpleQuizData({ title: "締切済み未回答", state: 0 }),
+            sourceAddress: "",
+        });
+
+        render(
+            <MemoryRouter initialEntries={["/answer_quiz/c-1"]} future={routerFuture}>
+                <Routes>
+                    <Route path="/answer_quiz/:id" element={<Answer_quiz />} />
+                </Routes>
+            </MemoryRouter>
+        );
+
+        expect(await screen.findByText("締切済み未回答")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "回答締切後" })).toBeDisabled();
+        expect(screen.getByText("回答時間が終了しました。未回答のまま締め切られています。")).toBeInTheDocument();
+        expect(mockContract.create_answer).not.toHaveBeenCalled();
+    });
+
+    test("blocks updating submitted answers after the deadline even when multiple answers are allowed", async () => {
+        const pastDeadline = String(Math.floor(Date.now() / 1000) - 1);
+        const content = '<!--web3quiz:{"allowMultipleAnswers":true}-->\n問題本文';
+        mockContract.get_quiz_with_source.mockResolvedValueOnce({
+            quizData: buildQuizData({ title: "締切済み再回答不可", deadline: pastDeadline, content }),
+            simpleQuizData: buildSimpleQuizData({ title: "締切済み再回答不可", state: 3 }),
+            sourceAddress: "",
+        });
+        localStorage.setItem("quiz_answer_default_1", "A");
+
+        render(
+            <MemoryRouter initialEntries={["/answer_quiz/c-1"]} future={routerFuture}>
+                <Routes>
+                    <Route path="/answer_quiz/:id" element={<Answer_quiz />} />
+                </Routes>
+            </MemoryRouter>
+        );
+
+        expect(await screen.findByText("締切済み再回答不可")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "回答締切後" })).toBeDisabled();
+        expect(screen.getByText("回答は送信済みです。締切または支払い確定後のため、いまは更新できません。")).toBeInTheDocument();
         expect(mockContract.create_answer).not.toHaveBeenCalled();
     });
 
