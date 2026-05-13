@@ -6,7 +6,8 @@ import {
     exportLogsAsJson,
     formatActionLabel,
     formatDateTime,
-    getActivityLogs,
+    getMergedActivityLogs,
+    syncSharedActivityLogs,
 } from "../../../utils/activityLog";
 import "./activity_logs.css";
 
@@ -279,12 +280,13 @@ function Analytics_dashboard({ cont }) {
     const [actorFilter, setActorFilter] = useState("all");
     const [studentFilter, setStudentFilter] = useState("all");
     const [categoryFilter, setCategoryFilter] = useState("all");
+    const [dateFilter, setDateFilter] = useState("all");
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedLogId, setSelectedLogId] = useState("");
     const [students, setStudents] = useState([]);
     const [staffs, setStaffs] = useState([]);
     const [quizzes, setQuizzes] = useState([]);
-    const logs = getActivityLogs();
+    const [logs, setLogs] = useState(() => getMergedActivityLogs());
 
     useEffect(() => {
         let mounted = true;
@@ -314,6 +316,30 @@ function Analytics_dashboard({ cont }) {
             mounted = false;
         };
     }, [cont]);
+
+    useEffect(() => {
+        let mounted = true;
+
+        const refreshLogs = async () => {
+            const merged = await syncSharedActivityLogs();
+            if (!mounted) return;
+            setLogs(Array.isArray(merged) ? merged : getMergedActivityLogs());
+        };
+
+        const handleSharedUpdate = () => {
+            setLogs(getMergedActivityLogs());
+        };
+
+        refreshLogs();
+        window.addEventListener("activity-logs-shared-updated", handleSharedUpdate);
+        window.addEventListener("storage", handleSharedUpdate);
+
+        return () => {
+            mounted = false;
+            window.removeEventListener("activity-logs-shared-updated", handleSharedUpdate);
+            window.removeEventListener("storage", handleSharedUpdate);
+        };
+    }, []);
 
     const actorDirectory = useMemo(() => buildActorDirectory(students, staffs), [students, staffs]);
     const quizDirectory = useMemo(() => buildQuizDirectory(quizzes), [quizzes]);
@@ -389,6 +415,11 @@ function Analytics_dashboard({ cont }) {
         [enrichedLogs]
     );
 
+    const dateOptions = useMemo(
+        () => [...new Set(enrichedLogs.map((log) => String(log.createdAt || "").slice(0, 10)).filter(Boolean))].sort().reverse(),
+        [enrichedLogs]
+    );
+
     const actorOptions = useMemo(() => {
         const map = new Map();
         enrichedLogs.forEach((log) => {
@@ -429,10 +460,11 @@ function Analytics_dashboard({ cont }) {
             if (roleFilter !== "all" && log.actorMeta.role !== roleFilter) return false;
             if (actorFilter !== "all" && log.actorMeta.internalId !== actorFilter) return false;
             if (studentFilter !== "all" && log.actorMeta.internalId !== studentFilter) return false;
+            if (dateFilter !== "all" && String(log.createdAt || "").slice(0, 10) !== dateFilter) return false;
             if (!normalizedSearch) return true;
             return searchable.includes(normalizedSearch);
         });
-    }, [enrichedLogs, categoryFilter, actionFilter, pageFilter, roleFilter, actorFilter, studentFilter, searchTerm]);
+    }, [enrichedLogs, categoryFilter, actionFilter, pageFilter, roleFilter, actorFilter, studentFilter, dateFilter, searchTerm]);
 
     const actorSummary = useMemo(() => groupActorActivity(filteredLogs), [filteredLogs]);
     const actorSections = useMemo(() => buildActorLogSections(filteredLogs), [filteredLogs]);
@@ -475,8 +507,10 @@ function Analytics_dashboard({ cont }) {
         setActorFilter("all");
         setStudentFilter("all");
         setCategoryFilter("all");
+        setDateFilter("all");
         setSearchTerm("");
         setSelectedLogId("");
+        setLogs(getMergedActivityLogs());
     };
 
     return (
@@ -525,6 +559,12 @@ function Analytics_dashboard({ cont }) {
                     <option value="all">すべてのページ</option>
                     {pageOptions.map((page) => (
                         <option key={page} value={page}>{page}</option>
+                    ))}
+                </select>
+                <select className="form-control" value={dateFilter} onChange={(event) => setDateFilter(event.target.value)}>
+                    <option value="all">すべての日付</option>
+                    {dateOptions.map((date) => (
+                        <option key={date} value={date}>{date}</option>
                     ))}
                 </select>
                 <select className="form-control" value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}>

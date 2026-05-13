@@ -1,4 +1,7 @@
+import { fetchLiveSignalJson } from "./liveSignalApi";
+
 const STORAGE_KEY = "web3_quiz_activity_logs_v3";
+const SHARED_STORAGE_KEY = "web3_quiz_activity_logs_shared_v1";
 const DRAFT_PREFIX = "web3_quiz_draft_";
 const SESSION_KEY = "web3_quiz_session_id";
 const ACTOR_KEY = "web3_quiz_actor";
@@ -139,8 +142,60 @@ function getStoredLogs() {
     }
 }
 
+function normalizeLogList(logs) {
+    return (Array.isArray(logs) ? logs : [])
+        .filter((entry) => entry && typeof entry === "object" && entry.id)
+        .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+        .slice(0, MAX_LOGS);
+}
+
 function saveStoredLogs(logs) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(logs));
+}
+
+function getSharedStoredLogs() {
+    try {
+        const raw = localStorage.getItem(SHARED_STORAGE_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return normalizeLogList(parsed);
+    } catch (error) {
+        console.error("Failed to read shared activity logs", error);
+        return [];
+    }
+}
+
+function saveSharedStoredLogs(logs) {
+    try {
+        localStorage.setItem(SHARED_STORAGE_KEY, JSON.stringify(normalizeLogList(logs)));
+    } catch (error) {
+        console.error("Failed to write shared activity logs", error);
+    }
+}
+
+function mergeActivityLogs(primaryLogs = [], secondaryLogs = []) {
+    const merged = new Map();
+    [...normalizeLogList(primaryLogs), ...normalizeLogList(secondaryLogs)].forEach((entry) => {
+        if (!entry?.id || merged.has(entry.id)) return;
+        merged.set(entry.id, entry);
+    });
+    return normalizeLogList([...merged.values()]);
+}
+
+async function persistActivityLogToServer(entry) {
+    if (!entry?.id || typeof window === "undefined" || typeof fetch !== "function") return;
+    try {
+        const response = await fetchLiveSignalJson("/activity-logs", {
+            method: "POST",
+            body: JSON.stringify({ entry }),
+        });
+        if (Array.isArray(response?.logs)) {
+            saveSharedStoredLogs(response.logs);
+            window.dispatchEvent(new CustomEvent("activity-logs-shared-updated"));
+        }
+    } catch (error) {
+        console.error("Failed to sync activity log to server", error);
+    }
 }
 
 function appendActivityLog(action, payload = {}) {
@@ -155,6 +210,7 @@ function appendActivityLog(action, payload = {}) {
         };
         logs.unshift(entry);
         saveStoredLogs(logs.slice(0, MAX_LOGS));
+        persistActivityLogToServer(entry);
         return entry;
     } catch (error) {
         console.error("Failed to append activity log", error);
@@ -172,8 +228,30 @@ function getActivityLogs(action = null) {
     return logs.filter((entry) => entry.action === action);
 }
 
+function getMergedActivityLogs(action = null) {
+    const logs = mergeActivityLogs(getStoredLogs(), getSharedStoredLogs());
+    if (!action) return logs;
+    return logs.filter((entry) => entry.action === action);
+}
+
+async function syncSharedActivityLogs() {
+    try {
+        const response = await fetchLiveSignalJson("/activity-logs");
+        const merged = mergeActivityLogs(response?.logs || [], getStoredLogs());
+        saveSharedStoredLogs(merged);
+        if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("activity-logs-shared-updated"));
+        }
+        return merged;
+    } catch (error) {
+        console.error("Failed to fetch shared activity logs", error);
+        return getMergedActivityLogs();
+    }
+}
+
 function clearActivityLogs() {
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(SHARED_STORAGE_KEY);
 }
 
 function saveDraft(key, value) {
@@ -324,10 +402,12 @@ export {
     formatActionLabel,
     formatDateTime,
     getActivityLogs,
+    getMergedActivityLogs,
     getActor,
     getDraft,
     getSessionId,
     logPageView,
     saveDraft,
     setActor,
+    syncSharedActivityLogs,
 };

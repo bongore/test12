@@ -10,9 +10,18 @@ const MAX_REACTION_HISTORY = 20;
 const BLOCKED_MESSAGE_PATTERNS = [/ばか/i, /あほ/i, /死ね/i, /殺す/i, /くそ/i, /fuck/i, /shit/i, /bitch/i, /(.)\1{7,}/];
 const REACTION_KEYS = ["understood", "repeat", "slow", "fast"];
 const STATE_FILE_PATH = path.join(__dirname, ".live-board-state.json");
+const MAX_ACTIVITY_LOGS = 30000;
 let tokenGrantLedger = {};
 let deletedQuizzes = {};
 let pendingCreatedQuizzes = {};
+let activityLogs = [];
+
+function normalizeActivityLogs(logs = []) {
+    return (Array.isArray(logs) ? logs : [])
+        .filter((entry) => entry && typeof entry === "object" && entry.id)
+        .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+        .slice(0, MAX_ACTIVITY_LOGS);
+}
 
 function inferGrantHistoryType(source = "", isRemove = false) {
     if (isRemove) return "clear";
@@ -144,6 +153,11 @@ const server = http.createServer((req, res) => {
 
     if (req.url === "/created-quizzes" && req.method === "GET") {
         writeJson(res, 200, { ok: true, createdQuizzes: pendingCreatedQuizzes });
+        return;
+    }
+
+    if (req.url === "/activity-logs" && req.method === "GET") {
+        writeJson(res, 200, { ok: true, logs: activityLogs });
         return;
     }
 
@@ -293,6 +307,32 @@ const server = http.createServer((req, res) => {
         return;
     }
 
+    if (req.url === "/activity-logs" && req.method === "POST") {
+        readRequestBody(req)
+            .then((body) => {
+                const entry = body?.entry;
+                if (!entry?.id) {
+                    writeJson(res, 400, { ok: false, error: "invalid_payload" });
+                    return;
+                }
+                const nextLogs = normalizeActivityLogs([entry, ...activityLogs]);
+                const deduped = [];
+                const seen = new Set();
+                for (const item of nextLogs) {
+                    if (seen.has(item.id)) continue;
+                    seen.add(item.id);
+                    deduped.push(item);
+                }
+                activityLogs = normalizeActivityLogs(deduped);
+                persistState();
+                writeJson(res, 200, { ok: true, logs: activityLogs });
+            })
+            .catch(() => {
+                writeJson(res, 400, { ok: false, error: "invalid_json" });
+            });
+        return;
+    }
+
     writeJson(res, 200, { ok: true, service: "live-signal-server" });
 });
 
@@ -414,6 +454,7 @@ function persistState() {
             tokenGrantLedger,
             deletedQuizzes,
             pendingCreatedQuizzes,
+            activityLogs,
             deletedBoardMessagesBySession: Object.fromEntries(
                 Object.entries(deletedBoardMessagesBySession).map(([sessionId, entries]) => [
                     sessionId,
@@ -448,6 +489,7 @@ function loadPersistedState() {
         tokenGrantLedger = payload?.tokenGrantLedger && typeof payload.tokenGrantLedger === "object" ? payload.tokenGrantLedger : {};
         deletedQuizzes = normalizeDeletedQuizzes(payload?.deletedQuizzes && typeof payload.deletedQuizzes === "object" ? payload.deletedQuizzes : {});
         pendingCreatedQuizzes = normalizePendingCreatedQuizzes(payload?.pendingCreatedQuizzes && typeof payload.pendingCreatedQuizzes === "object" ? payload.pendingCreatedQuizzes : {});
+        activityLogs = normalizeActivityLogs(payload?.activityLogs);
         deletedBoardMessagesBySession = Object.fromEntries(
             Object.entries(payload?.deletedBoardMessagesBySession || {}).map(([sessionId, entries]) => [
                 String(sessionId),
