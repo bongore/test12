@@ -35,26 +35,31 @@ function buildActorDirectory(students, staffs) {
 
     staffs.forEach((address, index) => {
         const normalized = normalizeAddress(address);
+        const internalId = index === 0 ? makeInternalId("ADMIN", 0) : makeInternalId("TEACHER", index - 1);
+        const roleLabel = index === 0 ? "管理者" : "教員";
         directory[normalizeAddress(address)] = {
             role: index === 0 ? "admin" : "teacher",
-            roleLabel: index === 0 ? "管理者" : "教員",
-            internalId: index === 0 ? makeInternalId("ADMIN", 0) : makeInternalId("TEACHER", index - 1),
+            roleLabel,
+            internalId,
             address,
             normalizedAddress: normalized,
             actorHint: formatShortAddress(address),
+            directoryLabel: `${internalId} / ${roleLabel} / ${formatShortAddress(address)}`,
         };
     });
 
     students.forEach((address, index) => {
         const key = normalizeAddress(address);
         if (!directory[key]) {
+            const internalId = makeInternalId("STUDENT", index);
             directory[key] = {
                 role: "student",
                 roleLabel: "学生",
-                internalId: makeInternalId("STUDENT", index),
+                internalId,
                 address,
                 normalizedAddress: key,
                 actorHint: formatShortAddress(address),
+                directoryLabel: `${internalId} / 学生 / ${formatShortAddress(address)}`,
             };
         }
     });
@@ -96,6 +101,7 @@ function resolveActorMeta(log, directory) {
             address: log.actor || log.address || "",
             normalizedAddress: candidate,
             actorHint: `未登録ウォレット ${formatShortAddress(log.actor || log.address || "")}`,
+            directoryLabel: `TEMP-${candidate.slice(-4).toUpperCase()} / 一時ユーザー / ${formatShortAddress(log.actor || log.address || "")}`,
         };
     }
 
@@ -108,6 +114,7 @@ function resolveActorMeta(log, directory) {
         address: "-",
         normalizedAddress: "",
         actorHint: "ウォレット未接続の操作",
+        directoryLabel: `GUEST-${suffix || "LOCAL"} / 未接続 / ウォレット未接続`,
     };
 }
 
@@ -270,6 +277,7 @@ function Analytics_dashboard({ cont }) {
     const [pageFilter, setPageFilter] = useState("all");
     const [roleFilter, setRoleFilter] = useState("all");
     const [actorFilter, setActorFilter] = useState("all");
+    const [studentFilter, setStudentFilter] = useState("all");
     const [categoryFilter, setCategoryFilter] = useState("all");
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedLogId, setSelectedLogId] = useState("");
@@ -381,9 +389,22 @@ function Analytics_dashboard({ cont }) {
         [enrichedLogs]
     );
 
-    const actorOptions = useMemo(
-        () => [...new Set(enrichedLogs.map((log) => log.actorMeta.internalId).filter(Boolean))].sort(),
-        [enrichedLogs]
+    const actorOptions = useMemo(() => {
+        const map = new Map();
+        enrichedLogs.forEach((log) => {
+            if (!log.actorMeta?.internalId || map.has(log.actorMeta.internalId)) return;
+            map.set(log.actorMeta.internalId, {
+                value: log.actorMeta.internalId,
+                label: log.actorMeta.directoryLabel || `${log.actorMeta.internalId} / ${log.actorMeta.roleLabel}`,
+                role: log.actorMeta.role,
+            });
+        });
+        return [...map.values()].sort((a, b) => a.label.localeCompare(b.label, "ja"));
+    }, [enrichedLogs]);
+
+    const studentActorOptions = useMemo(
+        () => actorOptions.filter((item) => item.role === "student"),
+        [actorOptions]
     );
 
     const filteredLogs = useMemo(() => {
@@ -407,15 +428,20 @@ function Analytics_dashboard({ cont }) {
             if (pageFilter !== "all" && log.page !== pageFilter) return false;
             if (roleFilter !== "all" && log.actorMeta.role !== roleFilter) return false;
             if (actorFilter !== "all" && log.actorMeta.internalId !== actorFilter) return false;
+            if (studentFilter !== "all" && log.actorMeta.internalId !== studentFilter) return false;
             if (!normalizedSearch) return true;
             return searchable.includes(normalizedSearch);
         });
-    }, [enrichedLogs, categoryFilter, actionFilter, pageFilter, roleFilter, actorFilter, searchTerm]);
+    }, [enrichedLogs, categoryFilter, actionFilter, pageFilter, roleFilter, actorFilter, studentFilter, searchTerm]);
 
     const actorSummary = useMemo(() => groupActorActivity(filteredLogs), [filteredLogs]);
     const actorSections = useMemo(() => buildActorLogSections(filteredLogs), [filteredLogs]);
-    const registeredActorSections = useMemo(
-        () => actorSections.filter((section) => ["admin", "teacher", "student"].includes(section.actorMeta.role)),
+    const studentActorSections = useMemo(
+        () => actorSections.filter((section) => section.actorMeta.role === "student"),
+        [actorSections]
+    );
+    const staffActorSections = useMemo(
+        () => actorSections.filter((section) => ["admin", "teacher"].includes(section.actorMeta.role)),
         [actorSections]
     );
     const extraActorSections = useMemo(
@@ -447,6 +473,7 @@ function Analytics_dashboard({ cont }) {
         setPageFilter("all");
         setRoleFilter("all");
         setActorFilter("all");
+        setStudentFilter("all");
         setCategoryFilter("all");
         setSearchTerm("");
         setSelectedLogId("");
@@ -456,7 +483,7 @@ function Analytics_dashboard({ cont }) {
         <div key={refreshKey}>
             <h3 className="section-title">分析ログ</h3>
             <p className="section-desc">
-                分析ログをカテゴリ別に分け、識別番号・ページ・行動・詳細から横断検索できます。
+                分析ログをカテゴリ別に分け、学生を含む登録ユーザーの識別番号・ページ・行動・詳細から横断検索できます。
             </p>
 
             <div className="analytics-grid">
@@ -466,6 +493,7 @@ function Analytics_dashboard({ cont }) {
                 <div className="analytics-card"><div className="analytics-label">ライブ送信</div><div className="analytics-value">{summary.liveMessages}</div></div>
                 <div className="analytics-card"><div className="analytics-label">平均読込時間</div><div className="analytics-value">{summary.avgQuizLoadMs}ms</div></div>
                 <div className="analytics-card"><div className="analytics-label">平均送信待ち</div><div className="analytics-value">{summary.avgSubmitMs}ms</div></div>
+                <div className="analytics-card"><div className="analytics-label">学生ログ保持</div><div className="analytics-value">{studentActorSections.length}</div></div>
             </div>
 
             <div className="analytics-actions">
@@ -507,10 +535,16 @@ function Analytics_dashboard({ cont }) {
                     <option value="temporary">一時ユーザー</option>
                     <option value="guest">未接続</option>
                 </select>
+                <select className="form-control" value={studentFilter} onChange={(event) => setStudentFilter(event.target.value)}>
+                    <option value="all">すべての学生識別番号</option>
+                    {studentActorOptions.map((actor) => (
+                        <option key={actor.value} value={actor.value}>{actor.label}</option>
+                    ))}
+                </select>
                 <select className="form-control" value={actorFilter} onChange={(event) => setActorFilter(event.target.value)}>
                     <option value="all">すべての識別番号</option>
                     {actorOptions.map((actor) => (
-                        <option key={actor} value={actor}>{actor}</option>
+                        <option key={actor.value} value={actor.value}>{actor.label}</option>
                     ))}
                 </select>
             </div>
@@ -625,11 +659,58 @@ function Analytics_dashboard({ cont }) {
                 </div>
             )}
 
-            {registeredActorSections.length > 0 && (
+            {studentActorSections.length > 0 && (
                 <div className="analytics-detail-block">
-                    <div className="analytics-label">登録ユーザー別ログ</div>
+                    <div className="analytics-label">学生別ログ</div>
                     <div className="analytics-accordion-list">
-                        {registeredActorSections.map((section) => (
+                        {studentActorSections.map((section) => (
+                            <details key={section.actorMeta.internalId} className="analytics-accordion-item">
+                                <summary className="analytics-accordion-summary">
+                                    <div>
+                                        <strong>{section.actorMeta.internalId}</strong>
+                                        <div className="analytics-actor-meta">
+                                            {section.actorMeta.roleLabel} / {section.actorMeta.actorHint || formatShortAddress(section.actorMeta.address)}
+                                        </div>
+                                        <div className="analytics-actor-meta">{section.actorMeta.address || "-"}</div>
+                                    </div>
+                                    <div className="analytics-accordion-summary-meta">
+                                        <span>{section.totalCount} 件</span>
+                                        <span>{section.averageSolveSeconds > 0 ? `平均 ${section.averageSolveSeconds}秒` : "平均ログなし"}</span>
+                                        <span>{formatDateTime(section.latestAt)}</span>
+                                    </div>
+                                </summary>
+                                <div className="analytics-accordion-body">
+                                    <div className="analytics-actor-meta" style={{ marginBottom: "10px" }}>
+                                        カテゴリ: {section.categories.join(" / ") || "-"}
+                                    </div>
+                                    <div className="analytics-actor-meta" style={{ marginBottom: "10px" }}>
+                                        関連問題: {section.quizTitles.length ? section.quizTitles.join(" / ") : "なし"}
+                                    </div>
+                                    <div className="analytics-mini-table">
+                                        {section.logs.slice(0, 40).map((log) => (
+                                            <div key={log.id} className="analytics-mini-row" style={{ alignItems: "start" }}>
+                                                <span style={{ maxWidth: "75%" }}>
+                                                    {formatDateTime(log.createdAt)} / {formatActionLabel(log.action)}
+                                                    <br />
+                                                    {log.quizMeta?.title && log.quizMeta.title !== "-" ? `${log.quizMeta.title} / ` : ""}
+                                                    {stringifyDetails(log) || "詳細なし"}
+                                                </span>
+                                                <strong>{formatCategoryLabel(log.category)}</strong>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </details>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {staffActorSections.length > 0 && (
+                <div className="analytics-detail-block">
+                    <div className="analytics-label">管理者・教員別ログ</div>
+                    <div className="analytics-accordion-list">
+                        {staffActorSections.map((section) => (
                             <details key={section.actorMeta.internalId} className="analytics-accordion-item">
                                 <summary className="analytics-accordion-summary">
                                     <div>

@@ -169,6 +169,7 @@ function Answer_quiz() {
     const pageOpenedAtRef = useRef(Date.now());
     const answerStartedAtRef = useRef(null);
     const textChangeCountRef = useRef(0);
+    const actorLogPayload = access.address ? { address: access.address } : {};
 
     useEffect(() => {
         setResolvedSourceAddress(initialSourceAddress);
@@ -202,6 +203,7 @@ function Answer_quiz() {
                 page: "answer_quiz",
                 quizId: id,
                 mode,
+                ...actorLogPayload,
             });
         }
     };
@@ -214,6 +216,7 @@ function Answer_quiz() {
             quizId: id,
             value,
             valueLength: value.length,
+            ...actorLogPayload,
         });
     };
 
@@ -226,6 +229,7 @@ function Answer_quiz() {
             quizId: id,
             textLength: value.length,
             changeCount: textChangeCountRef.current,
+            ...actorLogPayload,
         });
     };
 
@@ -235,6 +239,7 @@ function Answer_quiz() {
             quizId: id,
             valid,
             textLength,
+            ...actorLogPayload,
         });
     };
 
@@ -244,6 +249,7 @@ function Answer_quiz() {
         appendActivityLog(ACTION_TYPES.QUIZ_LOAD_STARTED, {
             page: "answer_quiz",
             quizId: id,
+            ...actorLogPayload,
         });
 
         try {
@@ -281,6 +287,7 @@ function Answer_quiz() {
                         page: "answer_quiz",
                         quizId: id,
                         answerLength: draft.length,
+                        ...actorLogPayload,
                     });
                 }
             }
@@ -293,12 +300,14 @@ function Answer_quiz() {
                 quizTitle: quizData?.[2] || "",
                 sourceAddress: resolvedSource || "",
                 durationMs,
+                ...actorLogPayload,
             });
             appendActivityLog(ACTION_TYPES.PERFORMANCE_SAMPLE, {
                 page: "answer_quiz",
                 category: "quiz_load",
                 quizId: id,
                 durationMs,
+                ...actorLogPayload,
             });
         } catch (error) {
             console.error(error);
@@ -308,6 +317,7 @@ function Answer_quiz() {
                 quizId: id,
                 errorMessage: error?.message || "quiz_load_failed",
                 durationMs: Math.round(performance.now() - startedAt),
+                ...actorLogPayload,
             });
         }
     };
@@ -329,6 +339,7 @@ function Answer_quiz() {
                 now: nowEpoch,
                 replyStart: startEpoch,
                 practiceMode: isPracticeMode,
+                ...actorLogPayload,
             });
             alert("まだ回答開始時間になっていません。");
             return;
@@ -344,6 +355,7 @@ function Answer_quiz() {
                 answerLength: String(answer || "").length,
                 errorMessage: "deadline_passed",
                 submitDurationMs: 0,
+                ...actorLogPayload,
             });
             alert("この問題は回答時間が終了しているため、これ以上回答できません。");
             return;
@@ -368,6 +380,7 @@ function Answer_quiz() {
                 quizTitle: quiz?.[2] || "",
                 answerLength: finalAnswer.length,
                 isCorrect,
+                ...actorLogPayload,
             });
             appendActivityLog(
                 isCorrect ? ACTION_TYPES.ANSWER_PRACTICE_CORRECT : ACTION_TYPES.ANSWER_PRACTICE_INCORRECT,
@@ -375,6 +388,7 @@ function Answer_quiz() {
                     page: "answer_quiz",
                     quizId: id,
                     answerLength: finalAnswer.length,
+                    ...actorLogPayload,
                 }
             );
 
@@ -391,6 +405,7 @@ function Answer_quiz() {
                 page: "answer_quiz",
                 quizId: id,
                 source: "already_correct",
+                ...actorLogPayload,
             });
             return;
         }
@@ -414,6 +429,7 @@ function Answer_quiz() {
             sourceAddress,
             answerLength: finalAnswer.length,
             answerType: Number(quiz[13]) === 0 ? "choice" : "text",
+            ...actorLogPayload,
         });
 
         try {
@@ -425,12 +441,14 @@ function Answer_quiz() {
                 page: "answer_quiz",
                 quizId: id,
                 reason: "submit_success",
+                ...actorLogPayload,
             });
             appendActivityLog(ACTION_TYPES.ANSWER_SUBMITTED, {
                 page: "answer_quiz",
                 quizId: id,
                 quizTitle: quiz?.[2] || "",
                 sourceAddress,
+                address: access.address,
                 rewardPolicy: allowMultipleAnswers ? "repeat_half_after_first" : "single_full_reward",
                 answerLength: finalAnswer.length,
                 answerType: Number(quiz[13]) === 0 ? "choice" : "text",
@@ -453,6 +471,7 @@ function Answer_quiz() {
                 answerLength: finalAnswer.length,
                 errorMessage: error?.message || "answer_submit_failed",
                 submitDurationMs: Math.round(performance.now() - startedAt),
+                ...actorLogPayload,
             });
             alert("回答送信に失敗しました。ウォレットの確認や通信状態を確認してください。");
         } finally {
@@ -469,6 +488,7 @@ function Answer_quiz() {
         appendActivityLog(ACTION_TYPES.QUIZ_PAGE_VIEWED, {
             page: "answer_quiz",
             quizId: id,
+            ...actorLogPayload,
         });
         get_quiz();
         // contract instance is intentionally recreated locally.
@@ -490,6 +510,7 @@ function Answer_quiz() {
                 quizId: id,
                 answerLength: answer.length,
                 savedAtLabel: nowLabel,
+                ...actorLogPayload,
             });
         }, 400);
         return () => clearTimeout(timer);
@@ -504,6 +525,7 @@ function Answer_quiz() {
             rawStatus,
             derivedStatus: rawStatus,
             hasLocalCachedAnswer: Boolean(localStorage.getItem(answerStorageKey)),
+            ...actorLogPayload,
         });
     }, [answerStorageKey, id, simpleQuiz]);
 
