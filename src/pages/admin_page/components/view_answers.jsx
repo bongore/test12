@@ -152,16 +152,21 @@ function View_answers() {
                 for (const student of students) {
                     const hash = answerMap[student];
                     const detail = await contract.get_student_answer_detail(student, quizId, sourceAddress);
-                    let decodedAnswer = "";
+                    const submitted = Boolean(detail?.submitted);
+                    let decodedAnswer = String(detail?.answerText || "").trim();
 
-                    if (answerType === 0) {
+                    if (!decodedAnswer && answerType === 0) {
                         // 選択式: ハッシュを選択肢と照合
                         decodedAnswer = decodeAnswerHash(hash, answerOptions);
-                    } else {
+                    } else if (!decodedAnswer) {
                         // 記述式: ハッシュのみ表示（復元不可能）
                         if (hash && hash !== "0x0000000000000000000000000000000000000000000000000000000000000000") {
                             decodedAnswer = `(ハッシュ: ${hash.slice(0, 10)}…)`;
                         }
+                    }
+
+                    if (!decodedAnswer && submitted) {
+                        decodedAnswer = "(回答済み)";
                     }
 
                     result.push({
@@ -171,6 +176,8 @@ function View_answers() {
                         state: Number(detail?.state || 0),
                         reward: Number(detail?.reward || 0),
                         result: Boolean(detail?.result),
+                        submitted,
+                        answerTime: Number(detail?.answerTime || 0),
                         attemptCount: Number(detail?.attemptCount || 0),
                         rewardPreviewTft: Number(detail?.attemptCount || 0) > 1 ? rewardTft / 2 : rewardTft,
                     });
@@ -293,7 +300,7 @@ function View_answers() {
                                             </td>
                                             <td>{item.attemptCount || 0}</td>
                                             <td>
-                                                {item.state === 2 ? "正解" : item.state === 1 ? "不正解" : item.state === 3 ? "回答済み" : "未回答"}
+                                                {item.state === 2 ? "正解" : item.state === 1 ? "不正解" : item.submitted ? "回答済み" : "未回答"}
                                             </td>
                                             <td>
                                                 {Number(item.reward || 0) > 0
@@ -319,8 +326,8 @@ function View_answers() {
                                 fontSize: "14px"
                             }}>
                                 <span>👥 全生徒: <strong style={{ color: "#fff" }}>{answers.length}人</strong></span>
-                                <span>✅ 回答済: <strong style={{ color: "#4caf50" }}>{answers.filter(a => a.answer).length}人</strong></span>
-                                <span>⬜ 未回答: <strong style={{ color: "#ff9800" }}>{answers.filter(a => !a.answer).length}人</strong></span>
+                                <span>✅ 回答済: <strong style={{ color: "#4caf50" }}>{answers.filter((a) => a.submitted).length}人</strong></span>
+                                <span>⬜ 未回答: <strong style={{ color: "#ff9800" }}>{answers.filter((a) => !a.submitted).length}人</strong></span>
                                 <span>🔁 複数回答: <strong style={{ color: "#ffd27d" }}>{answers.filter((a) => Number(a.attemptCount || 0) > 1).length}人</strong></span>
                             </div>
                         </div>
