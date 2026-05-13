@@ -272,6 +272,69 @@ function buildActorLogSections(logs) {
         .sort((a, b) => b.totalCount - a.totalCount);
 }
 
+async function buildRecoveredAnswerLogs(cont, students, quizzes, existingLogs = []) {
+    const normalizedStudents = Array.isArray(students) ? students : [];
+    const normalizedQuizzes = (Array.isArray(quizzes) ? quizzes : []).filter((quiz) => Number(quiz?.[8] || 0) > 0);
+    if (!normalizedStudents.length || !normalizedQuizzes.length) {
+        return [];
+    }
+
+    const existingAnswerKeys = new Set(
+        (Array.isArray(existingLogs) ? existingLogs : [])
+            .filter((log) => log?.action === ACTION_TYPES.ANSWER_SUBMITTED)
+            .map((log) => `${normalizeAddress(log.address || log.actor || "")}:${String(log.sourceAddress || "").toLowerCase()}:${String(log.quizId || "")}`)
+    );
+
+    const recovered = [];
+
+    for (const quiz of normalizedQuizzes) {
+        const quizId = Number(quiz?.[0] || 0);
+        const quizTitle = String(quiz?.[2] || `問題 ${quizId}`);
+        const sourceAddress = String(quiz?.sourceAddress || quiz?.[12] || "").toLowerCase();
+
+        const detailEntries = await Promise.all(
+            normalizedStudents.map(async (student) => {
+                try {
+                    const detail = await cont.get_student_answer_detail(student, quizId, sourceAddress);
+                    return { student, detail };
+                } catch (error) {
+                    return { student, detail: null };
+                }
+            })
+        );
+
+        detailEntries.forEach(({ student, detail }) => {
+            const submitted = Boolean(detail?.submitted);
+            const answerTime = Number(detail?.answerTime || 0);
+            if (!submitted || answerTime <= 0) return;
+
+            const dedupeKey = `${normalizeAddress(student)}:${sourceAddress}:${String(quizId)}`;
+            if (existingAnswerKeys.has(dedupeKey)) return;
+
+            recovered.push({
+                id: `recovered_answer_${sourceAddress}_${quizId}_${normalizeAddress(student)}`,
+                action: ACTION_TYPES.ANSWER_SUBMITTED,
+                createdAt: new Date(answerTime * 1000).toISOString(),
+                actor: student,
+                address: student,
+                page: "answer_quiz",
+                quizId,
+                quizTitle,
+                sourceAddress,
+                answer: String(detail?.answerText || ""),
+                answerLength: String(detail?.answerText || "").length,
+                attemptCount: Number(detail?.attemptCount || 0),
+                reward: Number(detail?.reward || 0),
+                result: Boolean(detail?.result),
+                recovered: true,
+                recoveredFrom: "onchain_answer_detail",
+            });
+        });
+    }
+
+    return recovered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
 function Analytics_dashboard({ cont }) {
     const [refreshKey, setRefreshKey] = useState(0);
     const [actionFilter, setActionFilter] = useState("all");
@@ -287,6 +350,7 @@ function Analytics_dashboard({ cont }) {
     const [staffs, setStaffs] = useState([]);
     const [quizzes, setQuizzes] = useState([]);
     const [logs, setLogs] = useState(() => getMergedActivityLogs());
+    const [recoveredLogs, setRecoveredLogs] = useState([]);
 
     useEffect(() => {
         let mounted = true;
@@ -341,10 +405,40 @@ function Analytics_dashboard({ cont }) {
         };
     }, []);
 
+    useEffect(() => {
+        let mounted = true;
+
+        const recoverHistoricalLogs = async () => {
+            try {
+                const restored = await buildRecoveredAnswerLogs(cont, students, quizzes, logs);
+                if (!mounted) return;
+                setRecoveredLogs(restored);
+            } catch (error) {
+                console.error("Failed to recover historical student logs", error);
+                if (!mounted) return;
+                setRecoveredLogs([]);
+            }
+        };
+
+        recoverHistoricalLogs();
+        return () => {
+            mounted = false;
+        };
+    }, [cont, students, quizzes, logs]);
+
     const actorDirectory = useMemo(() => buildActorDirectory(students, staffs), [students, staffs]);
     const quizDirectory = useMemo(() => buildQuizDirectory(quizzes), [quizzes]);
 
-    const enrichedLogs = useMemo(() => logs
+    const analyticsSourceLogs = useMemo(() => {
+        const merged = new Map();
+        [...(Array.isArray(logs) ? logs : []), ...(Array.isArray(recoveredLogs) ? recoveredLogs : [])].forEach((entry) => {
+            if (!entry?.id || merged.has(entry.id)) return;
+            merged.set(entry.id, entry);
+        });
+        return [...merged.values()].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    }, [logs, recoveredLogs]);
+
+    const enrichedLogs = useMemo(() => analyticsSourceLogs
         .map((log) => ({
             ...log,
             actorMeta: resolveActorMeta(log, actorDirectory),
@@ -354,7 +448,7 @@ function Analytics_dashboard({ cont }) {
         .filter((log) => (
             log.actorMeta
             && !HIDDEN_ANALYTICS_ACTIONS.has(log.action)
-        )), [logs, actorDirectory, quizDirectory]);
+        )), [analyticsSourceLogs, actorDirectory, quizDirectory]);
 
     const summary = useMemo(() => {
         const loginSuccess = enrichedLogs.filter((log) => log.action === ACTION_TYPES.LOGIN_SUCCESS).length;
@@ -528,6 +622,7 @@ function Analytics_dashboard({ cont }) {
                 <div className="analytics-card"><div className="analytics-label">平均読込時間</div><div className="analytics-value">{summary.avgQuizLoadMs}ms</div></div>
                 <div className="analytics-card"><div className="analytics-label">平均送信待ち</div><div className="analytics-value">{summary.avgSubmitMs}ms</div></div>
                 <div className="analytics-card"><div className="analytics-label">学生ログ保持</div><div className="analytics-value">{studentActorSections.length}</div></div>
+                <div className="analytics-card"><div className="analytics-label">復元ログ件数</div><div className="analytics-value">{recoveredLogs.length}</div></div>
             </div>
 
             <div className="analytics-actions">
@@ -627,7 +722,7 @@ function Analytics_dashboard({ cont }) {
                     <div className="analytics-log-list glass-card">
                         <div className="analytics-panel-header">
                             <strong>ログ一覧</strong>
-                            <span>表示中 {filteredLogs.length} 件 / 全体 {logs.length} 件</span>
+                            <span>表示中 {filteredLogs.length} 件 / 全体 {analyticsSourceLogs.length} 件</span>
                         </div>
                         <div className="analytics-log-items">
                             {filteredLogs.map((log) => (
