@@ -5,7 +5,6 @@ const path = require("path");
 
 const PORT = Number(process.env.PORT || process.env.LIVE_SIGNAL_PORT || 3001);
 const HEARTBEAT_TIMEOUT_MS = 180 * 1000;
-const MAX_BOARD_MESSAGES = 200;
 const MAX_REACTION_HISTORY = 20;
 const BLOCKED_MESSAGE_PATTERNS = [/ばか/i, /あほ/i, /死ね/i, /殺す/i, /くそ/i, /fuck/i, /shit/i, /bitch/i, /(.)\1{7,}/];
 const REACTION_KEYS = ["understood", "repeat", "slow", "fast"];
@@ -678,9 +677,6 @@ function archiveCurrentBoardSession() {
         ...currentBoardSession,
         endedAt: new Date().toISOString(),
     });
-    if (boardSessionHistory.length > MAX_REACTION_HISTORY) {
-        boardSessionHistory.splice(MAX_REACTION_HISTORY);
-    }
     persistState();
 }
 
@@ -931,9 +927,6 @@ wss.on("connection", (ws) => {
             };
 
             currentBoardSession.messages.push(nextMessage);
-            if (currentBoardSession.messages.length > MAX_BOARD_MESSAGES) {
-                currentBoardSession.messages.splice(0, currentBoardSession.messages.length - MAX_BOARD_MESSAGES);
-            }
             persistState();
 
             broadcast({
