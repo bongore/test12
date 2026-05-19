@@ -25,10 +25,10 @@ const rpcTransports = (rpc_urls || [])
     .filter(Boolean)
     .map((url) =>
         http(url, {
-            batch: true,
-            retryCount: 2,
-            retryDelay: 300,
-            timeout: 10000,
+            batch: false,
+            retryCount: 1,
+            retryDelay: 250,
+            timeout: 6000,
         })
     );
 

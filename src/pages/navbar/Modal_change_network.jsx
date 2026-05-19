@@ -6,6 +6,10 @@ const NETWORK_LABEL = "Polygon Amoy Testnet";
 const NETWORK_CONFIG = {
     chainId: "80002",
     rpcUrl: "https://rpc-amoy.polygon.technology",
+    fallbackRpcUrls: [
+        "https://polygon-amoy-bor-rpc.publicnode.com",
+        "https://polygon-amoy.drpc.org",
+    ],
     symbol: "POL",
     explorer: "https://amoy.polygonscan.com/",
 };
@@ -251,6 +255,9 @@ function Modal_change_network(props) {
                         <div style={{ display: "grid", gap: "8px", fontSize: "14px", color: "rgba(255,255,255,0.92)" }}>
                             <div>Network Name: {NETWORK_LABEL}</div>
                             <div>RPC URL: {NETWORK_CONFIG.rpcUrl}</div>
+                            {NETWORK_CONFIG.fallbackRpcUrls.map((rpcUrl, index) => (
+                                <div key={rpcUrl}>予備 RPC {index + 1}: {rpcUrl}</div>
+                            ))}
                             <div>Chain ID: {NETWORK_CONFIG.chainId}</div>
                             <div>Currency Symbol: {NETWORK_CONFIG.symbol}</div>
                             <div>Block Explorer URL: {NETWORK_CONFIG.explorer}</div>
@@ -259,6 +266,11 @@ function Modal_change_network(props) {
                             <button type="button" className="btn-secondary-custom" onClick={() => copyNetworkField("RPC URL", NETWORK_CONFIG.rpcUrl)}>
                                 RPC URL をコピー
                             </button>
+                            {NETWORK_CONFIG.fallbackRpcUrls.map((rpcUrl, index) => (
+                                <button key={rpcUrl} type="button" className="btn-secondary-custom" onClick={() => copyNetworkField(`予備RPC ${index + 1}`, rpcUrl)}>
+                                    予備RPC {index + 1} をコピー
+                                </button>
+                            ))}
                             <button type="button" className="btn-secondary-custom" onClick={() => copyNetworkField("Chain ID", NETWORK_CONFIG.chainId)}>
                                 Chain ID をコピー
                             </button>
@@ -269,9 +281,10 @@ function Modal_change_network(props) {
                         <div style={{ fontWeight: 700, marginBottom: "10px" }}>Edge / Brave でまだ接続できない場合</div>
                         <div style={{ display: "grid", gap: "8px", fontSize: "14px", lineHeight: 1.8, color: "rgba(255,255,255,0.92)" }}>
                             <div>1. MetaMask を開き、既存の Polygon Amoy がある場合は RPC URL を `{NETWORK_CONFIG.rpcUrl}` に修正してください。</div>
-                            <div>2. `RPCを更新` が失敗する場合は、既存の Polygon Amoy を削除してから、この画面のボタンで再追加してください。</div>
-                            <div>3. Edge / Brave では MetaMask 拡張を有効化した状態で、このページを強制再読み込みしてから再実行してください。</div>
-                            <div>4. それでも失敗する場合は、MetaMask のネットワーク追加画面で上の値を手動入力してください。</div>
+                            <div>2. `RPCを更新` が失敗する場合は、予備 RPC を順番に試してください。</div>
+                            <div>3. 大学内 Wi-Fi で失敗する場合は、最初のネットワーク追加だけスマホ回線や自宅回線で行い、その後に学内 Wi-Fi へ戻してください。</div>
+                            <div>4. 既存の Polygon Amoy を削除してから、この画面のボタンで再追加すると改善する場合があります。</div>
+                            <div>5. Edge / Brave では MetaMask 拡張を有効化した状態で、このページを強制再読み込みしてから再実行してください。</div>
                         </div>
                     </div>
 

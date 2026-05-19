@@ -776,16 +776,21 @@ class Contracts_MetaMask {
     getAmoyRpcCandidates() {
         return Array.from(new Set([
             "https://rpc-amoy.polygon.technology",
+            "https://polygon-amoy-bor-rpc.publicnode.com",
             ...(amoy.rpcUrls?.default?.http || []),
         ].filter(Boolean)));
     }
 
     getAmoyAddChainParams(preferredRpcUrl = "https://rpc-amoy.polygon.technology") {
+        const orderedRpcUrls = Array.from(new Set([
+            preferredRpcUrl,
+            ...this.getAmoyRpcCandidates(),
+        ].filter(Boolean)));
         return {
             chainId: `0x${amoy.id.toString(16)}`,
             chainName: amoy.name,
             nativeCurrency: amoy.nativeCurrency,
-            rpcUrls: [preferredRpcUrl],
+            rpcUrls: orderedRpcUrls,
             blockExplorerUrls: amoy.blockExplorers?.default?.url ? [amoy.blockExplorers.default.url] : [],
         };
     }
@@ -832,6 +837,26 @@ class Contracts_MetaMask {
             console.error("Failed to request wallet access", error);
             throw error;
         }
+    }
+
+    async waitForReceiptWithRetry(hash, attempts = 3) {
+        let lastError = null;
+        for (let attempt = 0; attempt < attempts; attempt += 1) {
+            try {
+                return await publicClient.waitForTransactionReceipt({
+                    hash,
+                    pollingInterval: 1500,
+                    timeout: 45000 + attempt * 15000,
+                    retryCount: 1,
+                });
+            } catch (error) {
+                lastError = error;
+                if (attempt < attempts - 1) {
+                    await sleep(1500 * (attempt + 1));
+                }
+            }
+        }
+        throw lastError;
     }
 
     async ensure_wallet_connected() {
@@ -1895,7 +1920,7 @@ class Contracts_MetaMask {
             let hash = await this._save_answer(account, id, answer, sourceAddress);
 
             if (hash) {
-                let res = await publicClient.waitForTransactionReceipt({ hash });
+                let res = await this.waitForReceiptWithRetry(hash);
                 console.log(res);
                 // トランザクション成功後にのみローカルに保存
                 localStorage.setItem(`quiz_${this.normalizeQuizAddress(sourceAddress)}_${id}_answer`, answer);
@@ -1912,17 +1937,13 @@ class Contracts_MetaMask {
     }
 
     async _save_answer(account, id, answer, sourceAddress = "") {
-        try {
-            return await this.writeContractDirect({
-                account,
-                address: this.resolveQuizAddress(sourceAddress),
-                abi: quiz_abi,
-                functionName: "save_answer",
-                args: [id, answer.toString()],
-            });
-        } catch (e) {
-            console.log(e);
-        }
+        return await this.writeContractDirect({
+            account,
+            address: this.resolveQuizAddress(sourceAddress),
+            abi: quiz_abi,
+            functionName: "save_answer",
+            args: [id, answer.toString()],
+        });
     }
 
     async _post_answer(account, id, answer, sourceAddress = "") {
