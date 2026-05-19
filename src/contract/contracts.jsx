@@ -47,6 +47,19 @@ function getTokenHistoryValueTft(entry) {
 }
 
 const SCORE_CACHE_KEY = "web3_quiz_reward_cache_v1";
+const STUDENT_LIST_CACHE_KEY = "web3_quiz_student_list_cache_v1";
+const RESULTS_CACHE_KEY = "web3_quiz_results_cache_v1";
+const STUDENT_LIST_CACHE_TTL_MS = 3 * 60 * 1000;
+const RESULTS_CACHE_TTL_MS = 60 * 1000;
+const HISTORY_LEN_CACHE_TTL_MS = 45 * 1000;
+
+let studentListCacheMemory = null;
+let studentListCacheFetchedAt = 0;
+let studentListCachePromise = null;
+let resultsCacheMemory = null;
+let resultsCacheFetchedAt = 0;
+let resultsCachePromise = null;
+const userHistoryLenCache = new Map();
 
 function readScoreCache() {
     if (typeof localStorage === "undefined") return {};
@@ -60,6 +73,22 @@ function readScoreCache() {
 function writeScoreCache(nextCache) {
     if (typeof localStorage === "undefined") return;
     localStorage.setItem(SCORE_CACHE_KEY, JSON.stringify(nextCache));
+}
+
+function readTimedCache(key) {
+    if (typeof localStorage === "undefined") return null;
+    try {
+        const parsed = JSON.parse(localStorage.getItem(key) || "null");
+        if (!parsed || typeof parsed !== "object") return null;
+        return parsed;
+    } catch (error) {
+        return null;
+    }
+}
+
+function writeTimedCache(key, payload) {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(key, JSON.stringify(payload));
 }
 
 async function retryReadContractBalance(readFn, attempts = 3) {
@@ -1135,6 +1164,11 @@ class Contracts_MetaMask {
 
     async get_user_history_len(address) {
         try {
+            const normalizedAddress = this.normalizeAddress(address);
+            const cachedHistory = userHistoryLenCache.get(normalizedAddress);
+            if (cachedHistory && Date.now() - Number(cachedHistory.fetchedAt || 0) < HISTORY_LEN_CACHE_TTL_MS) {
+                return Number(cachedHistory.value || 0);
+            }
             const account = await this.get_address();
             const res = await publicClient.readContract({
                 account: account || undefined,
@@ -1143,7 +1177,12 @@ class Contracts_MetaMask {
                 functionName: "get_user_history_len",
                 args: [address],
             });
-            return Number(res);
+            const historyLength = Number(res || 0);
+            userHistoryLenCache.set(normalizedAddress, {
+                value: historyLength,
+                fetchedAt: Date.now(),
+            });
+            return historyLength;
         } catch (error) {
             console.log(error);
             return 0;
@@ -2218,22 +2257,53 @@ class Contracts_MetaMask {
     }
 
     async get_results() {
-        try {
-            const students = await this.get_student_list();
-            const rows = await Promise.all(
-                (Array.isArray(students) ? students : []).map(async (student) => {
-                    const score = await this.get_quiz_reward_tft(student);
-                    return {
-                        student,
-                        result: Number(score || 0),
-                    };
-                })
-            );
-            return rows;
-        } catch (fallbackError) {
-            console.log(fallbackError);
-            return [];
+        const now = Date.now();
+        if (Array.isArray(resultsCacheMemory) && now - resultsCacheFetchedAt < RESULTS_CACHE_TTL_MS) {
+            return resultsCacheMemory;
         }
+
+        const persistedCache = readTimedCache(RESULTS_CACHE_KEY);
+        if (
+            Array.isArray(persistedCache?.value)
+            && now - Number(persistedCache?.fetchedAt || 0) < RESULTS_CACHE_TTL_MS
+        ) {
+            resultsCacheMemory = persistedCache.value;
+            resultsCacheFetchedAt = Number(persistedCache.fetchedAt || now);
+            return resultsCacheMemory;
+        }
+
+        if (resultsCachePromise) {
+            return resultsCachePromise;
+        }
+
+        resultsCachePromise = (async () => {
+            try {
+                const students = await this.get_student_list();
+                const rows = await Promise.all(
+                    (Array.isArray(students) ? students : []).map(async (student) => {
+                        const score = await this.get_quiz_reward_tft(student);
+                        return {
+                            student,
+                            result: Number(score || 0),
+                        };
+                    })
+                );
+                resultsCacheMemory = rows;
+                resultsCacheFetchedAt = Date.now();
+                writeTimedCache(RESULTS_CACHE_KEY, {
+                    value: rows,
+                    fetchedAt: resultsCacheFetchedAt,
+                });
+                return rows;
+            } catch (fallbackError) {
+                console.log(fallbackError);
+                return Array.isArray(resultsCacheMemory) ? resultsCacheMemory : [];
+            } finally {
+                resultsCachePromise = null;
+            }
+        })();
+
+        return resultsCachePromise;
     }
 
     async isTeacher() {
@@ -2904,9 +2974,12 @@ class Contracts_MetaMask {
 
     async get_rank(result) {
         try {
-            let results = await this.get_only_student_results();
-            for (let i = 0; i < results.length; i++) {
-                if (result == results[i]) return i + 1;
+            let results = await this.get_results();
+            const sortedScores = (Array.isArray(results) ? results : [])
+                .map((item) => Number(item?.result || 0))
+                .sort((a, b) => b - a);
+            for (let i = 0; i < sortedScores.length; i++) {
+                if (Number(result) === Number(sortedScores[i])) return i + 1;
             }
         } catch (err) {
             console.log(err);
@@ -3022,19 +3095,51 @@ class Contracts_MetaMask {
 
 
     async get_student_list() {
-        try {
-            let account = await this.get_address();
-            let res = await this.readAccessControlAddressList({
-                account,
-                abi: [GET_STUDENT_ALL_ABI],
-                functionName: "get_student_all",
-                args: [],
-            });
-            return res;
-        } catch (err) {
-            console.log(err);
+        const now = Date.now();
+        if (Array.isArray(studentListCacheMemory) && now - studentListCacheFetchedAt < STUDENT_LIST_CACHE_TTL_MS) {
+            return studentListCacheMemory;
         }
-        return [];
+
+        const persistedCache = readTimedCache(STUDENT_LIST_CACHE_KEY);
+        if (
+            Array.isArray(persistedCache?.value)
+            && now - Number(persistedCache?.fetchedAt || 0) < STUDENT_LIST_CACHE_TTL_MS
+        ) {
+            studentListCacheMemory = persistedCache.value;
+            studentListCacheFetchedAt = Number(persistedCache.fetchedAt || now);
+            return studentListCacheMemory;
+        }
+
+        if (studentListCachePromise) {
+            return studentListCachePromise;
+        }
+
+        studentListCachePromise = (async () => {
+            try {
+                let account = await this.get_address();
+                let res = await this.readAccessControlAddressList({
+                    account,
+                    abi: [GET_STUDENT_ALL_ABI],
+                    functionName: "get_student_all",
+                    args: [],
+                });
+                const normalizedStudents = Array.isArray(res) ? res : [];
+                studentListCacheMemory = normalizedStudents;
+                studentListCacheFetchedAt = Date.now();
+                writeTimedCache(STUDENT_LIST_CACHE_KEY, {
+                    value: normalizedStudents,
+                    fetchedAt: studentListCacheFetchedAt,
+                });
+                return normalizedStudents;
+            } catch (err) {
+                console.log(err);
+                return Array.isArray(studentListCacheMemory) ? studentListCacheMemory : [];
+            } finally {
+                studentListCachePromise = null;
+            }
+        })();
+
+        return studentListCachePromise;
     }
 
     async get_students_answer_hash_list(students, id, sourceAddress = "") {

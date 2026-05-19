@@ -31,26 +31,26 @@ function Dashboard() {
                 if (cancelled) return;
                 setAddress(addr || "");
 
-                const [balanceResult, inventoryResult, userResult] = await Promise.allSettled([
+                const [balanceResult, quizLengthResult, userResult] = await Promise.allSettled([
                     addr ? cont.get_token_balance(addr) : Promise.resolve(0),
-                    cont.getQuizInventory(),
+                    cont.get_quiz_lenght(),
                     addr ? cont.get_user_data(addr) : Promise.resolve(["", "", 0, false]),
                 ]);
 
                 if (cancelled) return;
 
                 const bal = balanceResult.status === "fulfilled" ? balanceResult.value : 0;
-                const inventory = inventoryResult.status === "fulfilled" ? inventoryResult.value : [];
+                const quizLength = quizLengthResult.status === "fulfilled" ? Number(quizLengthResult.value || 0) : 0;
                 const user = userResult.status === "fulfilled" ? userResult.value : ["", "", 0, false];
 
                 setBalance(Number(bal || 0));
-                setQuizTotal(Array.isArray(inventory) ? inventory.length : 0);
+                setQuizTotal(quizLength);
                 setUserData(user || ["", "", 0, false]);
                 setLoading(false);
 
-                // 削除済み問題の反映は後から同期し、初期表示を止めない
-                getDeletedQuizzes()
-                    .then((deletedQuizzes) => {
+                // 全クイズ参照は重いので、表示後に同期する
+                Promise.all([cont.getQuizInventory(), getDeletedQuizzes()])
+                    .then(([inventory, deletedQuizzes]) => {
                         if (cancelled) return;
                         const visibleQuizTotal = (Array.isArray(inventory) ? inventory : []).filter((quiz) => {
                             const quizKey = normalizeDeletedQuizKey(`${quiz?.address || ""}:${Number(quiz?.id)}`);

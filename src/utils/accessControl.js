@@ -25,7 +25,7 @@ function createDefaultAccessState() {
 let lastResolvedAccessState = null;
 let lastResolvedAt = 0;
 let resolveAccessPromise = null;
-const ACCESS_CACHE_TTL_MS = 12000;
+const ACCESS_CACHE_TTL_MS = 45000;
 
 function resetAccessStateCache() {
     lastResolvedAccessState = null;
@@ -236,7 +236,7 @@ function useAccessControl(cont) {
         const interval = window.setInterval(() => {
             resetAccessStateCache();
             load({ showLoading: false, allowSoftDisconnect: true });
-        }, 30000);
+        }, 60000);
         window.addEventListener("focus", handleRefresh);
         document.addEventListener("visibilitychange", handleRefresh);
         window.addEventListener(WALLET_PROVIDER_CHANGED_EVENT, handleWalletProviderChanged);
