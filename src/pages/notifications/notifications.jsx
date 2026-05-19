@@ -10,6 +10,23 @@ import {
 } from "../../utils/quizDeadlineNotifications";
 import "./notifications.css";
 
+const REMINDER_TIME_OPTIONS = [
+    { key: "oneDay", label: "締切 24 時間前" },
+    { key: "sixHours", label: "締切 6 時間前" },
+    { key: "twoHours", label: "締切 2 時間前" },
+    { key: "oneHour", label: "締切 1 時間前" },
+    { key: "thirtyMinutes", label: "締切 30 分前" },
+    { key: "tenMinutes", label: "締切 10 分前" },
+];
+
+const REMINDER_CONTENT_OPTIONS = [
+    { key: "includeQuizTitle", label: "問題タイトルを入れる" },
+    { key: "includeDeadlineTime", label: "締切日時を入れる" },
+    { key: "includeRemainingTime", label: "何時間前・何分前かを入れる" },
+    { key: "includeReward", label: "報酬を入れる" },
+    { key: "includeOpenPrompt", label: "問題を開く案内を入れる" },
+];
+
 const EVENT_CONFIG = {
     Create_quiz: {
         icon: "📝",
@@ -188,7 +205,7 @@ function Notifications() {
                     <div>
                         <div className="notification-settings-title">締切リマインド</div>
                         <div className="notification-settings-subtitle">
-                            この端末で、未回答クイズの締切 2 時間前と 1 時間前に通知します。
+                            この端末で、未回答クイズの締切前に通知します。時間帯と文面は下で調整できます。
                         </div>
                     </div>
                     <div className={`notification-permission-badge ${permission === "granted" ? "is-enabled" : "is-disabled"}`}>
@@ -215,25 +232,38 @@ function Notifications() {
                     ) : null}
                 </div>
 
-                <div className="notification-setting-grid">
-                    <label className="notification-switch">
-                        <input
-                            type="checkbox"
-                            checked={Boolean(reminderSettings.twoHours)}
-                            onChange={(event) => updateReminderSettings({ twoHours: event.target.checked })}
-                            disabled={!notificationSupported || !reminderSettings.enabled}
-                        />
-                        <span>締切 2 時間前に通知</span>
-                    </label>
-                    <label className="notification-switch">
-                        <input
-                            type="checkbox"
-                            checked={Boolean(reminderSettings.oneHour)}
-                            onChange={(event) => updateReminderSettings({ oneHour: event.target.checked })}
-                            disabled={!notificationSupported || !reminderSettings.enabled}
-                        />
-                        <span>締切 1 時間前に通知</span>
-                    </label>
+                <div className="notification-settings-section">
+                    <div className="notification-settings-section-title">通知タイミング</div>
+                    <div className="notification-setting-grid">
+                        {REMINDER_TIME_OPTIONS.map((option) => (
+                            <label className="notification-switch" key={option.key}>
+                                <input
+                                    type="checkbox"
+                                    checked={Boolean(reminderSettings[option.key])}
+                                    onChange={(event) => updateReminderSettings({ [option.key]: event.target.checked })}
+                                    disabled={!notificationSupported || !reminderSettings.enabled}
+                                />
+                                <span>{option.label}</span>
+                            </label>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="notification-settings-section">
+                    <div className="notification-settings-section-title">通知に入れる内容</div>
+                    <div className="notification-setting-grid">
+                        {REMINDER_CONTENT_OPTIONS.map((option) => (
+                            <label className="notification-switch" key={option.key}>
+                                <input
+                                    type="checkbox"
+                                    checked={Boolean(reminderSettings[option.key])}
+                                    onChange={(event) => updateReminderSettings({ [option.key]: event.target.checked })}
+                                    disabled={!notificationSupported || !reminderSettings.enabled}
+                                />
+                                <span>{option.label}</span>
+                            </label>
+                        ))}
+                    </div>
                 </div>
 
                 <div className="notification-settings-note">

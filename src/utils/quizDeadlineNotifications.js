@@ -7,15 +7,28 @@ const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const INITIAL_CHECK_DELAY_MS = 15 * 1000;
 
 const REMINDER_OPTIONS = [
+    { key: "oneDay", label: "24時間前", offsetSeconds: 24 * 60 * 60 },
+    { key: "sixHours", label: "6時間前", offsetSeconds: 6 * 60 * 60 },
     { key: "twoHours", label: "2時間前", offsetSeconds: 2 * 60 * 60 },
     { key: "oneHour", label: "1時間前", offsetSeconds: 1 * 60 * 60 },
+    { key: "thirtyMinutes", label: "30分前", offsetSeconds: 30 * 60 },
+    { key: "tenMinutes", label: "10分前", offsetSeconds: 10 * 60 },
 ];
 
 function getDefaultNotificationSettings() {
     return {
         enabled: false,
+        oneDay: false,
+        sixHours: false,
         twoHours: true,
         oneHour: true,
+        thirtyMinutes: false,
+        tenMinutes: false,
+        includeQuizTitle: true,
+        includeDeadlineTime: true,
+        includeRemainingTime: true,
+        includeReward: false,
+        includeOpenPrompt: true,
     };
 }
 
@@ -58,6 +71,7 @@ function normalizeQuizForReminder(quiz) {
     const deadlineEpoch = Number(quiz?.[6] || quiz?.[9] || 0);
     const answerState = Number(quiz?.[10] || 0);
     const sourceAddress = String(quiz?.sourceAddress || quiz?.[12] || "");
+    const reward = Number(quiz?.[7] || 0);
     if (!deadlineEpoch || Number.isNaN(deadlineEpoch)) return null;
 
     return {
@@ -66,6 +80,7 @@ function normalizeQuizForReminder(quiz) {
         deadlineEpoch,
         answerState,
         sourceAddress,
+        reward,
     };
 }
 
@@ -155,6 +170,7 @@ function buildDueDeadlineReminders(quizzes, settings = getDefaultNotificationSet
                     title: quiz.title,
                     sourceAddress: quiz.sourceAddress,
                     deadlineEpoch: quiz.deadlineEpoch,
+                    reward: quiz.reward,
                     offsetSeconds: option.offsetSeconds,
                     label: option.label,
                     path: buildAnswerQuizPath(quiz.quizId, quiz.sourceAddress),
@@ -182,16 +198,51 @@ function markDeadlineRemindersSent(reminders = []) {
     writeReminderStore(store);
 }
 
-function createReminderBody(reminder) {
-    const deadlineText = new Date(Number(reminder.deadlineEpoch || 0) * 1000).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
-    return `${reminder.title}\n締切は ${deadlineText} です。未回答のままなので確認してください。`;
+function formatRemainingTime(offsetSeconds = 0) {
+    if (offsetSeconds >= 24 * 60 * 60) {
+        return `${Math.round(offsetSeconds / (24 * 60 * 60))}日前`;
+    }
+    if (offsetSeconds >= 60 * 60) {
+        return `${Math.round(offsetSeconds / (60 * 60))}時間前`;
+    }
+    return `${Math.round(offsetSeconds / 60)}分前`;
 }
 
-function showDeadlineReminderNotification(reminder) {
+function createReminderBody(reminder, settings = getDefaultNotificationSettings()) {
+    const deadlineText = new Date(Number(reminder.deadlineEpoch || 0) * 1000).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
+    const lines = [];
+
+    if (settings.includeQuizTitle) {
+        lines.push(`問題: ${reminder.title}`);
+    }
+    if (settings.includeDeadlineTime) {
+        lines.push(`締切: ${deadlineText}`);
+    }
+    if (settings.includeRemainingTime) {
+        lines.push(`通知タイミング: ${formatRemainingTime(reminder.offsetSeconds)}`);
+    }
+    if (settings.includeReward && Number(reminder.reward || 0) > 0) {
+        lines.push(`報酬: ${Number(reminder.reward)} TFT`);
+    }
+    if (settings.includeOpenPrompt) {
+        lines.push("未回答のままです。問題を開いて確認してください。");
+    }
+
+    return lines.join("\n");
+}
+
+function createReminderTitle(reminder, settings = getDefaultNotificationSettings()) {
+    if (settings.includeQuizTitle) {
+        return `クイズ締切 ${reminder.label} - ${reminder.title}`;
+    }
+    return `クイズ締切 ${reminder.label}`;
+}
+
+function showDeadlineReminderNotification(reminder, settings = getDefaultNotificationSettings()) {
     if (!isNotificationSupported() || getNotificationPermission() !== "granted") return false;
 
-    const notification = new Notification(`クイズ締切 ${reminder.label}`, {
-        body: createReminderBody(reminder),
+    const notification = new Notification(createReminderTitle(reminder, settings), {
+        body: createReminderBody(reminder, settings),
         tag: reminder.id,
         renotify: false,
     });
@@ -230,7 +281,7 @@ async function checkAndSendDeadlineNotifications(cont) {
         .filter(Array.isArray);
 
     const reminders = buildDueDeadlineReminders(quizzes, settings);
-    const sent = reminders.filter((reminder) => showDeadlineReminderNotification(reminder));
+    const sent = reminders.filter((reminder) => showDeadlineReminderNotification(reminder, settings));
     markDeadlineRemindersSent(sent);
     return { sent: sent.length, reason: sent.length ? "sent" : "none_due" };
 }

@@ -16,31 +16,39 @@ describe("quizDeadlineNotifications", () => {
     });
 
     test("stores and reads reminder settings with defaults", () => {
-        saveDeadlineNotificationSettings({ enabled: true, oneHour: false });
+        saveDeadlineNotificationSettings({ enabled: true, oneHour: false, tenMinutes: true, includeReward: true });
         expect(readDeadlineNotificationSettings()).toEqual({
             ...getDefaultNotificationSettings(),
             enabled: true,
             oneHour: false,
+            tenMinutes: true,
+            includeReward: true,
         });
     });
 
-    test("builds 2-hour and 1-hour reminders for unanswered quizzes only", () => {
+    test("builds multiple reminder windows for unanswered quizzes only", () => {
         const nowEpoch = 1_800_000_000;
         const settings = {
             enabled: true,
+            oneDay: false,
+            sixHours: false,
             twoHours: true,
             oneHour: true,
+            thirtyMinutes: true,
+            tenMinutes: false,
         };
         const quizzes = [
-            [0, "0x1", "未回答クイズ", "", "", nowEpoch - 600, nowEpoch + 1800, 0, 0, 0, 0, false, "0xabc"],
+            [0, "0x1", "未回答クイズ", "", "", nowEpoch - 600, nowEpoch + 1800, 50, 0, 0, 0, false, "0xabc"],
             [1, "0x1", "回答済みクイズ", "", "", nowEpoch - 600, nowEpoch + 1800, 0, 0, 0, 3, false, "0xabc"],
         ];
 
         const reminders = buildDueDeadlineReminders(quizzes, settings, nowEpoch);
-        expect(reminders).toHaveLength(2);
+        expect(reminders).toHaveLength(3);
         expect(reminders[0].title).toBe("未回答クイズ");
         expect(reminders[0].label).toBe("2時間前");
         expect(reminders[1].label).toBe("1時間前");
+        expect(reminders[2].label).toBe("30分前");
+        expect(reminders[0].reward).toBe(50);
     });
 
     test("does not build reminders after deadline", () => {
