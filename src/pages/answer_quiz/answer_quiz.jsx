@@ -490,7 +490,11 @@ function Answer_quiz() {
         });
 
         try {
-            await contract.create_answer(id, finalAnswer, setShow, setContent, sourceAddress);
+            const submitResult = await contract.create_answer(id, finalAnswer, setShow, setContent, sourceAddress);
+            const txHash = submitResult?.transactionHash || submitResult?.hash || "";
+            const verificationStatus = submitResult?.status === "verified_after_receipt_timeout"
+                ? "verified_after_receipt_timeout"
+                : "receipt_confirmed";
             setSavedAnswerStr(finalAnswer);
             setAnswer(finalAnswer);
             clearDraft(draftKey);
@@ -509,6 +513,8 @@ function Answer_quiz() {
                 rewardPolicy: allowMultipleAnswers ? "repeat_half_after_first" : "single_full_reward",
                 answerLength: finalAnswer.length,
                 answerType: Number(quiz[13]) === 0 ? "choice" : "text",
+                txHash,
+                verificationStatus,
                 openedAt: new Date(pageOpenedAtRef.current).toISOString(),
                 startedAt: answerStartedAtRef.current ? new Date(answerStartedAtRef.current).toISOString() : null,
                 totalDurationSeconds: Math.round((Date.now() - pageOpenedAtRef.current) / 1000),

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Contracts_MetaMask } from "../../../contract/contracts";
 import { keccak256, toHex, encodePacked } from "viem";
+import { getMergedActivityLogs, syncSharedActivityLogs } from "../../../utils/activityLog";
 
 function downloadTextFile(filename, content, mimeType) {
     const blob = new Blob([content], { type: mimeType });
@@ -18,6 +19,14 @@ function escapeCsv(value) {
     const normalized = String(value ?? "");
     if (!/[",\n]/.test(normalized)) return normalized;
     return `"${normalized.replace(/"/g, "\"\"")}"`;
+}
+
+function normalizeAddress(value) {
+    return String(value || "").trim().toLowerCase();
+}
+
+function buildAnswerLogKey(address = "", quizId = "", sourceAddress = "") {
+    return `${normalizeAddress(address)}:${String(sourceAddress || "").toLowerCase()}:${String(quizId)}`;
 }
 
 /**
@@ -58,6 +67,42 @@ function View_answers() {
     const [answers, setAnswers] = useState(null);
     const [loading, setLoading] = useState(true);
     const [loadingAnswers, setLoadingAnswers] = useState(false);
+    const [sharedLogs, setSharedLogs] = useState(() => getMergedActivityLogs());
+
+    useEffect(() => {
+        let mounted = true;
+
+        const refreshLogs = async () => {
+            const merged = await syncSharedActivityLogs();
+            if (!mounted) return;
+            setSharedLogs(Array.isArray(merged) ? merged : getMergedActivityLogs());
+        };
+
+        const handleSharedUpdate = () => {
+            setSharedLogs(getMergedActivityLogs());
+        };
+
+        refreshLogs();
+        window.addEventListener("activity-logs-shared-updated", handleSharedUpdate);
+        window.addEventListener("storage", handleSharedUpdate);
+        return () => {
+            mounted = false;
+            window.removeEventListener("activity-logs-shared-updated", handleSharedUpdate);
+            window.removeEventListener("storage", handleSharedUpdate);
+        };
+    }, []);
+
+    const answerLogMap = useMemo(() => {
+        const map = new Map();
+        (Array.isArray(sharedLogs) ? sharedLogs : [])
+            .filter((log) => log?.action === "answer_submitted")
+            .forEach((log) => {
+                const key = buildAnswerLogKey(log.address || log.actor || "", log.quizId || "", log.sourceAddress || "");
+                if (!key || map.has(key)) return;
+                map.set(key, log);
+            });
+        return map;
+    }, [sharedLogs]);
 
     const selectedQuizTitle = useMemo(() => {
         const selectedRef = quizList.find((item) => `${item.sourceAddress || ""}:${item.id}` === selectedQuiz);
@@ -73,6 +118,8 @@ function View_answers() {
             walletAddress: item.address || "",
             answer: item.answer || "未回答",
             answerHash: item.hash || "",
+            txHash: item.txHash || "",
+            verificationStatus: item.verificationStatus || "",
         }))
     ), [answers, selectedQuiz, selectedQuizTitle]);
 
@@ -86,7 +133,7 @@ function View_answers() {
 
     const handleExportAnswersCsv = () => {
         const rows = [
-            ["No", "Quiz ID", "Quiz Title", "Wallet Address", "Answer", "Answer Hash"],
+            ["No", "Quiz ID", "Quiz Title", "Wallet Address", "Answer", "Answer Hash", "Tx Hash", "Verification Status"],
             ...exportAnswerRows.map((row) => [
                 row.no,
                 row.quizId,
@@ -94,6 +141,8 @@ function View_answers() {
                 row.walletAddress,
                 row.answer,
                 row.answerHash,
+                row.txHash,
+                row.verificationStatus,
             ]),
         ];
         const csv = rows.map((row) => row.map(escapeCsv).join(",")).join("\n");
@@ -142,6 +191,15 @@ function View_answers() {
             const answerType = Number(quizData[13]); // answer_type: 0=選択式, 1=記述式
             const rewardTft = Number(quizData[10] || 0) / 10 ** 18;
 
+            const latestAnswerLogs = (getMergedActivityLogs() || [])
+                .filter((log) => log?.action === "answer_submitted")
+                .reduce((map, log) => {
+                    const key = buildAnswerLogKey(log.address || log.actor || "", log.quizId || "", log.sourceAddress || "");
+                    if (!key || map.has(key)) return map;
+                    map.set(key, log);
+                    return map;
+                }, new Map());
+
             // 生徒一覧を取得
             const students = await contract.get_student_list();
             if (students && students.length > 0) {
@@ -169,6 +227,15 @@ function View_answers() {
                         decodedAnswer = "(回答済み)";
                     }
 
+                    const answerLog = answerLogMap.get(buildAnswerLogKey(student, quizId, sourceAddress))
+                        || latestAnswerLogs.get(buildAnswerLogKey(student, quizId, sourceAddress))
+                        || [...latestAnswerLogs.values()].find((log) =>
+                            normalizeAddress(log.address || log.actor || "") === normalizeAddress(student)
+                            && String(log.quizId || "") === String(quizId)
+                        );
+                    const txHash = String(answerLog?.txHash || "");
+                    const verificationStatus = String(answerLog?.verificationStatus || (submitted ? "onchain_submitted" : ""));
+
                     result.push({
                         address: student,
                         answer: decodedAnswer,
@@ -180,6 +247,8 @@ function View_answers() {
                         answerTime: Number(detail?.answerTime || 0),
                         attemptCount: Number(detail?.attemptCount || 0),
                         rewardPreviewTft: Number(detail?.attemptCount || 0) > 1 ? rewardTft / 2 : rewardTft,
+                        txHash,
+                        verificationStatus,
                     });
                 }
                 setAnswers(result);
@@ -279,6 +348,8 @@ function View_answers() {
                                         <th>ウォレットアドレス</th>
                                         <th>回答内容</th>
                                         <th>試行回数</th>
+                                        <th>保存確認</th>
+                                        <th>Tx Hash</th>
                                         <th>判定</th>
                                         <th>報酬</th>
                                     </tr>
@@ -299,6 +370,20 @@ function View_answers() {
                                                 {item.answer || "未回答"}
                                             </td>
                                             <td>{item.attemptCount || 0}</td>
+                                            <td>
+                                                {item.verificationStatus === "receipt_confirmed"
+                                                    ? "receipt確認済み"
+                                                    : item.verificationStatus === "verified_after_receipt_timeout"
+                                                        ? "on-chain再確認済み"
+                                                        : item.submitted
+                                                            ? "回答保存済み"
+                                                            : "-"}
+                                            </td>
+                                            <td style={{ fontSize: "12px" }}>
+                                                {item.txHash
+                                                    ? `${item.txHash.slice(0, 10)}…${item.txHash.slice(-8)}`
+                                                    : "-"}
+                                            </td>
                                             <td>
                                                 {item.state === 2 ? "正解" : item.state === 1 ? "不正解" : item.submitted ? "回答済み" : "未回答"}
                                             </td>

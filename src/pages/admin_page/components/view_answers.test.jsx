@@ -14,6 +14,31 @@ jest.mock("../../../contract/contracts", () => ({
     Contracts_MetaMask: jest.fn(),
 }));
 
+jest.mock("../../../utils/activityLog", () => ({
+    getMergedActivityLogs: jest.fn(() => [
+        {
+            id: "log-1",
+            action: "answer_submitted",
+            address: "0x1111111111111111111111111111111111111111",
+            quizId: 1,
+            sourceAddress: "0xeb196c161efa30939f78170694bb908e17fd1479",
+            txHash: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+            verificationStatus: "receipt_confirmed",
+        },
+    ]),
+    syncSharedActivityLogs: jest.fn(async () => [
+        {
+            id: "log-1",
+            action: "answer_submitted",
+            address: "0x1111111111111111111111111111111111111111",
+            quizId: 1,
+            sourceAddress: "0xeb196c161efa30939f78170694bb908e17fd1479",
+            txHash: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+            verificationStatus: "receipt_confirmed",
+        },
+    ]),
+}));
+
 describe("View_answers", () => {
     beforeEach(() => {
         jest.clearAllMocks();
@@ -72,6 +97,9 @@ describe("View_answers", () => {
 
         expect(await screen.findByText("1/6")).toBeInTheDocument();
         expect(screen.getByText("回答済み")).toBeInTheDocument();
+        expect(screen.getByText("保存確認")).toBeInTheDocument();
+        expect(screen.getByText("Tx Hash")).toBeInTheDocument();
+        expect(screen.getByText("回答保存済み")).toBeInTheDocument();
         expect(screen.getByText("✅ 回答済:", { exact: false })).toBeInTheDocument();
     });
 });
