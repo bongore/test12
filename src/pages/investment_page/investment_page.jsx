@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { Contracts_MetaMask } from "../../contract/contracts";
+import { legacy_quiz_addresses, quiz_address } from "../../contract/config";
 import { useAccessControl } from "../../utils/accessControl";
 import { resolveGlobalId } from "../../utils/quizGlobalId";
 import "./investment_page.css";
@@ -21,6 +22,10 @@ function formatAnswerState(state) {
 function formatTxHash(hash) {
     if (!hash) return "";
     return `${hash.slice(0, 10)}...${hash.slice(-6)}`;
+}
+
+function normalizeAddress(value) {
+    return String(value || "").trim().toLowerCase();
 }
 
 function Investment_to_quiz() {
@@ -46,6 +51,12 @@ function Investment_to_quiz() {
 
     const Contract = useMemo(() => new Contracts_MetaMask(), []);
     const access = useAccessControl(Contract);
+    const normalizedSourceAddress = normalizeAddress(sourceAddress || quiz_address);
+    const currentQuizAddress = normalizeAddress(quiz_address);
+    const isCurrentQuizContract = normalizedSourceAddress === currentQuizAddress;
+    const isLegacyQuizContract = !isCurrentQuizContract && legacy_quiz_addresses.some((address) => normalizeAddress(address) === normalizedSourceAddress);
+    const contractTypeLabel = isCurrentQuizContract ? "現在コントラクト" : isLegacyQuizContract ? "旧コントラクト" : "参照先未判定";
+    const resolvedQuizAddress = sourceAddress || quiz_address;
 
     const convertFullWidthNumbersToHalf = (() => {
         const diff = "０".charCodeAt(0) - "0".charCodeAt(0);
@@ -99,66 +110,86 @@ function Investment_to_quiz() {
     };
 
     const handleExecute = async () => {
+        const submittedStudentAddresses = studentRows
+            .filter((row) => row.submitted)
+            .map((row) => row.address);
+
+        if (gradingMode === "auto" && isNotPayingOut === "false" && !autoAnswer.trim()) {
+            alert("自動判定で払い出しを行う場合は正解を入力してください。");
+            return;
+        }
+
+        const correctStudents = studentRows
+            .filter((row) => row.submitted && gradingMap[row.address] === "correct")
+            .map((row) => row.address);
+        const incorrectStudents = studentRows
+            .filter((row) => row.submitted && gradingMap[row.address] === "incorrect")
+            .map((row) => row.address);
+
+        if (gradingMode === "manual" && isNotPayingOut === "false" && correctStudents.length === 0 && incorrectStudents.length === 0) {
+            alert("手動判定で払い出しを行う場合は、少なくとも1件を正解または不正解に判定してください。");
+            return;
+        }
+
+        const targetStudentCount = gradingMode === "auto"
+            ? (submittedStudentAddresses.length || studentRows.length)
+            : studentRows.length;
+        const payoutActionLabel = isNotPayingOut === "false" ? "報酬配布あり" : "報酬配布なし";
+        const gradingModeLabel = gradingMode === "auto" ? "自動判定" : "手動判定";
+        const confirmationMessage = [
+            `この問題の採点・報酬処理は次の quiz.sol に送信されます。`,
+            ``,
+            `クイズID: ${id}`,
+            `保存先 quiz.sol: ${resolvedQuizAddress}`,
+            `契約種別: ${contractTypeLabel}`,
+            `判定モード: ${gradingModeLabel}`,
+            `実行内容: ${payoutActionLabel}`,
+            `対象人数の目安: ${targetStudentCount}人`,
+            ``,
+            `この内容で続行しますか？`,
+        ].join("\n");
+
+        if (!window.confirm(confirmationMessage)) {
+            return;
+        }
+
         setIsSubmitting(true);
         try {
-            const submittedStudentAddresses = studentRows
-                .filter((row) => row.submitted)
-                .map((row) => row.address);
-
             let executionResult = null;
             if (gradingMode === "auto") {
-                if (isNotPayingOut === "false" && !autoAnswer.trim()) {
-                    alert("自動判定で払い出しを行う場合は正解を入力してください。");
-                    return;
-                }
-
                 executionResult = await Contract.investment_to_quiz(
                     id,
                     amount,
                     convertFullWidthNumbersToHalf(autoAnswer),
                     isNotPayingOut,
-                    submittedStudentAddresses.length || studentRows.length,
+                    targetStudentCount,
                     isNotAddingReward,
-                        submittedStudentAddresses,
-                        sourceAddress
-                    );
-            } else {
-                const correctStudents = studentRows
-                    .filter((row) => row.submitted && gradingMap[row.address] === "correct")
-                    .map((row) => row.address);
-                const incorrectStudents = studentRows
-                    .filter((row) => row.submitted && gradingMap[row.address] === "incorrect")
-                    .map((row) => row.address);
-
-                if (isNotPayingOut === "false" && correctStudents.length === 0 && incorrectStudents.length === 0) {
-                    alert("手動判定で払い出しを行う場合は、少なくとも1件を正解または不正解に判定してください。");
-                    return;
-                }
-
-                if (isNotPayingOut === "true") {
-                    if (Number(amount || 0) > 0) {
-                        await Contract.investment_to_quiz(
-                            id,
-                            amount,
-                            "",
-                            "true",
-                            studentRows.length,
-                            isNotAddingReward,
-                            [],
-                            sourceAddress
-                        );
-                    }
-                } else {
-                    executionResult = await Contract.settle_quiz_rewards_manually(
+                    submittedStudentAddresses,
+                    sourceAddress
+                );
+            } else if (isNotPayingOut === "true") {
+                if (Number(amount || 0) > 0) {
+                    await Contract.investment_to_quiz(
                         id,
                         amount,
-                        confirmAnswer,
-                        correctStudents,
-                        incorrectStudents,
+                        "",
+                        "true",
+                        targetStudentCount,
                         isNotAddingReward,
+                        [],
                         sourceAddress
                     );
                 }
+            } else {
+                executionResult = await Contract.settle_quiz_rewards_manually(
+                    id,
+                    amount,
+                    confirmAnswer,
+                    correctStudents,
+                    incorrectStudents,
+                    isNotAddingReward,
+                    sourceAddress
+                );
             }
             await loadStudentSubmissions();
             setExecutionSummary({
@@ -168,6 +199,8 @@ function Investment_to_quiz() {
                 correctCount,
                 incorrectCount,
                 submittedCount,
+                targetQuizAddress: resolvedQuizAddress,
+                contractTypeLabel,
                 approvalTx: executionResult?.res?.transactionHash || executionResult?.res?.hash || "",
                 approvalStatus: executionResult?.res?.status || "",
                 payoutTxs: Array.isArray(executionResult?.payoutReceipts)
@@ -210,6 +243,19 @@ function Investment_to_quiz() {
 
             <div className="investment-card">
                 <div className="quiz-id-badge">📋 クイズID: {id}</div>
+
+                <div className="glass-card" style={{ padding: "16px", marginBottom: "20px", display: "grid", gap: "8px", color: "#fff" }}>
+                    <div style={{ fontWeight: 700 }}>この問題の保存先 quiz.sol</div>
+                    <div style={{ wordBreak: "break-all", color: "#ffd27d" }}>{resolvedQuizAddress}</div>
+                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+                        <span className="quiz-indicator" style={{ background: isCurrentQuizContract ? "rgba(76, 175, 80, 0.22)" : "rgba(255, 193, 7, 0.18)", color: "#fff" }}>
+                            {contractTypeLabel}
+                        </span>
+                        <span style={{ color: "rgba(255,255,255,0.72)", fontSize: "13px" }}>
+                            報酬配布と追加預託はこの quiz.sol アドレスに対して実行されます。
+                        </span>
+                    </div>
+                </div>
 
                 <div className="invest-section">
                     <div className="invest-section-title">判定モード</div>
@@ -396,6 +442,8 @@ function Investment_to_quiz() {
                         <div className="invest-section-desc">採点結果と報酬反映の結果をその場で確認できます</div>
                         <div className="glass-card" style={{ padding: "16px", display: "grid", gap: "10px", color: "#fff" }}>
                             <div>実行時刻: {new Date(executionSummary.executedAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}</div>
+                            <div>送金先 quiz.sol: {executionSummary.targetQuizAddress}</div>
+                            <div>契約種別: {executionSummary.contractTypeLabel}</div>
                             <div>判定モード: {executionSummary.gradingMode === "auto" ? "自動判定" : "手動判定"}</div>
                             <div>報酬額: {executionSummary.rewardAmount} TFT / 人</div>
                             <div>正解: {executionSummary.correctCount}人 / 不正解: {executionSummary.incorrectCount}人 / 回答済み: {executionSummary.submittedCount}人</div>

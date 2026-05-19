@@ -100,6 +100,9 @@ describe("View_answers", () => {
         expect(screen.getByText("保存確認")).toBeInTheDocument();
         expect(screen.getByText("Tx Hash")).toBeInTheDocument();
         expect(screen.getByText("回答保存済み")).toBeInTheDocument();
+        expect(screen.getByText("この問題の保存先 quiz.sol")).toBeInTheDocument();
+        expect(screen.getByText("0xeb196c161EFA30939f78170694bb908E17fd1479")).toBeInTheDocument();
+        expect(screen.getByText("契約種別: 現在コントラクト")).toBeInTheDocument();
         expect(screen.getByText("✅ 回答済:", { exact: false })).toBeInTheDocument();
     });
 });

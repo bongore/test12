@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Contracts_MetaMask } from "../../../contract/contracts";
+import { legacy_quiz_addresses, quiz_address } from "../../../contract/config";
 import { keccak256, toHex, encodePacked } from "viem";
 import { getMergedActivityLogs, syncSharedActivityLogs } from "../../../utils/activityLog";
 
@@ -109,6 +110,22 @@ function View_answers() {
         if (!selectedRef) return "";
         return selectedRef.title || `問題 ${selectedRef.id}`;
     }, [quizList, selectedQuiz]);
+
+    const selectedQuizSourceAddress = useMemo(() => {
+        const selectedRef = quizList.find((item) => `${item.sourceAddress || ""}:${item.id}` === selectedQuiz);
+        return selectedRef?.sourceAddress || "";
+    }, [quizList, selectedQuiz]);
+
+    const selectedQuizContractType = useMemo(() => {
+        const normalizedSelected = normalizeAddress(selectedQuizSourceAddress || quiz_address);
+        if (normalizedSelected === normalizeAddress(quiz_address)) {
+            return "現在コントラクト";
+        }
+        if (legacy_quiz_addresses.some((address) => normalizeAddress(address) === normalizedSelected)) {
+            return "旧コントラクト";
+        }
+        return "参照先未判定";
+    }, [selectedQuizSourceAddress]);
 
     const exportAnswerRows = useMemo(() => (
         (answers || []).map((item, index) => ({
@@ -330,6 +347,20 @@ function View_answers() {
                     <h4 style={{ color: "#ffffff", fontWeight: "600", marginBottom: "var(--space-3)" }}>
                         📝 {selectedQuizTitle ? `${selectedQuizTitle} の回答一覧` : `問題 ${selectedQuiz || ""} の回答一覧`}
                     </h4>
+                    <div
+                        className="glass-card"
+                        style={{
+                            padding: "16px",
+                            marginBottom: "16px",
+                            display: "grid",
+                            gap: "8px",
+                            color: "#fff",
+                        }}
+                    >
+                        <div style={{ fontWeight: 700 }}>この問題の保存先 quiz.sol</div>
+                        <div style={{ wordBreak: "break-all", color: "#ffd27d" }}>{selectedQuizSourceAddress || quiz_address}</div>
+                        <div style={{ color: "rgba(255,255,255,0.78)" }}>契約種別: {selectedQuizContractType}</div>
+                    </div>
 
                     {loadingAnswers ? (
                         <div style={{ textAlign: "center", padding: "30px", color: "rgba(255,255,255,0.6)" }}>
