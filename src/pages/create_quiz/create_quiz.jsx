@@ -18,6 +18,7 @@ import { normalizeCreatedQuizKey, saveCreatedQuiz } from "../../utils/liveSignal
 import "./create_quiz.css";
 
 const CREATE_QUIZ_DRAFT_KEY = "create_quiz_form_v1";
+const CREATE_QUIZ_BATCH_DRAFT_KEY = "create_quiz_batch_v1";
 
 function Create_quiz() {
     const navigate = useNavigate();
@@ -49,6 +50,7 @@ function Create_quiz() {
     const [show, setShow] = useState(false);
     const [isDraftLoaded, setIsDraftLoaded] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [batchQuizzes, setBatchQuizzes] = useState([]);
 
     const Contract = useMemo(() => new Contracts_MetaMask(), []);
 
@@ -64,92 +66,207 @@ function Create_quiz() {
         clearDraft(CREATE_QUIZ_DRAFT_KEY);
     };
 
+    const resetQuestionFields = () => {
+        setTitle("");
+        setExplanation("");
+        setThumbnail_url("");
+        setContent("");
+        setHighlightText("");
+        setAnswer_type(0);
+        setAnswer_data([]);
+        setCorrect("");
+        setAllowMultipleAnswers(createDefaultQuizContentMeta().allowMultipleAnswers);
+    };
+
+    const buildCurrentQuizPayload = () => ({
+        id: `batch_quiz_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+        title: String(title || "").trim(),
+        explanation: String(explanation || "").trim(),
+        thumbnail_url: String(thumbnail_url || "").trim(),
+        content: String(content || ""),
+        allowMultipleAnswers: Boolean(allowMultipleAnswers),
+        answer_type: Number(answer_type || 0),
+        answer_data: Array.isArray(answer_data) ? [...answer_data] : [],
+        correct: convertFullWidthNumbersToHalf(String(correct || "").trim()),
+        reply_startline: String(reply_startline || ""),
+        reply_deadline: String(reply_deadline || ""),
+        reward: Number(reward || 0),
+        correct_limit: Number(correct_limit || 0),
+    });
+
+    const validateQuizPayload = (payload) => {
+        if (!String(payload.title || "").trim()) {
+            return "タイトルを入力してください";
+        }
+        if (!String(payload.content || "").trim()) {
+            return "問題内容を入力してください";
+        }
+        if (!String(payload.correct || "").trim()) {
+            return "正解を入力してください";
+        }
+        if (!Number(payload.correct_limit) || Number(payload.correct_limit) <= 0) {
+            return "報酬を確保する人数を1以上で入力してください";
+        }
+        if (!String(payload.reply_startline || "").trim() || !String(payload.reply_deadline || "").trim()) {
+            return "回答開始日時と締切日時を入力してください";
+        }
+        return "";
+    };
+
+    const persistCreatedQuizRecord = async (payload, createdQuizId, hash) => {
+        const normalizedQuizId = BigInt(createdQuizId).toString();
+        const startEpoch = Math.floor(new Date(payload.reply_startline).getTime() / 1000);
+        const deadlineEpoch = Math.floor(new Date(payload.reply_deadline).getTime() / 1000);
+        const rewardWei = String(parseUnits(String(payload.reward || 0), 18));
+        setRegisteredCorrectAnswer(normalizedQuizId, payload.correct, quiz_address);
+        savePendingCreatedQuiz({
+            quizId: Number(normalizedQuizId),
+            sourceAddress: quiz_address,
+            title: payload.title,
+            explanation: payload.explanation,
+            thumbnail_url: payload.thumbnail_url,
+            startTime: startEpoch,
+            deadline: deadlineEpoch,
+            rewardWei,
+            respondentCount: 0,
+            respondentLimit: Number(payload.correct_limit || 0),
+            status: 0,
+            isPayment: false,
+            txHash: String(hash || ""),
+            createdAt: new Date().toISOString(),
+        });
+        await saveCreatedQuiz(
+            normalizeCreatedQuizKey(`${quiz_address}:${Number(normalizedQuizId)}`),
+            {
+                quizId: Number(normalizedQuizId),
+                sourceAddress: quiz_address,
+                title: payload.title,
+                explanation: payload.explanation,
+                thumbnail_url: payload.thumbnail_url,
+                startTime: startEpoch,
+                deadline: deadlineEpoch,
+                rewardWei,
+                respondentCount: 0,
+                respondentLimit: Number(payload.correct_limit || 0),
+                status: 0,
+                isPayment: false,
+                txHash: String(hash || ""),
+                createdAt: new Date().toISOString(),
+            }
+        );
+        return normalizedQuizId;
+    };
+
+    const createQuizFromPayload = async (payload) => {
+        const validationError = validateQuizPayload(payload);
+        if (validationError) {
+            throw new Error(validationError);
+        }
+
+        const { createdQuizId, hash } = await Contract.create_quiz(
+            payload.title,
+            payload.explanation,
+            payload.thumbnail_url,
+            withQuizContentMeta(payload.content, { allowMultipleAnswers: payload.allowMultipleAnswers }),
+            payload.answer_type,
+            payload.answer_data,
+            payload.correct,
+            payload.reply_startline,
+            payload.reply_deadline,
+            payload.reward,
+            payload.correct_limit,
+            setShow,
+        );
+
+        appendActivityLog(ACTION_TYPES.ADMIN_CREATE_QUIZ, {
+            page: "create_quiz",
+            title: payload.title,
+            answerType: payload.answer_type,
+            reward: payload.reward,
+            allowMultipleAnswers: payload.allowMultipleAnswers,
+            batchMode: true,
+        });
+
+        if (createdQuizId === null || createdQuizId === undefined) {
+            return null;
+        }
+
+        return await persistCreatedQuizRecord(payload, createdQuizId, hash);
+    };
+
     const create_quiz = async () => {
         if (isSubmitting) return;
-        if (correct !== "") {
-            if (!Number(correct_limit) || Number(correct_limit) <= 0) {
-                alert("報酬を確保する人数を1以上で入力してください");
+        const payload = buildCurrentQuizPayload();
+        const validationError = validateQuizPayload(payload);
+        if (validationError) {
+            alert(validationError);
+            return;
+        }
+        setIsSubmitting(true);
+        try {
+            const createdQuizId = await createQuizFromPayload(payload);
+            if (createdQuizId !== null) {
+                clearCreateQuizDraft();
+                navigate(buildAnswerQuizPath(createdQuizId, quiz_address));
                 return;
             }
-            setIsSubmitting(true);
-            try {
-                const { receipt, createdQuizId, hash } = await Contract.create_quiz(
-                    title,
-                    explanation,
-                    thumbnail_url,
-                    withQuizContentMeta(content, { allowMultipleAnswers }),
-                    answer_type,
-                    answer_data,
-                    convertFullWidthNumbersToHalf(correct),
-                    reply_startline,
-                    reply_deadline,
-                    reward,
-                    correct_limit,
-                    setShow,
-                );
-                appendActivityLog(ACTION_TYPES.ADMIN_CREATE_QUIZ, {
-                    page: "create_quiz",
-                    title,
-                    answerType: answer_type,
-                    reward,
-                    allowMultipleAnswers,
-                });
+        } catch (error) {
+            console.error("Failed to create quiz", error);
+            alert(error?.shortMessage || error?.message || "問題作成に失敗しました。MetaMask の承認状態と教員権限を確認してください。");
+            return;
+        } finally {
+            setIsSubmitting(false);
+        }
+        clearCreateQuizDraft();
+        navigate("/list_quiz");
+    };
 
-                if (createdQuizId !== null && createdQuizId !== undefined) {
-                    const normalizedQuizId = BigInt(createdQuizId).toString();
-                    const startEpoch = Math.floor(new Date(reply_startline).getTime() / 1000);
-                    const deadlineEpoch = Math.floor(new Date(reply_deadline).getTime() / 1000);
-                    setRegisteredCorrectAnswer(normalizedQuizId, convertFullWidthNumbersToHalf(correct), quiz_address);
-                    savePendingCreatedQuiz({
-                        quizId: Number(normalizedQuizId),
-                        sourceAddress: quiz_address,
-                        title,
-                        explanation,
-                        thumbnail_url,
-                        startTime: startEpoch,
-                        deadline: deadlineEpoch,
-                        rewardWei: String(parseUnits(String(reward || 0), 18)),
-                        respondentCount: 0,
-                        respondentLimit: Number(correct_limit || 0),
-                        status: 0,
-                        isPayment: false,
-                        txHash: String(hash || ""),
-                        createdAt: new Date().toISOString(),
-                    });
-                    await saveCreatedQuiz(
-                        normalizeCreatedQuizKey(`${quiz_address}:${Number(normalizedQuizId)}`),
-                        {
-                            quizId: Number(normalizedQuizId),
-                            sourceAddress: quiz_address,
-                            title,
-                            explanation,
-                            thumbnail_url,
-                            startTime: startEpoch,
-                            deadline: deadlineEpoch,
-                            rewardWei: String(parseUnits(String(reward || 0), 18)),
-                            respondentCount: 0,
-                            respondentLimit: Number(correct_limit || 0),
-                            status: 0,
-                            isPayment: false,
-                            txHash: String(hash || ""),
-                            createdAt: new Date().toISOString(),
-                        }
-                    );
-                    clearCreateQuizDraft();
-                    navigate(buildAnswerQuizPath(normalizedQuizId, quiz_address));
-                    return;
-                }
-            } catch (error) {
-                console.error("Failed to create quiz", error);
-                alert(error?.shortMessage || error?.message || "問題作成に失敗しました。MetaMask の承認状態と教員権限を確認してください。");
-                return;
-            } finally {
-                setIsSubmitting(false);
+    const addCurrentQuizToBatch = () => {
+        const payload = buildCurrentQuizPayload();
+        const validationError = validateQuizPayload(payload);
+        if (validationError) {
+            alert(validationError);
+            return;
+        }
+        setBatchQuizzes((current) => [...current, payload]);
+        appendActivityLog(ACTION_TYPES.ADMIN_CREATE_QUIZ, {
+            page: "create_quiz",
+            title: payload.title,
+            answerType: payload.answer_type,
+            reward: payload.reward,
+            allowMultipleAnswers: payload.allowMultipleAnswers,
+            savedToBatch: true,
+        });
+        resetQuestionFields();
+    };
+
+    const removeBatchQuiz = (id) => {
+        setBatchQuizzes((current) => current.filter((item) => item.id !== id));
+    };
+
+    const publishBatchQuizzes = async () => {
+        if (isSubmitting || batchQuizzes.length === 0) return;
+        setIsSubmitting(true);
+        try {
+            const remaining = [...batchQuizzes];
+            const createdIds = [];
+            while (remaining.length > 0) {
+                const nextQuiz = remaining[0];
+                const createdQuizId = await createQuizFromPayload(nextQuiz);
+                createdIds.push(createdQuizId);
+                remaining.shift();
+                setBatchQuizzes([...remaining]);
             }
-            clearCreateQuizDraft();
-            navigate("/list_quiz");
-        } else {
-            alert("正解を入力してください");
+            clearDraft(CREATE_QUIZ_BATCH_DRAFT_KEY);
+            if (createdIds.length > 0) {
+                clearCreateQuizDraft();
+                navigate("/list_quiz");
+            }
+        } catch (error) {
+            console.error("Failed to publish batch quizzes", error);
+            alert(error?.shortMessage || error?.message || "一括出題の途中で失敗しました。残っている問題だけ続きから再実行できます。");
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -225,6 +342,19 @@ function Create_quiz() {
     }, []);
 
     useEffect(() => {
+        try {
+            const rawBatchDraft = getDraft(CREATE_QUIZ_BATCH_DRAFT_KEY);
+            if (!rawBatchDraft) return;
+            const parsedBatchDraft = JSON.parse(rawBatchDraft);
+            if (Array.isArray(parsedBatchDraft)) {
+                setBatchQuizzes(parsedBatchDraft);
+            }
+        } catch (error) {
+            console.error("Failed to restore batch quiz draft", error);
+        }
+    }, []);
+
+    useEffect(() => {
         if (!isDraftLoaded) return;
         try {
             saveDraft(CREATE_QUIZ_DRAFT_KEY, JSON.stringify({
@@ -265,6 +395,14 @@ function Create_quiz() {
         reward,
         correct_limit,
     ]);
+
+    useEffect(() => {
+        try {
+            saveDraft(CREATE_QUIZ_BATCH_DRAFT_KEY, JSON.stringify(batchQuizzes));
+        } catch (error) {
+            console.error("Failed to save batch quiz draft", error);
+        }
+    }, [batchQuizzes]);
 
     const selectedRate = QUIZ_RATE_OPTIONS.find((item) => item.id === scoreTier) || QUIZ_RATE_OPTIONS[0];
 
@@ -330,6 +468,56 @@ function Create_quiz() {
                             <br />
                             入力内容は自動で下書き保存され、作成成功時に消去されます。
                         </div>
+                    </div>
+                </div>
+
+                <div className="quiz-form-group">
+                    <div className="batch-quiz-card">
+                        <div className="batch-quiz-header">
+                            <div>
+                                <div className="batch-quiz-title">📚 まとめて出題</div>
+                                <div className="batch-quiz-note">現在の入力内容を一括出題リストへ追加して、複数問題を順番にまとめて登録できます。</div>
+                            </div>
+                            <div className="batch-quiz-actions">
+                                <button type="button" className="btn-ghost" disabled={isSubmitting} onClick={addCurrentQuizToBatch}>
+                                    ＋ 出題リストへ追加
+                                </button>
+                                <button
+                                    type="button"
+                                    className="btn-submit-quiz"
+                                    disabled={isSubmitting || batchQuizzes.length === 0}
+                                    onClick={publishBatchQuizzes}
+                                >
+                                    {isSubmitting ? "一括出題中..." : `🚀 ${batchQuizzes.length}問をまとめて出題`}
+                                </button>
+                            </div>
+                        </div>
+
+                        {batchQuizzes.length === 0 ? (
+                            <div className="batch-quiz-empty">まだ一括出題リストは空です。問題を入力して「出題リストへ追加」を押してください。</div>
+                        ) : (
+                            <div className="batch-quiz-list">
+                                {batchQuizzes.map((item, index) => (
+                                    <div key={item.id} className="batch-quiz-item">
+                                        <div className="batch-quiz-item-main">
+                                            <div className="batch-quiz-item-index">#{index + 1}</div>
+                                            <div>
+                                                <div className="batch-quiz-item-title">{item.title}</div>
+                                                <div className="batch-quiz-item-meta">
+                                                    {item.reward} TFT / {item.answer_type === 0 ? "選択式" : "記述式"} / {item.allowMultipleAnswers ? "複数回答可" : "初回のみ"}
+                                                </div>
+                                                <div className="batch-quiz-item-meta">
+                                                    {item.reply_startline} 開始 / {item.reply_deadline} 締切 / 報酬人数 {item.correct_limit} 人
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <button type="button" className="btn-ghost" disabled={isSubmitting} onClick={() => removeBatchQuiz(item.id)}>
+                                            削除
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
 
