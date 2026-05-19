@@ -1,10 +1,17 @@
-import { Component, Suspense, lazy, useEffect } from "react";
+import { Component, Suspense, lazy, useEffect, useMemo } from "react";
 import "./styles/design-tokens.css";
 import "./styles/animations.css";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import Nav_menu from "./pages/navbar/navbar";
 import { Contracts_MetaMask } from "./contract/contracts";
 import { ACTION_TYPES, appendActivityLog, logPageView } from "./utils/activityLog";
+import {
+    CHECK_INTERVAL_MS,
+    INITIAL_CHECK_DELAY_MS,
+    SETTINGS_UPDATED_EVENT,
+    checkAndSendDeadlineNotifications,
+    readDeadlineNotificationSettings,
+} from "./utils/quizDeadlineNotifications";
 import "bootstrap/dist/css/bootstrap.min.css";
 
 const routerBasename = (() => {
@@ -71,6 +78,58 @@ function RouteLogger() {
             search: location.search,
         });
     }, [location]);
+
+    return null;
+}
+
+function DeadlineReminderBootstrap({ cont }) {
+    useEffect(() => {
+        let intervalId = null;
+        let initialTimerId = null;
+        let isRunning = false;
+
+        const runCheck = async () => {
+            if (isRunning) return;
+            isRunning = true;
+            try {
+                await checkAndSendDeadlineNotifications(cont);
+            } catch (error) {
+                console.error("Deadline notification check failed", error);
+            } finally {
+                isRunning = false;
+            }
+        };
+
+        const resetSchedule = () => {
+            if (initialTimerId) window.clearTimeout(initialTimerId);
+            if (intervalId) window.clearInterval(intervalId);
+
+            const settings = readDeadlineNotificationSettings();
+            if (!settings.enabled) return;
+
+            initialTimerId = window.setTimeout(runCheck, INITIAL_CHECK_DELAY_MS);
+            intervalId = window.setInterval(runCheck, CHECK_INTERVAL_MS);
+        };
+
+        const handleVisible = () => {
+            if (document.visibilityState === "visible") {
+                runCheck();
+            }
+        };
+
+        resetSchedule();
+        window.addEventListener(SETTINGS_UPDATED_EVENT, resetSchedule);
+        document.addEventListener("visibilitychange", handleVisible);
+        window.addEventListener("focus", handleVisible);
+
+        return () => {
+            if (initialTimerId) window.clearTimeout(initialTimerId);
+            if (intervalId) window.clearInterval(intervalId);
+            window.removeEventListener(SETTINGS_UPDATED_EVENT, resetSchedule);
+            document.removeEventListener("visibilitychange", handleVisible);
+            window.removeEventListener("focus", handleVisible);
+        };
+    }, [cont]);
 
     return null;
 }
@@ -153,7 +212,7 @@ function AppRoutes({ cont }) {
 }
 
 function App() {
-    const cont = new Contracts_MetaMask();
+    const cont = useMemo(() => new Contracts_MetaMask(), []);
 
     useEffect(() => {
         appendActivityLog(ACTION_TYPES.APP_SESSION_STARTED, { page: "app" });
@@ -168,6 +227,7 @@ function App() {
                     v7_relativeSplatPath: true,
                 }}
             >
+                <DeadlineReminderBootstrap cont={cont} />
                 <AppRoutes cont={cont} />
             </BrowserRouter>
         </div>

@@ -1,6 +1,13 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { publicClient, quiz_address, quiz_abi } from "../../contract/contractClients";
+import {
+    getNotificationPermission,
+    isNotificationSupported,
+    readDeadlineNotificationSettings,
+    requestDeadlineNotificationPermission,
+    saveDeadlineNotificationSettings,
+} from "../../utils/quizDeadlineNotifications";
 import "./notifications.css";
 
 const EVENT_CONFIG = {
@@ -70,6 +77,30 @@ function normalizeQuizId(value) {
 function Notifications() {
     const [notifications, setNotifications] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [reminderSettings, setReminderSettings] = useState(() => readDeadlineNotificationSettings());
+    const [permission, setPermission] = useState(() => getNotificationPermission());
+    const notificationSupported = isNotificationSupported();
+
+    const updateReminderSettings = (partial) => {
+        const nextSettings = saveDeadlineNotificationSettings({
+            ...reminderSettings,
+            ...partial,
+        });
+        setReminderSettings(nextSettings);
+        setPermission(getNotificationPermission());
+    };
+
+    const enableBrowserNotifications = async () => {
+        const nextPermission = await requestDeadlineNotificationPermission();
+        setPermission(nextPermission);
+        if (nextPermission === "granted" && !reminderSettings.enabled) {
+            const nextSettings = saveDeadlineNotificationSettings({
+                ...reminderSettings,
+                enabled: true,
+            });
+            setReminderSettings(nextSettings);
+        }
+    };
 
     useEffect(() => {
         async function fetchLogs() {
@@ -150,6 +181,64 @@ function Notifications() {
             <div className="page-header">
                 <h1 className="page-title">🔔 通知</h1>
                 <p className="page-subtitle">スマートコントラクトの最新アクティビティ（{notifications.length}件）</p>
+            </div>
+
+            <div className="notification-settings-card">
+                <div className="notification-settings-header">
+                    <div>
+                        <div className="notification-settings-title">締切リマインド</div>
+                        <div className="notification-settings-subtitle">
+                            この端末で、未回答クイズの締切 2 時間前と 1 時間前に通知します。
+                        </div>
+                    </div>
+                    <div className={`notification-permission-badge ${permission === "granted" ? "is-enabled" : "is-disabled"}`}>
+                        {notificationSupported ? (
+                            permission === "granted" ? "通知許可済み" : "通知未許可"
+                        ) : "このブラウザでは未対応"}
+                    </div>
+                </div>
+
+                <div className="notification-setting-row">
+                    <label className="notification-switch">
+                        <input
+                            type="checkbox"
+                            checked={Boolean(reminderSettings.enabled)}
+                            onChange={(event) => updateReminderSettings({ enabled: event.target.checked })}
+                            disabled={!notificationSupported}
+                        />
+                        <span>締切通知を使う</span>
+                    </label>
+                    {notificationSupported && permission !== "granted" ? (
+                        <button className="notification-action-btn" onClick={enableBrowserNotifications}>
+                            通知を許可する
+                        </button>
+                    ) : null}
+                </div>
+
+                <div className="notification-setting-grid">
+                    <label className="notification-switch">
+                        <input
+                            type="checkbox"
+                            checked={Boolean(reminderSettings.twoHours)}
+                            onChange={(event) => updateReminderSettings({ twoHours: event.target.checked })}
+                            disabled={!notificationSupported || !reminderSettings.enabled}
+                        />
+                        <span>締切 2 時間前に通知</span>
+                    </label>
+                    <label className="notification-switch">
+                        <input
+                            type="checkbox"
+                            checked={Boolean(reminderSettings.oneHour)}
+                            onChange={(event) => updateReminderSettings({ oneHour: event.target.checked })}
+                            disabled={!notificationSupported || !reminderSettings.enabled}
+                        />
+                        <span>締切 1 時間前に通知</span>
+                    </label>
+                </div>
+
+                <div className="notification-settings-note">
+                    通知はこの端末ごとに保存されます。ブラウザや OS の制限により、完全に閉じた状態では届かない場合があります。
+                </div>
             </div>
 
             {notifications.length === 0 ? (
