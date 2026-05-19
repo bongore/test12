@@ -49,11 +49,15 @@ function getTokenHistoryValueTft(entry) {
 const SCORE_CACHE_KEY = "web3_quiz_reward_cache_v1";
 const STUDENT_LIST_CACHE_KEY = "web3_quiz_student_list_cache_v1";
 const RESULTS_CACHE_KEY = "web3_quiz_results_cache_v1";
+const QUIZ_INVENTORY_PERSIST_KEY = "web3_quiz_inventory_cache_v1";
+const QUIZ_SIMPLE_CACHE_KEY = "web3_quiz_simple_cache_v1";
 const STUDENT_LIST_CACHE_TTL_MS = 3 * 60 * 1000;
 const RESULTS_CACHE_TTL_MS = 60 * 1000;
 const HISTORY_LEN_CACHE_TTL_MS = 45 * 1000;
 const READ_ACCOUNT_CACHE_TTL_MS = 8 * 1000;
 const QUIZ_INVENTORY_CACHE_TTL_MS = 20 * 1000;
+const QUIZ_INVENTORY_PERSIST_TTL_MS = 90 * 1000;
+const QUIZ_SIMPLE_CACHE_TTL_MS = 45 * 1000;
 
 let studentListCacheMemory = null;
 let studentListCacheFetchedAt = 0;
@@ -68,6 +72,7 @@ let readAccountCachePromise = null;
 let quizInventoryCacheMemory = null;
 let quizInventoryCacheFetchedAt = 0;
 let quizInventoryCachePromise = null;
+const quizSimpleCacheMemory = new Map();
 
 function readScoreCache() {
     if (typeof localStorage === "undefined") return {};
@@ -97,6 +102,30 @@ function readTimedCache(key) {
 function writeTimedCache(key, payload) {
     if (typeof localStorage === "undefined") return;
     localStorage.setItem(key, JSON.stringify(payload));
+}
+
+function deleteTimedCache(key) {
+    if (typeof localStorage === "undefined") return;
+    localStorage.removeItem(key);
+}
+
+function buildQuizSimpleCacheKey(sourceAddress = "", quizId = 0, account = "") {
+    return `${String(sourceAddress || "").toLowerCase()}:${Number(quizId)}:${String(account || "public").toLowerCase()}`;
+}
+
+function readQuizSimpleCacheStore() {
+    if (typeof localStorage === "undefined") return {};
+    try {
+        const parsed = JSON.parse(localStorage.getItem(QUIZ_SIMPLE_CACHE_KEY) || "{}");
+        return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (error) {
+        return {};
+    }
+}
+
+function writeQuizSimpleCacheStore(store) {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(QUIZ_SIMPLE_CACHE_KEY, JSON.stringify(store || {}));
 }
 
 async function retryReadContractBalance(readFn, attempts = 3) {
@@ -598,6 +627,17 @@ class Contracts_MetaMask {
             return quizInventoryCacheMemory;
         }
 
+        const persistedCache = !forceRefresh ? readTimedCache(QUIZ_INVENTORY_PERSIST_KEY) : null;
+        if (
+            !forceRefresh
+            && Array.isArray(persistedCache?.value)
+            && now - Number(persistedCache?.fetchedAt || 0) < QUIZ_INVENTORY_PERSIST_TTL_MS
+        ) {
+            quizInventoryCacheMemory = persistedCache.value;
+            quizInventoryCacheFetchedAt = Number(persistedCache.fetchedAt || now);
+            return quizInventoryCacheMemory;
+        }
+
         if (!forceRefresh && quizInventoryCachePromise) {
             return quizInventoryCachePromise;
         }
@@ -623,6 +663,10 @@ class Contracts_MetaMask {
 
             quizInventoryCacheMemory = inventory;
             quizInventoryCacheFetchedAt = Date.now();
+            writeTimedCache(QUIZ_INVENTORY_PERSIST_KEY, {
+                value: inventory,
+                fetchedAt: quizInventoryCacheFetchedAt,
+            });
             return inventory;
         })();
 
@@ -785,6 +829,61 @@ class Contracts_MetaMask {
         quizInventoryCacheMemory = null;
         quizInventoryCacheFetchedAt = 0;
         quizInventoryCachePromise = null;
+        deleteTimedCache(QUIZ_INVENTORY_PERSIST_KEY);
+    }
+
+    getQuizSimpleCacheEntry(cacheKey) {
+        const now = Date.now();
+        const memoryEntry = quizSimpleCacheMemory.get(cacheKey);
+        if (memoryEntry && now - Number(memoryEntry.fetchedAt || 0) < QUIZ_SIMPLE_CACHE_TTL_MS) {
+            return memoryEntry.value;
+        }
+
+        const persistedStore = readQuizSimpleCacheStore();
+        const persistedEntry = persistedStore?.[cacheKey];
+        if (persistedEntry && now - Number(persistedEntry.fetchedAt || 0) < QUIZ_SIMPLE_CACHE_TTL_MS) {
+            quizSimpleCacheMemory.set(cacheKey, persistedEntry);
+            return persistedEntry.value;
+        }
+
+        return null;
+    }
+
+    setQuizSimpleCacheEntry(sourceAddress, quizId, account, value) {
+        const cacheKey = buildQuizSimpleCacheKey(sourceAddress, quizId, account);
+        const payload = {
+            value: Array.isArray(value) ? [...value] : value,
+            fetchedAt: Date.now(),
+        };
+        quizSimpleCacheMemory.set(cacheKey, payload);
+        const persistedStore = readQuizSimpleCacheStore();
+        persistedStore[cacheKey] = payload;
+        writeQuizSimpleCacheStore(persistedStore);
+    }
+
+    invalidateQuizSimpleCache(sourceAddress = "", quizId = null) {
+        const normalizedSource = String(sourceAddress || "").toLowerCase();
+        const normalizedId = quizId == null ? null : Number(quizId);
+        const shouldDelete = (cacheKey) => {
+            const [cachedSource = "", cachedId = ""] = String(cacheKey || "").split(":");
+            if (normalizedSource && cachedSource !== normalizedSource) return false;
+            if (normalizedId != null && Number(cachedId) !== normalizedId) return false;
+            return true;
+        };
+
+        Array.from(quizSimpleCacheMemory.keys()).forEach((cacheKey) => {
+            if (shouldDelete(cacheKey)) {
+                quizSimpleCacheMemory.delete(cacheKey);
+            }
+        });
+
+        const persistedStore = readQuizSimpleCacheStore();
+        Object.keys(persistedStore).forEach((cacheKey) => {
+            if (shouldDelete(cacheKey)) {
+                delete persistedStore[cacheKey];
+            }
+        });
+        writeQuizSimpleCacheStore(persistedStore);
     }
 
     async writeContractDirect({ account, address, abi, functionName, args = [] }) {
@@ -945,15 +1044,27 @@ class Contracts_MetaMask {
     }
 
     async ensure_wallet_connected() {
-        let accounts = [];
-        try {
-            accounts = await this.request_wallet_access();
-        } catch (error) {
-            throw error;
+        const provider = await this.getEthereumProviderReady();
+        if (!provider) {
+            return [];
         }
 
-        if (Array.isArray(accounts) && accounts.length > 0) {
-            return accounts;
+        try {
+            const existingAccounts = await provider.request({ method: "eth_accounts" });
+            if (Array.isArray(existingAccounts) && existingAccounts.length > 0) {
+                return existingAccounts;
+            }
+        } catch (error) {
+            console.error("Failed to read existing wallet accounts", error);
+        }
+
+        try {
+            const requestedAccounts = await this.request_wallet_access();
+            if (Array.isArray(requestedAccounts) && requestedAccounts.length > 0) {
+                return requestedAccounts;
+            }
+        } catch (error) {
+            throw error;
         }
 
         for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -1433,6 +1544,7 @@ class Contracts_MetaMask {
         } catch (err) {
             console.log(err);
         }
+        this.invalidateQuizSimpleCache(this.resolveQuizAddress(sourceAddress), id);
         return { res, res2, hash, hash2 };
     }
 
@@ -1509,6 +1621,8 @@ class Contracts_MetaMask {
                 throw new Error("reward_update_failed");
             }
 
+            this.invalidateQuizSimpleCache(targetQuizAddress, id);
+
             return { res, hash, approvalHash, approvalReceipt, requiredAmount };
         } catch (err) {
             console.log(err);
@@ -1542,6 +1656,7 @@ class Contracts_MetaMask {
             if (res?.status !== "success") {
                 throw new Error("reward_reduce_failed");
             }
+            this.invalidateQuizSimpleCache(targetQuizAddress, id);
             return { res, hash };
         } catch (err) {
             console.log(err);
@@ -1740,6 +1855,8 @@ class Contracts_MetaMask {
             console.log(err);
         }
 
+        this.invalidateQuizSimpleCache(this.resolveQuizAddress(sourceAddress), id);
+
         return { res, payoutReceipts, hash };
     }
 
@@ -1800,6 +1917,9 @@ class Contracts_MetaMask {
                 rewardWei,
                 respondentLimit,
             });
+        }
+        if (createdQuizId != null) {
+            this.invalidateQuizSimpleCache(quiz_address, createdQuizId);
         }
         return { receipt: res, hash, createdQuizId };
     }
@@ -1952,6 +2072,7 @@ class Contracts_MetaMask {
             }
 
             res = await publicClient.waitForTransactionReceipt({ hash });
+            this.invalidateQuizSimpleCache(this.resolveQuizAddress(sourceAddress), id);
             return res;
         } catch (err) {
             console.log(err);
@@ -1989,6 +2110,10 @@ class Contracts_MetaMask {
             if (!provider) {
                 throw new Error("ethereum_not_found");
             }
+            const onAmoy = await this.ensure_amoy_network();
+            if (!onAmoy) {
+                throw new Error("amoy_network_unavailable");
+            }
 
             let account = await this.get_address();
             if (!account) {
@@ -2004,11 +2129,13 @@ class Contracts_MetaMask {
                     let res = await this.waitForReceiptWithRetry(hash);
                     console.log(res);
                     localStorage.setItem(`quiz_${this.normalizeQuizAddress(sourceAddress)}_${id}_answer`, answer);
+                    this.invalidateQuizSimpleCache(this.resolveQuizAddress(sourceAddress), id);
                     return res;
                 } catch (receiptError) {
                     const verified = await this.verify_answer_submission(account, id, answer, sourceAddress);
                     if (verified) {
                         localStorage.setItem(`quiz_${this.normalizeQuizAddress(sourceAddress)}_${id}_answer`, answer);
+                        this.invalidateQuizSimpleCache(this.resolveQuizAddress(sourceAddress), id);
                         return { status: "verified_after_receipt_timeout", hash };
                     }
                     throw receiptError;
@@ -2127,9 +2254,15 @@ class Contracts_MetaMask {
     }
 
     async get_quiz_simple(id, sourceAddress = "", accountOverride = "") {
+        const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
+        const account = normalizeReadAccount(accountOverride || await this.get_read_account_cached());
+        const cacheKey = buildQuizSimpleCacheKey(targetQuizAddress, id, account || "public");
+        const cachedQuiz = this.getQuizSimpleCacheEntry(cacheKey);
+        if (cachedQuiz) {
+            return withQuizSourceMetadata(cachedQuiz, targetQuizAddress);
+        }
+
         try {
-            const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
-            const account = normalizeReadAccount(accountOverride || await this.get_read_account_cached());
             const result = await publicClient.readContract({
                 account,
                 address: targetQuizAddress,
@@ -2137,9 +2270,14 @@ class Contracts_MetaMask {
                 functionName: "get_quiz_simple",
                 args: [id],
             });
-            return withQuizSourceMetadata(toQuizSimpleArray(result), targetQuizAddress);
+            const normalized = toQuizSimpleArray(result);
+            this.setQuizSimpleCacheEntry(targetQuizAddress, id, account || "public", normalized);
+            return withQuizSourceMetadata(normalized, targetQuizAddress);
         } catch (error) {
             console.log(error);
+            if (cachedQuiz) {
+                return withQuizSourceMetadata(cachedQuiz, targetQuizAddress);
+            }
             return withQuizSourceMetadata([Number(id), "", "", "", "", 0, 0, 0, 0, 0, 0, false], this.resolveQuizAddress(sourceAddress));
         }
     }

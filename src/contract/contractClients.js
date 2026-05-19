@@ -26,9 +26,9 @@ const rpcTransports = (rpc_urls || [])
     .map((url) =>
         http(url, {
             batch: false,
-            retryCount: 1,
-            retryDelay: 250,
-            timeout: 6000,
+            retryCount: 0,
+            retryDelay: 120,
+            timeout: 2500,
         })
     );
 

@@ -81,4 +81,20 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
             legacyQuizAddress
         );
     });
+
+    test("ensure_wallet_connected reuses existing accounts before requesting access again", async () => {
+        const contract = new Contracts_MetaMask();
+        const provider = {
+            request: jest.fn().mockResolvedValue(["0xabc"]),
+        };
+
+        contract.getEthereumProviderReady = jest.fn().mockResolvedValue(provider);
+        contract.request_wallet_access = jest.fn();
+
+        const accounts = await contract.ensure_wallet_connected();
+
+        expect(provider.request).toHaveBeenCalledWith({ method: "eth_accounts" });
+        expect(contract.request_wallet_access).not.toHaveBeenCalled();
+        expect(accounts).toEqual(["0xabc"]);
+    });
 });

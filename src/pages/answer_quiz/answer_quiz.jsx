@@ -330,6 +330,23 @@ function Answer_quiz() {
         }
 
         if (
+            message.includes("amoy_network_unavailable")
+            || message.includes("amoy_network_switch_failed")
+            || message.includes("amoy")
+        ) {
+            saveBatchAnswerQueueItem({
+                key: buildBatchAnswerKey(id, sourceAddress),
+                quizId: id,
+                sourceAddress,
+                title: quiz?.[2] || `問題 ${id}`,
+                answer: finalAnswer,
+                answerType: Number(quiz?.[13] || 0),
+                savedAt: new Date().toISOString(),
+            });
+            return "Polygon Amoy への接続確認に失敗しました。回答は自動で『まとめて解答リスト』に保存しました。ネットワーク接続を確認してから再送してください。";
+        }
+
+        if (
             message.includes("insufficient funds")
             || message.includes("network fee")
             || message.includes("gas required exceeds")

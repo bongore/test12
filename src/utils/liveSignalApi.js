@@ -2,7 +2,7 @@ const DELETED_QUIZ_STORAGE_KEY = "web3_quiz_deleted_quizzes_v1";
 const CREATED_QUIZ_STORAGE_KEY = "web3_quiz_created_quizzes_v1";
 const DEFAULT_RENDER_HTTP_URL = "https://test12-live-signal.onrender.com";
 const DEFAULT_RENDER_WS_URL = "wss://test12-live-signal.onrender.com";
-const LIVE_SIGNAL_FETCH_TIMEOUT_MS = 3500;
+const LIVE_SIGNAL_FETCH_TIMEOUT_MS = 1500;
 
 function normalizeLiveSignalHttpUrl(rawUrl = "") {
     const configuredUrl = String(rawUrl || "").trim();
