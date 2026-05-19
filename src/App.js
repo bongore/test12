@@ -34,6 +34,7 @@ const User_page = lazy(() => import("./pages/user_page/user_page"));
 const Create_quiz = lazy(() => import("./pages/create_quiz/create_quiz"));
 const List_quiz = lazy(() => import("./pages/list_quiz/list_quiz_top"));
 const Answer_quiz = lazy(() => import("./pages/answer_quiz/answer_quiz"));
+const Batch_answers = lazy(() => import("./pages/batch_answers/batch_answers"));
 const Admin_page = lazy(() => import("./pages/admin_page/admin"));
 const Edit_list = lazy(() => import("./pages/edit_list/edit_list_top"));
 const Edit_quiz = lazy(() => import("./pages/edit_quiz/edit_quiz"));
@@ -136,6 +137,7 @@ function AppRoutes({ cont }) {
                             <Route path="/create_quiz" element={<Create_quiz url="create_quiz" cont={cont} />} />
                             <Route path="/list_quiz" element={<List_quiz url="list_quiz" cont={cont} />} />
                             <Route path="/answer_quiz/:id" element={<Answer_quiz url="answer_quiz" cont={cont} />} />
+                            <Route path="/batch_answers" element={<Batch_answers url="batch_answers" cont={cont} />} />
                             <Route path="/admin" element={<Admin_page url="admin" cont={cont} />} />
                             <Route path="/edit_list" element={<Edit_list url="edit_list" cont={cont} />} />
                             <Route path="/edit_quiz/:id" element={<Edit_quiz url="edit_quiz" cont={cont} />} />

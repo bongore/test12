@@ -23,3 +23,25 @@
 .quiz-loading {
   opacity: 0.5;
 }
+
+.batch-answer-banner {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  justify-content: space-between;
+  margin-bottom: var(--space-5);
+  padding: var(--space-5);
+}
+
+.batch-answer-banner-title {
+  color: #fff;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  margin-bottom: 6px;
+}
+
+.batch-answer-banner-note {
+  color: rgba(255,255,255,0.76);
+  line-height: 1.7;
+}

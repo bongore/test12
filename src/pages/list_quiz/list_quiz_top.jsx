@@ -7,6 +7,8 @@ import { toGlobalId } from "../../utils/quizGlobalId";
 import { getRegisteredCorrectAnswer } from "../../utils/quizCorrectAnswerStore";
 import { getCreatedQuizzes, getDeletedQuizCacheSnapshot, getDeletedQuizzesWithStatus, hasDeletedQuizCache, normalizeDeletedQuizKey, removeCreatedQuiz, saveDeletedQuiz } from "../../utils/liveSignalApi";
 import { getPendingCreatedQuizzes, pruneResolvedPendingCreatedQuizzes, subscribePendingCreatedQuizzes, toPendingQuizSimple } from "../../utils/pendingCreatedQuizzes";
+import { getBatchAnswerQueue, subscribeBatchAnswerQueue } from "../../utils/batchAnswerQueue";
+import { Link } from "react-router-dom";
 import "./list_quiz_top.css";
 
 function List_quiz_top(props) {
@@ -24,6 +26,7 @@ function List_quiz_top(props) {
     const [deletedQuizReady, setDeletedQuizReady] = useState(() => hasDeletedQuizCache());
     const [pendingCreatedQuizzes, setPendingCreatedQuizzes] = useState([]);
     const [listRefreshKey, setListRefreshKey] = useState(0);
+    const [batchAnswerCount, setBatchAnswerCount] = useState(() => getBatchAnswerQueue().length);
     const targetRef = useRef(null);
     const quizSumRef = useRef(0);
     const getQuizCacheKey = (quiz) => normalizeDeletedQuizKey(`${quiz?.sourceAddress || quiz?.[12] || ""}:${Number(quiz?.[0])}`);
@@ -94,10 +97,14 @@ function List_quiz_top(props) {
         const unsubscribePending = subscribePendingCreatedQuizzes(() => {
             syncPendingCreatedQuizzes();
         });
+        const unsubscribeBatchQueue = subscribeBatchAnswerQueue((nextQueue) => {
+            setBatchAnswerCount(Array.isArray(nextQueue) ? nextQueue.length : 0);
+        });
         const handleVisible = () => {
             if (document.visibilityState === "visible") {
                 syncDeletedQuizzes();
                 syncPendingCreatedQuizzes();
+                setBatchAnswerCount(getBatchAnswerQueue().length);
             }
         };
         document.addEventListener("visibilitychange", handleVisible);
@@ -106,6 +113,7 @@ function List_quiz_top(props) {
             mounted = false;
             window.clearInterval(timer);
             unsubscribePending();
+            unsubscribeBatchQueue();
             document.removeEventListener("visibilitychange", handleVisible);
             window.removeEventListener("focus", handleVisible);
         };
@@ -246,6 +254,20 @@ function List_quiz_top(props) {
                     <h1 className="heading-xl">クイズ一覧</h1>
                     <p style={{ color: "#ffffff", opacity: 0.9 }}>出題されたクイズに回答してトークンを獲得しよう</p>
                 </div>
+
+                {access.canAnswerQuiz && (
+                    <div className="glass-card batch-answer-banner">
+                        <div>
+                            <div className="batch-answer-banner-title">まとめて解答して最後に一括送信</div>
+                            <div className="batch-answer-banner-note">
+                                各問題ページで回答を一時保存し、最後にまとめて送信できます。現在 {batchAnswerCount} 件保存中です。
+                            </div>
+                        </div>
+                        <Link to="/batch_answers" className="btn-primary-custom" style={{ textDecoration: "none" }}>
+                            まとめて解答を確認
+                        </Link>
+                    </div>
+                )}
 
                 <Quiz_list
                     cont={cont}

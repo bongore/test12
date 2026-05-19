@@ -309,6 +309,23 @@
   gap: var(--space-3);
 }
 
+.batch-quiz-item-controls {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: end;
+}
+
+.batch-quiz-order-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.batch-quiz-order-select {
+  min-width: 110px;
+}
+
 .batch-quiz-item-index {
   align-items: center;
   background: rgba(34, 211, 238, 0.14);
@@ -384,5 +401,9 @@
   .batch-quiz-header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .batch-quiz-item-controls {
+    justify-items: stretch;
   }
 }

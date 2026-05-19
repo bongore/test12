@@ -51,6 +51,7 @@ function Create_quiz() {
     const [isDraftLoaded, setIsDraftLoaded] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [batchQuizzes, setBatchQuizzes] = useState([]);
+    const [batchEditQuizId, setBatchEditQuizId] = useState("");
 
     const Contract = useMemo(() => new Contracts_MetaMask(), []);
 
@@ -76,6 +77,7 @@ function Create_quiz() {
         setAnswer_data([]);
         setCorrect("");
         setAllowMultipleAnswers(createDefaultQuizContentMeta().allowMultipleAnswers);
+        setBatchEditQuizId("");
     };
 
     const buildCurrentQuizPayload = () => ({
@@ -228,7 +230,11 @@ function Create_quiz() {
             alert(validationError);
             return;
         }
-        setBatchQuizzes((current) => [...current, payload]);
+        setBatchQuizzes((current) => (
+            batchEditQuizId
+                ? current.map((item) => (item.id === batchEditQuizId ? { ...payload, id: batchEditQuizId } : item))
+                : [...current, payload]
+        ));
         appendActivityLog(ACTION_TYPES.ADMIN_CREATE_QUIZ, {
             page: "create_quiz",
             title: payload.title,
@@ -236,12 +242,64 @@ function Create_quiz() {
             reward: payload.reward,
             allowMultipleAnswers: payload.allowMultipleAnswers,
             savedToBatch: true,
+            updatedBatchQuiz: Boolean(batchEditQuizId),
         });
         resetQuestionFields();
     };
 
     const removeBatchQuiz = (id) => {
         setBatchQuizzes((current) => current.filter((item) => item.id !== id));
+        if (batchEditQuizId === id) {
+            setBatchEditQuizId("");
+        }
+    };
+
+    const editBatchQuiz = (item) => {
+        if (!item) return;
+        setBatchEditQuizId(item.id);
+        setTitle(String(item.title || ""));
+        setExplanation(String(item.explanation || ""));
+        setThumbnail_url(String(item.thumbnail_url || ""));
+        setContent(String(item.content || ""));
+        setAllowMultipleAnswers(Boolean(item.allowMultipleAnswers));
+        setHighlightText("");
+        setAnswer_type(Number(item.answer_type || 0));
+        setAnswer_data(Array.isArray(item.answer_data) ? item.answer_data : []);
+        setCorrect(String(item.correct || ""));
+        setReward(Number(item.reward || 0));
+        setCorrect_limit(Number(item.correct_limit || 0));
+        setReply_startline(String(item.reply_startline || ""));
+        setReply_deadline(String(item.reply_deadline || ""));
+        const matchedRate = QUIZ_RATE_OPTIONS.find((option) => Number(option.reward) === Number(item.reward || 0));
+        setScoreTier(matchedRate ? matchedRate.id : "custom");
+        setIsManualReward(!matchedRate);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+    };
+
+    const moveBatchQuiz = (id, direction) => {
+        setBatchQuizzes((current) => {
+            const index = current.findIndex((item) => item.id === id);
+            if (index === -1) return current;
+            const targetIndex = direction === "up" ? index - 1 : index + 1;
+            if (targetIndex < 0 || targetIndex >= current.length) return current;
+            const next = [...current];
+            const [moved] = next.splice(index, 1);
+            next.splice(targetIndex, 0, moved);
+            return next;
+        });
+    };
+
+    const reorderBatchQuiz = (id, nextIndexValue) => {
+        const nextIndex = Number(nextIndexValue);
+        if (!Number.isFinite(nextIndex) || nextIndex < 0) return;
+        setBatchQuizzes((current) => {
+            const index = current.findIndex((item) => item.id === id);
+            if (index === -1 || index === nextIndex || nextIndex >= current.length) return current;
+            const next = [...current];
+            const [moved] = next.splice(index, 1);
+            next.splice(nextIndex, 0, moved);
+            return next;
+        });
     };
 
     const publishBatchQuizzes = async () => {
@@ -480,8 +538,13 @@ function Create_quiz() {
                             </div>
                             <div className="batch-quiz-actions">
                                 <button type="button" className="btn-ghost" disabled={isSubmitting} onClick={addCurrentQuizToBatch}>
-                                    ＋ 出題リストへ追加
+                                    {batchEditQuizId ? "保存済み問題を更新" : "＋ 出題リストへ追加"}
                                 </button>
+                                {batchEditQuizId ? (
+                                    <button type="button" className="btn-ghost" disabled={isSubmitting} onClick={resetQuestionFields}>
+                                        編集をやめる
+                                    </button>
+                                ) : null}
                                 <button
                                     type="button"
                                     className="btn-submit-quiz"
@@ -511,9 +574,36 @@ function Create_quiz() {
                                                 </div>
                                             </div>
                                         </div>
-                                        <button type="button" className="btn-ghost" disabled={isSubmitting} onClick={() => removeBatchQuiz(item.id)}>
-                                            削除
-                                        </button>
+                                        <div className="batch-quiz-item-controls">
+                                            <div className="batch-quiz-order-row">
+                                                <button type="button" className="btn-ghost" disabled={isSubmitting || index === 0} onClick={() => moveBatchQuiz(item.id, "up")}>
+                                                    ↑
+                                                </button>
+                                                <button type="button" className="btn-ghost" disabled={isSubmitting || index === batchQuizzes.length - 1} onClick={() => moveBatchQuiz(item.id, "down")}>
+                                                    ↓
+                                                </button>
+                                                <select
+                                                    className="form-control-custom batch-quiz-order-select"
+                                                    value={index}
+                                                    disabled={isSubmitting}
+                                                    onChange={(event) => reorderBatchQuiz(item.id, event.target.value)}
+                                                >
+                                                    {batchQuizzes.map((_, position) => (
+                                                        <option key={`${item.id}_position_${position}`} value={position}>
+                                                            {position + 1}番目
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div className="batch-quiz-item-actions">
+                                                <button type="button" className="btn-secondary-custom" disabled={isSubmitting} onClick={() => editBatchQuiz(item)}>
+                                                    編集
+                                                </button>
+                                                <button type="button" className="btn-ghost" disabled={isSubmitting} onClick={() => removeBatchQuiz(item.id)}>
+                                                    削除
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
                                 ))}
                             </div>

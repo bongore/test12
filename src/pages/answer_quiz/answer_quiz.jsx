@@ -19,6 +19,7 @@ import { buildQuizStorageKey } from "../../utils/quizCorrectAnswerStore";
 import { getRememberedQuizSource, rememberQuizSource } from "../../utils/quizLinks";
 import { resolveGlobalId } from "../../utils/quizGlobalId";
 import { parseQuizContentMeta, stripQuizContentMeta } from "../../utils/quizContentMeta";
+import { buildBatchAnswerKey, saveBatchAnswerQueueItem } from "../../utils/batchAnswerQueue";
 import {
     QUIZ_INPUT_MODE_PLAIN,
     QUIZ_INPUT_MODE_REGEX,
@@ -479,6 +480,36 @@ function Answer_quiz() {
         }
     };
 
+    const save_answer_to_batch_queue = () => {
+        if (!access.canAnswerQuiz) {
+            alert("このアカウントは閲覧のみです。");
+            return;
+        }
+        const finalAnswer = convertFullWidthNumbersToHalf(answer).trim();
+        if (!finalAnswer) {
+            alert("まとめて送信する回答を入力してください。");
+            return;
+        }
+        const queueItem = saveBatchAnswerQueueItem({
+            key: buildBatchAnswerKey(id, sourceAddress),
+            quizId: id,
+            sourceAddress,
+            title: quiz?.[2] || `問題 ${id}`,
+            answer: finalAnswer,
+            answerType: Number(quiz?.[13] || 0),
+            savedAt: new Date().toISOString(),
+        });
+        appendActivityLog(ACTION_TYPES.ANSWER_DRAFT_SAVED, {
+            page: "answer_quiz",
+            quizId: id,
+            answerLength: finalAnswer.length,
+            savedAtLabel: new Date(queueItem.savedAt).toLocaleTimeString("ja-JP"),
+            savedToBatchQueue: true,
+            ...actorLogPayload,
+        });
+        alert("まとめて解答リストに保存しました。クイズ一覧から最後に一括送信できます。");
+    };
+
     useEffect(() => {
         if (access.isLoading) return;
         pageOpenedAtRef.current = Date.now();
@@ -685,6 +716,15 @@ function Answer_quiz() {
 
                 {canEditAnswer ? (
                     <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginTop: "var(--space-6)", gap: "var(--space-4)", flexWrap: "wrap" }}>
+                        {!isPracticeMode && (
+                            <button
+                                className="btn-secondary-custom"
+                                onClick={save_answer_to_batch_queue}
+                                disabled={isSubmitting || !answer}
+                            >
+                                まとめて解答リストに保存
+                            </button>
+                        )}
                         <button className="btn-primary-custom" onClick={create_answer} disabled={isSubmitting || !answer || isBeforeStart}>
                             {isBeforeStart ? "回答開始前" : (isPracticeMode ? "練習として判定" : canUpdateSubmittedAnswer ? (isSubmitting ? "更新中..." : "回答を更新") : (isSubmitting ? "送信中..." : "回答を送信"))}
                         </button>
