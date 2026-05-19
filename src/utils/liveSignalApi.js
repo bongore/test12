@@ -2,6 +2,7 @@ const DELETED_QUIZ_STORAGE_KEY = "web3_quiz_deleted_quizzes_v1";
 const CREATED_QUIZ_STORAGE_KEY = "web3_quiz_created_quizzes_v1";
 const DEFAULT_RENDER_HTTP_URL = "https://test12-live-signal.onrender.com";
 const DEFAULT_RENDER_WS_URL = "wss://test12-live-signal.onrender.com";
+const LIVE_SIGNAL_FETCH_TIMEOUT_MS = 3500;
 
 function normalizeLiveSignalHttpUrl(rawUrl = "") {
     const configuredUrl = String(rawUrl || "").trim();
@@ -220,13 +221,31 @@ async function flushPendingDeletedQuizzes() {
 }
 
 async function fetchLiveSignalJson(path, options = {}) {
-    const response = await fetch(`${getLiveSignalApiBaseUrl()}${path}`, {
-        headers: {
-            "Content-Type": "application/json",
-            ...(options.headers || {}),
-        },
-        ...options,
-    });
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timeout = controller
+        ? window.setTimeout(() => controller.abort(), LIVE_SIGNAL_FETCH_TIMEOUT_MS)
+        : null;
+
+    let response;
+    try {
+        response = await fetch(`${getLiveSignalApiBaseUrl()}${path}`, {
+            headers: {
+                "Content-Type": "application/json",
+                ...(options.headers || {}),
+            },
+            ...options,
+            signal: options.signal || controller?.signal,
+        });
+    } catch (error) {
+        if (error?.name === "AbortError") {
+            throw new Error("live_signal_timeout");
+        }
+        throw error;
+    } finally {
+        if (timeout) {
+            window.clearTimeout(timeout);
+        }
+    }
 
     if (!response.ok) {
         throw new Error(`live_signal_http_${response.status}`);
@@ -264,8 +283,9 @@ async function getDeletedQuizzesWithStatus() {
         console.error("Failed to fetch deleted quizzes from server", error);
         return {
             deletedQuizzes: cachedMap,
-            ready: Object.keys(cachedMap).length > 0,
+            ready: true,
             fromServer: false,
+            degraded: true,
         };
     }
 }

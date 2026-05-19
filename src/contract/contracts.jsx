@@ -52,6 +52,8 @@ const RESULTS_CACHE_KEY = "web3_quiz_results_cache_v1";
 const STUDENT_LIST_CACHE_TTL_MS = 3 * 60 * 1000;
 const RESULTS_CACHE_TTL_MS = 60 * 1000;
 const HISTORY_LEN_CACHE_TTL_MS = 45 * 1000;
+const READ_ACCOUNT_CACHE_TTL_MS = 8 * 1000;
+const QUIZ_INVENTORY_CACHE_TTL_MS = 20 * 1000;
 
 let studentListCacheMemory = null;
 let studentListCacheFetchedAt = 0;
@@ -60,6 +62,12 @@ let resultsCacheMemory = null;
 let resultsCacheFetchedAt = 0;
 let resultsCachePromise = null;
 const userHistoryLenCache = new Map();
+let readAccountCacheValue = "";
+let readAccountCacheFetchedAt = 0;
+let readAccountCachePromise = null;
+let quizInventoryCacheMemory = null;
+let quizInventoryCacheFetchedAt = 0;
+let quizInventoryCachePromise = null;
 
 function readScoreCache() {
     if (typeof localStorage === "undefined") return {};
@@ -584,26 +592,45 @@ class Contracts_MetaMask {
         );
     }
 
-    async getQuizInventory() {
+    async getQuizInventory(forceRefresh = false) {
+        const now = Date.now();
+        if (!forceRefresh && Array.isArray(quizInventoryCacheMemory) && now - quizInventoryCacheFetchedAt < QUIZ_INVENTORY_CACHE_TTL_MS) {
+            return quizInventoryCacheMemory;
+        }
+
+        if (!forceRefresh && quizInventoryCachePromise) {
+            return quizInventoryCachePromise;
+        }
+
         const addresses = this.getQuizReadAddresses();
-        const lengths = await Promise.allSettled(
-            addresses.map(async (address) => ({
-                address,
-                length: Number(await this.get_quiz_lenght(address)),
-            }))
-        );
+        quizInventoryCachePromise = (async () => {
+            const lengths = await Promise.allSettled(
+                addresses.map(async (address) => ({
+                    address,
+                    length: Number(await this.get_quiz_lenght(address)),
+                }))
+            );
 
-        const inventory = [];
-        lengths
-            .filter((result) => result.status === "fulfilled")
-            .map((result) => result.value)
-            .forEach(({ address, length }) => {
-                for (let id = length - 1; id >= 0; id -= 1) {
-                    inventory.push({ id, address });
-                }
-            });
+            const inventory = [];
+            lengths
+                .filter((result) => result.status === "fulfilled")
+                .map((result) => result.value)
+                .forEach(({ address, length }) => {
+                    for (let id = length - 1; id >= 0; id -= 1) {
+                        inventory.push({ id, address });
+                    }
+                });
 
-        return inventory;
+            quizInventoryCacheMemory = inventory;
+            quizInventoryCacheFetchedAt = Date.now();
+            return inventory;
+        })();
+
+        try {
+            return await quizInventoryCachePromise;
+        } finally {
+            quizInventoryCachePromise = null;
+        }
     }
 
     getQuizWindowFromInventory(inventory, start, end) {
@@ -716,6 +743,48 @@ class Contracts_MetaMask {
 
     async getEthereumProviderForRead() {
         return this.getEthereumProvider() || await waitForEthereumProvider(350);
+    }
+
+    async get_read_account_cached(forceRefresh = false) {
+        const now = Date.now();
+        if (!forceRefresh && readAccountCacheValue && now - readAccountCacheFetchedAt < READ_ACCOUNT_CACHE_TTL_MS) {
+            return readAccountCacheValue;
+        }
+
+        if (!forceRefresh && readAccountCachePromise) {
+            return readAccountCachePromise;
+        }
+
+        readAccountCachePromise = (async () => {
+            try {
+                const provider = await this.getEthereumProviderForRead();
+                if (!provider) {
+                    readAccountCacheValue = "";
+                    readAccountCacheFetchedAt = Date.now();
+                    return "";
+                }
+
+                const accounts = await provider.request({ method: "eth_accounts" });
+                readAccountCacheValue = Array.isArray(accounts) && accounts[0] ? accounts[0] : "";
+                readAccountCacheFetchedAt = Date.now();
+                return readAccountCacheValue;
+            } catch (error) {
+                console.log(error);
+                readAccountCacheValue = "";
+                readAccountCacheFetchedAt = Date.now();
+                return "";
+            } finally {
+                readAccountCachePromise = null;
+            }
+        })();
+
+        return readAccountCachePromise;
+    }
+
+    invalidateQuizInventoryCache() {
+        quizInventoryCacheMemory = null;
+        quizInventoryCacheFetchedAt = 0;
+        quizInventoryCachePromise = null;
     }
 
     async writeContractDirect({ account, address, abi, functionName, args = [] }) {
@@ -839,15 +908,15 @@ class Contracts_MetaMask {
         }
     }
 
-    async waitForReceiptWithRetry(hash, attempts = 3) {
+    async waitForReceiptWithRetry(hash, attempts = 4) {
         let lastError = null;
         for (let attempt = 0; attempt < attempts; attempt += 1) {
             try {
                 return await publicClient.waitForTransactionReceipt({
                     hash,
-                    pollingInterval: 1500,
-                    timeout: 45000 + attempt * 15000,
-                    retryCount: 1,
+                    pollingInterval: 1200,
+                    timeout: 35000 + attempt * 15000,
+                    retryCount: 2,
                 });
             } catch (error) {
                 lastError = error;
@@ -857,6 +926,22 @@ class Contracts_MetaMask {
             }
         }
         throw lastError;
+    }
+
+    async verify_answer_submission(account, id, answer, sourceAddress = "") {
+        try {
+            const detail = await this.get_student_answer_detail(account, id, sourceAddress);
+            const normalizedAnswer = String(answer || "").trim();
+            const normalizedSavedAnswer = String(detail?.answerText || "").trim();
+            const answerTime = Number(detail?.answerTime || 0);
+            const submittedRecently = answerTime > 0 && Math.abs(Math.floor(Date.now() / 1000) - answerTime) <= 300;
+            if (detail?.submitted && (normalizedSavedAnswer === normalizedAnswer || submittedRecently)) {
+                return true;
+            }
+        } catch (error) {
+            console.log(error);
+        }
+        return false;
     }
 
     async ensure_wallet_connected() {
@@ -1104,14 +1189,8 @@ class Contracts_MetaMask {
 
     async get_address() {
         try {
-            const provider = await this.getEthereumProviderForRead();
-            if (!provider) {
-                console.log("Ethereum object does not exist");
-                return "";
-            }
-
-            const accounts = await provider.request({ method: "eth_accounts" });
-            if (accounts?.[0]) return accounts[0];
+            const account = await this.get_read_account_cached();
+            if (account) return account;
         } catch (err) {
             console.log(err);
             return "";
@@ -1686,6 +1765,7 @@ class Contracts_MetaMask {
             }
 
             previousLength = Number(await this.get_quiz_lenght(quiz_address));
+            this.invalidateQuizInventoryCache();
             const requiredAmount = rewardWei * BigInt(respondentLimit);
             const approval = await this.readTokenAllowance(account, quiz_address);
 
@@ -1920,11 +2000,19 @@ class Contracts_MetaMask {
             let hash = await this._save_answer(account, id, answer, sourceAddress);
 
             if (hash) {
-                let res = await this.waitForReceiptWithRetry(hash);
-                console.log(res);
-                // トランザクション成功後にのみローカルに保存
-                localStorage.setItem(`quiz_${this.normalizeQuizAddress(sourceAddress)}_${id}_answer`, answer);
-                return res;
+                try {
+                    let res = await this.waitForReceiptWithRetry(hash);
+                    console.log(res);
+                    localStorage.setItem(`quiz_${this.normalizeQuizAddress(sourceAddress)}_${id}_answer`, answer);
+                    return res;
+                } catch (receiptError) {
+                    const verified = await this.verify_answer_submission(account, id, answer, sourceAddress);
+                    if (verified) {
+                        localStorage.setItem(`quiz_${this.normalizeQuizAddress(sourceAddress)}_${id}_answer`, answer);
+                        return { status: "verified_after_receipt_timeout", hash };
+                    }
+                    throw receiptError;
+                }
             }
 
             setShow(false);
@@ -1960,17 +2048,17 @@ class Contracts_MetaMask {
         }
     }
 
-    async get_quiz_all_data(id, sourceAddress = "") {
+    async get_quiz_all_data(id, sourceAddress = "", accountOverride = "") {
         const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
         const [quizData, answerType, simpleData] = await Promise.all([
-            this.get_quiz(id, sourceAddress),
+            this.get_quiz(id, sourceAddress, accountOverride),
             publicClient.readContract({
                 address: targetQuizAddress,
                 abi: quiz_abi,
                 functionName: "get_quiz_answer_type",
                 args: [id],
             }),
-            this.get_quiz_simple(id, sourceAddress),
+            this.get_quiz_simple(id, sourceAddress, accountOverride),
         ]);
         return [
             Number(quizData?.[0] || id),
@@ -1990,9 +2078,9 @@ class Contracts_MetaMask {
         ];
     }
 
-    async get_quiz(id, sourceAddress = "") {
+    async get_quiz(id, sourceAddress = "", accountOverride = "") {
         const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
-        const account = normalizeReadAccount(await this.get_address());
+        const account = normalizeReadAccount(accountOverride || await this.get_read_account_cached());
         const [answer_typr, res, res2, registeredCorrectAnswer] = await Promise.all([
             publicClient.readContract({ account, address: targetQuizAddress, abi: quiz_abi, functionName: "get_quiz_answer_type", args: [id] }),
             publicClient.readContract({ account, address: targetQuizAddress, abi: quiz_abi, functionName: "get_quiz", args: [id] }),
@@ -2038,10 +2126,10 @@ class Contracts_MetaMask {
         throw lastError || new Error("quiz_not_found");
     }
 
-    async get_quiz_simple(id, sourceAddress = "") {
+    async get_quiz_simple(id, sourceAddress = "", accountOverride = "") {
         try {
             const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
-            const account = normalizeReadAccount(await this.get_address());
+            const account = normalizeReadAccount(accountOverride || await this.get_read_account_cached());
             const result = await publicClient.readContract({
                 account,
                 address: targetQuizAddress,
@@ -2109,8 +2197,9 @@ class Contracts_MetaMask {
     async get_quiz_all_data_list(start, end) {
         const inventory = await this.getQuizInventory();
         const refs = this.getQuizWindowFromInventory(inventory, start, end);
+        const account = await this.get_read_account_cached();
 
-        const settled = await Promise.allSettled(refs.map((ref) => this.get_quiz_all_data(ref.id, ref.address)));
+        const settled = await Promise.allSettled(refs.map((ref) => this.get_quiz_all_data(ref.id, ref.address, account)));
 
         return settled
             .filter((result) => result.status === "fulfilled")
@@ -2122,8 +2211,9 @@ class Contracts_MetaMask {
     async get_quiz_list(start, end) {
         const inventory = await this.getQuizInventory();
         const refs = this.getQuizWindowFromInventory(inventory, start, end);
+        const account = await this.get_read_account_cached();
 
-        const settled = await Promise.allSettled(refs.map((ref) => this.get_quiz_simple(ref.id, ref.address)));
+        const settled = await Promise.allSettled(refs.map((ref) => this.get_quiz_simple(ref.id, ref.address, account)));
 
         return settled
             .filter((result) => result.status === "fulfilled")
@@ -2132,8 +2222,9 @@ class Contracts_MetaMask {
 
     async get_all_quiz_simple_list() {
         const inventory = await this.getQuizInventory();
+        const account = await this.get_read_account_cached();
         const settled = await Promise.allSettled(
-            inventory.map((ref) => this.get_quiz_simple(ref.id, ref.address))
+            inventory.map((ref) => this.get_quiz_simple(ref.id, ref.address, account))
         );
 
         return settled
@@ -3030,7 +3121,7 @@ class Contracts_MetaMask {
     async get_student_answer_hash(student, id, sourceAddress = "") {
         try {
             if (ethereum) {
-                let account = await this.get_address();
+                let account = await this.get_read_account_cached();
                 const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
                 let res = targetQuizAddress === quiz_address
                     ? await quiz.read.get_student_answer_hash({ account, args: [student, id] })
@@ -3053,7 +3144,7 @@ class Contracts_MetaMask {
     async get_student_answer_detail(student, id, sourceAddress = "") {
         try {
             if (ethereum) {
-                let account = await this.get_address();
+                let account = await this.get_read_account_cached();
                 const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
                 let result = null;
                 try {

@@ -323,6 +323,62 @@ function Answer_quiz() {
         }
     };
 
+    const getSubmitFailureMessage = (error, finalAnswer) => {
+        const message = String(error?.shortMessage || error?.message || "").toLowerCase();
+        if (error?.code === 4001 || message.includes("user rejected")) {
+            return "ウォレット側で送信がキャンセルされました。";
+        }
+
+        if (
+            message.includes("insufficient funds")
+            || message.includes("network fee")
+            || message.includes("gas required exceeds")
+            || message.includes("pol")
+        ) {
+            saveBatchAnswerQueueItem({
+                key: buildBatchAnswerKey(id, sourceAddress),
+                quizId: id,
+                sourceAddress,
+                title: quiz?.[2] || `問題 ${id}`,
+                answer: finalAnswer,
+                answerType: Number(quiz?.[13] || 0),
+                savedAt: new Date().toISOString(),
+            });
+            return "POL が不足しているか、ネットワーク手数料の確認に失敗しました。回答は自動で『まとめて解答リスト』に保存しました。POL 補充後に再送してください。";
+        }
+
+        if (
+            message.includes("timeout")
+            || message.includes("failed to fetch")
+            || message.includes("network")
+            || message.includes("socket")
+            || message.includes("rpc")
+            || message.includes("transactionreceipt")
+        ) {
+            saveBatchAnswerQueueItem({
+                key: buildBatchAnswerKey(id, sourceAddress),
+                quizId: id,
+                sourceAddress,
+                title: quiz?.[2] || `問題 ${id}`,
+                answer: finalAnswer,
+                answerType: Number(quiz?.[13] || 0),
+                savedAt: new Date().toISOString(),
+            });
+            return "通信が不安定だったため、回答は自動で『まとめて解答リスト』に保存しました。回線が安定したら一括送信から再送できます。";
+        }
+
+        saveBatchAnswerQueueItem({
+            key: buildBatchAnswerKey(id, sourceAddress),
+            quizId: id,
+            sourceAddress,
+            title: quiz?.[2] || `問題 ${id}`,
+            answer: finalAnswer,
+            answerType: Number(quiz?.[13] || 0),
+            savedAt: new Date().toISOString(),
+        });
+        return "回答送信に失敗しました。回答は『まとめて解答リスト』へ保存してから再送するのがおすすめです。";
+    };
+
     const create_answer = async () => {
         if (!quiz) return;
         if (!access.canAnswerQuiz) {
@@ -464,6 +520,7 @@ function Answer_quiz() {
             navigate("/list_quiz");
         } catch (error) {
             console.error(error);
+            const failureMessage = getSubmitFailureMessage(error, finalAnswer);
             appendActivityLog(ACTION_TYPES.ANSWER_SUBMIT_FAILED, {
                 page: "answer_quiz",
                 quizId: id,
@@ -471,10 +528,11 @@ function Answer_quiz() {
                 sourceAddress,
                 answerLength: finalAnswer.length,
                 errorMessage: error?.message || "answer_submit_failed",
+                fallbackMessage: failureMessage,
                 submitDurationMs: Math.round(performance.now() - startedAt),
                 ...actorLogPayload,
             });
-            alert("回答送信に失敗しました。ウォレットの確認や通信状態を確認してください。");
+            alert(failureMessage);
         } finally {
             setIsSubmitting(false);
         }

@@ -93,7 +93,7 @@ function Modal_change_network(props) {
             syncChainId().catch((error) => {
                 console.error("Failed to sync chain id", error);
             });
-        }, 2000);
+        }, 8000);
 
         provider.on?.("chainChanged", handleChainChanged);
         provider.on?.("accountsChanged", handleAccountsChanged);
@@ -261,6 +261,7 @@ function Modal_change_network(props) {
                             <div>Chain ID: {NETWORK_CONFIG.chainId}</div>
                             <div>Currency Symbol: {NETWORK_CONFIG.symbol}</div>
                             <div>Block Explorer URL: {NETWORK_CONFIG.explorer}</div>
+                            <div>POL は Polygon Amoy 上で回答送信に使う手数料用のトークンです。</div>
                         </div>
                         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "14px" }}>
                             <button type="button" className="btn-secondary-custom" onClick={() => copyNetworkField("RPC URL", NETWORK_CONFIG.rpcUrl)}>
@@ -285,6 +286,7 @@ function Modal_change_network(props) {
                             <div>3. 大学内 Wi-Fi で失敗する場合は、最初のネットワーク追加だけスマホ回線や自宅回線で行い、その後に学内 Wi-Fi へ戻してください。</div>
                             <div>4. 既存の Polygon Amoy を削除してから、この画面のボタンで再追加すると改善する場合があります。</div>
                             <div>5. Edge / Brave では MetaMask 拡張を有効化した状態で、このページを強制再読み込みしてから再実行してください。</div>
+                            <div>6. 学内の混雑時間帯は RPC 応答が遅くなるため、最初の設定だけ講義前に済ませると安定しやすいです。</div>
                         </div>
                     </div>
 

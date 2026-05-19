@@ -93,7 +93,7 @@ function List_quiz_top(props) {
 
         syncPendingCreatedQuizzes();
         syncDeletedQuizzes();
-        const timer = window.setInterval(syncDeletedQuizzes, 15000);
+        const timer = window.setInterval(syncDeletedQuizzes, 60000);
         const unsubscribePending = subscribePendingCreatedQuizzes(() => {
             syncPendingCreatedQuizzes();
         });
