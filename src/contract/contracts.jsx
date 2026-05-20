@@ -51,6 +51,7 @@ const STUDENT_LIST_CACHE_KEY = "web3_quiz_student_list_cache_v1";
 const RESULTS_CACHE_KEY = "web3_quiz_results_cache_v1";
 const QUIZ_INVENTORY_PERSIST_KEY = "web3_quiz_inventory_cache_v1";
 const QUIZ_SIMPLE_CACHE_KEY = "web3_quiz_simple_cache_v1";
+const LAST_KNOWN_WALLET_ADDRESS_KEY = "web3_last_known_wallet_address_v1";
 const STUDENT_LIST_CACHE_TTL_MS = 3 * 60 * 1000;
 const RESULTS_CACHE_TTL_MS = 60 * 1000;
 const HISTORY_LEN_CACHE_TTL_MS = 45 * 1000;
@@ -85,6 +86,14 @@ function setReadAccountCacheValue(account = "") {
     readAccountCacheValue = account ? String(account) : "";
     readAccountCacheFetchedAt = Date.now();
     walletConnectionReadyUntil = readAccountCacheValue ? Date.now() + WALLET_CONNECTION_CACHE_TTL_MS : 0;
+    if (typeof localStorage !== "undefined") {
+        try {
+            if (readAccountCacheValue) {
+                localStorage.setItem(LAST_KNOWN_WALLET_ADDRESS_KEY, readAccountCacheValue);
+            }
+        } catch (error) {
+        }
+    }
 }
 
 function setChainIdCacheValue(chainId = null) {
@@ -869,6 +878,16 @@ class Contracts_MetaMask {
 
     getEthereumProvider() {
         return resolveEthereumProvider() || ethereum || null;
+    }
+
+    get_last_known_address() {
+        if (readAccountCacheValue) return String(readAccountCacheValue);
+        if (typeof localStorage === "undefined") return "";
+        try {
+            return String(localStorage.getItem(LAST_KNOWN_WALLET_ADDRESS_KEY) || "");
+        } catch (error) {
+            return "";
+        }
     }
 
     async getEthereumProviderReady() {

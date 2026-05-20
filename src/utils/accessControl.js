@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { WALLET_PROVIDER_CHANGED_EVENT } from "../contract/contractClients";
 import { bootstrap_teacher_addresses } from "../contract/config";
 
+const ACCESS_STATE_CACHE_KEY = "web3_access_state_cache_v1";
+const ACCESS_STATE_CACHE_TTL_MS = 15 * 60 * 1000;
+
 function createDefaultAccessState() {
     return {
         isLoading: true,
@@ -26,6 +29,35 @@ let lastResolvedAccessState = null;
 let lastResolvedAt = 0;
 let resolveAccessPromise = null;
 const ACCESS_CACHE_TTL_MS = 45000;
+
+function readCachedAccessState() {
+    if (typeof localStorage === "undefined") return null;
+    try {
+        const parsed = JSON.parse(localStorage.getItem(ACCESS_STATE_CACHE_KEY) || "null");
+        if (!parsed || typeof parsed !== "object") return null;
+        if (Date.now() - Number(parsed.cachedAt || 0) > ACCESS_STATE_CACHE_TTL_MS) return null;
+        if (!parsed.state || typeof parsed.state !== "object") return null;
+        return {
+            ...createDefaultAccessState(),
+            ...parsed.state,
+            isLoading: false,
+        };
+    } catch (error) {
+        return null;
+    }
+}
+
+function writeCachedAccessState(state) {
+    if (typeof localStorage === "undefined") return;
+    try {
+        if (!state?.address) return;
+        localStorage.setItem(ACCESS_STATE_CACHE_KEY, JSON.stringify({
+            cachedAt: Date.now(),
+            state,
+        }));
+    } catch (error) {
+    }
+}
 
 function resetAccessStateCache() {
     lastResolvedAccessState = null;
@@ -136,6 +168,7 @@ async function resolveAccessState(cont) {
                 };
                 lastResolvedAccessState = bootstrapTeacherState;
                 lastResolvedAt = Date.now();
+                writeCachedAccessState(bootstrapTeacherState);
                 return bootstrapTeacherState;
             }
 
@@ -187,6 +220,9 @@ async function resolveAccessState(cont) {
         };
         lastResolvedAccessState = resolvedState;
         lastResolvedAt = Date.now();
+        if (resolvedState.address) {
+            writeCachedAccessState(resolvedState);
+        }
         return resolvedState;
     })();
 
@@ -198,7 +234,8 @@ async function resolveAccessState(cont) {
 }
 
 function useAccessControl(cont) {
-    const [accessState, setAccessState] = useState(() => createDefaultAccessState());
+    const cachedAccessStateRef = useRef(readCachedAccessState());
+    const [accessState, setAccessState] = useState(() => cachedAccessStateRef.current || createDefaultAccessState());
     const loadInFlightRef = useRef(false);
 
     useEffect(() => {
@@ -223,7 +260,7 @@ function useAccessControl(cont) {
             }
         };
 
-        load({ showLoading: true, allowSoftDisconnect: false });
+        load({ showLoading: !cachedAccessStateRef.current, allowSoftDisconnect: false });
 
         const handleRefresh = () => {
             if (document.visibilityState === "hidden") return;

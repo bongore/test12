@@ -245,9 +245,15 @@ function Simple_quiz(props) {
                         </div>
                     )}
 
-                    {!props.canAnswerQuiz && (
+                    {!props.canAnswerQuiz && !props.accessLoading && !props.isConnected && (
                         <div className="quiz-user-answer" style={{ marginTop: "var(--space-3)", padding: "var(--space-2)", background: "rgba(255, 120, 120, 0.12)", borderRadius: "var(--radius-sm)", color: "#ffd0d0" }}>
                             MetaMask を接続すると解答できます。
+                        </div>
+                    )}
+
+                    {!props.canAnswerQuiz && props.accessLoading && (
+                        <div className="quiz-user-answer" style={{ marginTop: "var(--space-3)", padding: "var(--space-2)", background: "rgba(255,255,255,0.08)", borderRadius: "var(--radius-sm)", color: "#ffffff" }}>
+                            利用区分を確認中です...
                         </div>
                     )}
 

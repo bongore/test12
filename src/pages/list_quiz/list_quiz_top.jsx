@@ -55,6 +55,7 @@ function List_quiz_top(props) {
     const [pendingCreatedQuizzes, setPendingCreatedQuizzes] = useState([]);
     const [listRefreshKey, setListRefreshKey] = useState(0);
     const [batchAnswerCount, setBatchAnswerCount] = useState(() => getBatchAnswerQueue().length);
+    const [initialListLoadResolved, setInitialListLoadResolved] = useState(() => Array.isArray(initialListCache?.quizList) && initialListCache.quizList.length > 0);
     const targetRef = useRef(null);
     const quizSumRef = useRef(0);
     const getQuizCacheKey = (quiz) => normalizeDeletedQuizKey(`${quiz?.sourceAddress || quiz?.[12] || ""}:${Number(quiz?.[0])}`);
@@ -98,6 +99,7 @@ function List_quiz_top(props) {
                 now_numRef.current = nextLength;
                 Set_quiz_sum(nextLength);
                 Set_quiz_list([]);
+                setInitialListLoadResolved(false);
                 setListRefreshKey((current) => current + 1);
             } else if (quizSumRef.current === 0 && quiz_sum == null) {
                 Set_quiz_sum(nextLength);
@@ -216,6 +218,7 @@ function List_quiz_top(props) {
         if (!access.address) return;
         if (quiz_sum == null) return;
         now_numRef.current = quizSumRef.current || Number(quiz_sum) || 0;
+        setInitialListLoadResolved(false);
         setListRefreshKey((current) => current + 1);
     }, [access.address, quiz_sum]);
 
@@ -334,6 +337,7 @@ function List_quiz_top(props) {
                     now_numRef={now_numRef}
                     setLoadError={setLoadError}
                     refreshKey={listRefreshKey}
+                    onInitialLoadResolved={() => setInitialListLoadResolved(true)}
                 />
 
                 <div className="quiz-list-items">
@@ -361,6 +365,8 @@ function List_quiz_top(props) {
                             <Simple_quiz
                                 quiz={quiz}
                                 canAnswerQuiz={access.canAnswerQuiz}
+                                accessLoading={access.isLoading}
+                                isConnected={access.isConnected}
                                 isTeacher={access.isTeacher}
                                 currentEpoch={currentEpoch}
                                 correctAnswer={correctAnswerMap[getQuizCacheKey(quiz)] || ""}
@@ -368,11 +374,11 @@ function List_quiz_top(props) {
                             />
                         </div>
                     ))}
-                    {!loadError && !hasRenderableQuizList && deletedQuizReady ? (
+                    {!loadError && !hasRenderableQuizList && deletedQuizReady && initialListLoadResolved ? (
                         <div className="glass-card" style={{ padding: "var(--space-5)", color: "#fff" }}>
                             <div style={{ fontWeight: 700, marginBottom: "10px" }}>表示できる問題がまだありません</div>
                             <div style={{ color: "rgba(255,255,255,0.8)" }}>
-                                ネットワークが混雑している場合は、このまま数秒待つか再読み込みしてください。
+                                現在の問題一覧を確認中です。しばらく待っても表示されない場合は再読み込みしてください。
                             </div>
                         </div>
                     ) : null}

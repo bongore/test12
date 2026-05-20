@@ -11,6 +11,7 @@ import { mergeAccessState, resetAccessStateCache, resolveAccessState } from "./a
 describe("resolveAccessState", () => {
     beforeEach(() => {
         resetAccessStateCache();
+        window.localStorage.clear();
     });
 
     test("keeps the previous connected teacher state on soft disconnect refreshes", () => {

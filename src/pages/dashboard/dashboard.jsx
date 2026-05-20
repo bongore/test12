@@ -27,7 +27,7 @@ function Dashboard() {
         async function loadData() {
             try {
                 setLoadError("");
-                const addr = access.address || await cont.get_address();
+                const addr = access.address || cont.get_last_known_address?.() || await cont.get_address();
                 if (cancelled) return;
                 setAddress(addr || "");
 

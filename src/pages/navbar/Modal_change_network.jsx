@@ -88,22 +88,27 @@ function Modal_change_network(props) {
         syncChainId().catch((error) => {
             console.error("Failed to sync chain id", error);
         });
-
-        const timer = window.setInterval(() => {
-            syncChainId().catch((error) => {
-                console.error("Failed to sync chain id", error);
-            });
-        }, 8000);
+        const shouldKeepPolling = currentChainId !== 80002 && !props.cont?.isMobileDevice?.();
+        let timer = null;
+        if (shouldKeepPolling) {
+            timer = window.setInterval(() => {
+                syncChainId().catch((error) => {
+                    console.error("Failed to sync chain id", error);
+                });
+            }, 15000);
+        }
 
         provider.on?.("chainChanged", handleChainChanged);
         provider.on?.("accountsChanged", handleAccountsChanged);
 
         return () => {
-            window.clearInterval(timer);
+            if (timer) {
+                window.clearInterval(timer);
+            }
             provider.removeListener?.("chainChanged", handleChainChanged);
             provider.removeListener?.("accountsChanged", handleAccountsChanged);
         };
-    }, [hasEthereumProvider, props.cont]);
+    }, [currentChainId, hasEthereumProvider, props.cont]);
 
     if (!isVisible) {
         return <></>;

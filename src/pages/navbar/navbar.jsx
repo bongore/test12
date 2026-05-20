@@ -11,7 +11,7 @@ import { WALLET_PROVIDER_CHANGED_EVENT } from "../../contract/contractClients";
 import "./navbar.css";
 
 function Nav_menu(props) {
-    const [useing_address, Set_useing_address] = useState(null);
+    const [useing_address, Set_useing_address] = useState(() => props.cont?.get_last_known_address?.() || null);
     const [chain_id, setChain_id] = useState(null);
     const access = useAccessControl(props.cont);
 
@@ -19,22 +19,28 @@ function Nav_menu(props) {
         const get_variable = async () => {
             const [nextChainId, nextAddress] = await Promise.all([
                 props.cont.get_chain_id(),
-                props.cont.get_address(),
+                props.cont?.get_last_known_address?.()
+                    ? Promise.resolve(props.cont.get_last_known_address())
+                    : props.cont.get_address(),
             ]);
             if (nextChainId != null) {
                 setChain_id(nextChainId);
             }
-            Set_useing_address(nextAddress || null);
+            if (nextAddress) {
+                Set_useing_address(nextAddress);
+            }
         };
         get_variable();
 
         window.addEventListener(WALLET_PROVIDER_CHANGED_EVENT, get_variable);
-        window.addEventListener("focus", get_variable);
         return () => {
             window.removeEventListener(WALLET_PROVIDER_CHANGED_EVENT, get_variable);
-            window.removeEventListener("focus", get_variable);
         };
     }, [props.cont]);
+
+    useEffect(() => {
+        Set_useing_address(access.address || props.cont?.get_last_known_address?.() || null);
+    }, [access.address, props.cont]);
 
     return (
         <>

@@ -13,6 +13,7 @@ function Quiz_list(props) {
     const location = useLocation();
     const add_num = useRef(getInitialBatchSize());
     const isLoadingRef = useRef(false);
+    const hasResolvedInitialLoadRef = useRef(false);
 
     const get_quiz_list = async (now) => {
         if (isLoadingRef.current || now <= 0) return;
@@ -43,6 +44,10 @@ function Quiz_list(props) {
             props.setLoadError?.("問題一覧の一部読み込みに失敗しました。再読み込みしてください。");
         } finally {
             isLoadingRef.current = false;
+            if (!hasResolvedInitialLoadRef.current) {
+                hasResolvedInitialLoadRef.current = true;
+                props.onInitialLoadResolved?.();
+            }
         }
     };
 
