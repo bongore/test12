@@ -67,6 +67,39 @@ describe("resolveAccessState", () => {
         expect(access.role).toBe("guest");
     });
 
+    test("uses the last known wallet address when the live wallet address is delayed", async () => {
+        const access = await resolveAccessState({
+            get_address: jest.fn().mockResolvedValue(""),
+            get_last_known_address: jest.fn().mockReturnValue("0xstudent"),
+            getRegistrationDetails: jest.fn().mockResolvedValue({
+                registered: true,
+                isTeacher: false,
+                isStudent: true,
+                roleKey: "student",
+                roleLabel: "学生",
+                addedBy: "0xteacher",
+                addedAt: 456,
+            }),
+            getRoleSummary: jest.fn().mockResolvedValue({
+                registered: true,
+                isTeacher: false,
+                isStudent: true,
+                roleKey: "student",
+                roleLabel: "学生",
+            }),
+            getUserRole: jest.fn().mockResolvedValue({ key: "student", label: "学生" }),
+            isRegistered: jest.fn().mockResolvedValue(true),
+            isTeacher: jest.fn().mockResolvedValue(false),
+            isStudent: jest.fn().mockResolvedValue(true),
+            get_user_data: jest.fn().mockResolvedValue([null, null, null, "Student"]),
+        });
+
+        expect(access.address).toBe("0xstudent");
+        expect(access.isConnected).toBe(true);
+        expect(access.role).toBe("student");
+        expect(access.canAnswerQuiz).toBe(true);
+    });
+
     test("grants teacher capabilities when the connected user is a teacher", async () => {
         const access = await resolveAccessState({
             get_address: jest.fn().mockResolvedValue("0xteacher"),

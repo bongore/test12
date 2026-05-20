@@ -135,7 +135,7 @@ async function resolveAccessState(cont) {
     const nextState = createDefaultAccessState();
     resolveAccessPromise = (async () => {
         try {
-            const address = await cont?.get_address?.();
+            const address = await cont?.get_address?.() || cont?.get_last_known_address?.() || "";
             if (!address) {
                 const disconnectedState = {
                     ...nextState,

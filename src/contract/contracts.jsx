@@ -170,6 +170,12 @@ function writeQuizSimpleCacheStore(store) {
     localStorage.setItem(QUIZ_SIMPLE_CACHE_KEY, JSON.stringify(store || {}));
 }
 
+function getStoredQuizInventoryEntries() {
+    const persistedCache = readTimedCache(QUIZ_INVENTORY_PERSIST_KEY);
+    if (!Array.isArray(persistedCache?.value)) return [];
+    return persistedCache.value;
+}
+
 async function retryReadContractBalance(readFn, attempts = 3) {
     let lastError = null;
     for (let index = 0; index < attempts; index += 1) {
@@ -726,13 +732,14 @@ class Contracts_MetaMask {
             return quizInventoryCacheMemory;
         }
 
-        const persistedCache = !forceRefresh ? readTimedCache(QUIZ_INVENTORY_PERSIST_KEY) : null;
+        const persistedCache = readTimedCache(QUIZ_INVENTORY_PERSIST_KEY);
+        const persistedEntries = Array.isArray(persistedCache?.value) ? persistedCache.value : [];
         if (
             !forceRefresh
-            && Array.isArray(persistedCache?.value)
+            && persistedEntries.length > 0
             && now - Number(persistedCache?.fetchedAt || 0) < QUIZ_INVENTORY_PERSIST_TTL_MS
         ) {
-            quizInventoryCacheMemory = persistedCache.value;
+            quizInventoryCacheMemory = persistedEntries;
             quizInventoryCacheFetchedAt = Number(persistedCache.fetchedAt || now);
             return quizInventoryCacheMemory;
         }
@@ -759,6 +766,17 @@ class Contracts_MetaMask {
                         inventory.push({ id, address });
                     }
                 });
+
+            if (inventory.length === 0) {
+                const fallbackInventory = Array.isArray(quizInventoryCacheMemory) && quizInventoryCacheMemory.length > 0
+                    ? quizInventoryCacheMemory
+                    : persistedEntries;
+                if (fallbackInventory.length > 0) {
+                    quizInventoryCacheMemory = fallbackInventory;
+                    quizInventoryCacheFetchedAt = Date.now();
+                    return fallbackInventory;
+                }
+            }
 
             quizInventoryCacheMemory = inventory;
             quizInventoryCacheFetchedAt = Date.now();
@@ -913,23 +931,22 @@ class Contracts_MetaMask {
         }
 
         readAccountCachePromise = (async () => {
+            const fallbackAccount = this.get_last_known_address();
             try {
                 const provider = await this.getEthereumProviderForRead();
                 if (!provider) {
-                    readAccountCacheValue = "";
-                    readAccountCacheFetchedAt = Date.now();
-                    return "";
+                    setReadAccountCacheValue(fallbackAccount);
+                    return fallbackAccount;
                 }
 
-                const accounts = await provider.request({ method: "eth_accounts" });
-                readAccountCacheValue = Array.isArray(accounts) && accounts[0] ? accounts[0] : "";
-                readAccountCacheFetchedAt = Date.now();
-                return readAccountCacheValue;
+                const accounts = await this.providerRequestWithRetry(provider, { method: "eth_accounts" }, 2, 300);
+                const nextAccount = Array.isArray(accounts) && accounts[0] ? String(accounts[0]) : String(fallbackAccount || "");
+                setReadAccountCacheValue(nextAccount);
+                return nextAccount;
             } catch (error) {
                 console.log(error);
-                readAccountCacheValue = "";
-                readAccountCacheFetchedAt = Date.now();
-                return "";
+                setReadAccountCacheValue(fallbackAccount);
+                return fallbackAccount;
             } finally {
                 readAccountCachePromise = null;
             }
@@ -2618,24 +2635,40 @@ class Contracts_MetaMask {
         try {
             const targetQuizAddress = sourceAddress ? this.resolveQuizAddress(sourceAddress) : "";
             if (targetQuizAddress) {
-                return await publicClient.readContract({
-                    address: targetQuizAddress,
-                    abi: quiz_abi,
-                    functionName: "get_quiz_length",
-                    args: [],
-                });
+                try {
+                    return await publicClient.readContract({
+                        address: targetQuizAddress,
+                        abi: quiz_abi,
+                        functionName: "get_quiz_length",
+                        args: [],
+                    });
+                } catch (error) {
+                    console.log(error);
+                    return 0;
+                }
             }
 
             const lengths = await Promise.allSettled(
                 this.getQuizReadAddresses().map(async (address) => Number(await this.get_quiz_lenght(address)))
             );
-            return lengths.reduce((sum, result) => {
+            const totalLength = lengths.reduce((sum, result) => {
                 if (result.status !== "fulfilled") return sum;
                 return sum + Number(result.value || 0);
             }, 0);
+            if (totalLength > 0) {
+                return totalLength;
+            }
+
+            const fallbackInventory = Array.isArray(quizInventoryCacheMemory) && quizInventoryCacheMemory.length > 0
+                ? quizInventoryCacheMemory
+                : getStoredQuizInventoryEntries();
+            return Array.isArray(fallbackInventory) ? fallbackInventory.length : 0;
         } catch (error) {
             console.log(error);
-            return 0;
+            const fallbackInventory = Array.isArray(quizInventoryCacheMemory) && quizInventoryCacheMemory.length > 0
+                ? quizInventoryCacheMemory
+                : getStoredQuizInventoryEntries();
+            return Array.isArray(fallbackInventory) ? fallbackInventory.length : 0;
         }
     }
 

@@ -56,6 +56,7 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
 
     beforeEach(() => {
         jest.clearAllMocks();
+        window.localStorage.clear();
         mockWaitForTransactionReceipt.mockResolvedValue({ status: "success" });
         mockAllowance.mockResolvedValue(0n);
         mockWriteContract.mockResolvedValue("0xwrite");
@@ -271,5 +272,46 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
         await expect(contract.get_quiz_simple(1, "0xeb196c161EFA30939f78170694bb908E17fd1479"))
             .rejects
             .toThrow("rpc_failed");
+    });
+
+    test("getQuizInventory falls back to persisted cache when live length reads collapse to zero", async () => {
+        const contract = new Contracts_MetaMask();
+        contract.invalidateQuizInventoryCache();
+        window.localStorage.setItem("web3_quiz_inventory_cache_v1", JSON.stringify({
+            fetchedAt: Date.now() - 120000,
+            value: [
+                { id: 2, address: "0xeb196c161EFA30939f78170694bb908E17fd1479" },
+                { id: 1, address: "0xeb196c161EFA30939f78170694bb908E17fd1479" },
+            ],
+        }));
+        contract.get_quiz_lenght = jest.fn()
+            .mockResolvedValueOnce(0)
+            .mockResolvedValueOnce(0)
+            .mockResolvedValueOnce(0);
+
+        const inventory = await contract.getQuizInventory(true);
+
+        expect(inventory).toEqual([
+            { id: 2, address: "0xeb196c161EFA30939f78170694bb908E17fd1479" },
+            { id: 1, address: "0xeb196c161EFA30939f78170694bb908E17fd1479" },
+        ]);
+    });
+
+    test("get_quiz_lenght falls back to cached inventory length when live aggregate reads fail", async () => {
+        const contract = new Contracts_MetaMask();
+        contract.invalidateQuizInventoryCache();
+        window.localStorage.setItem("web3_quiz_inventory_cache_v1", JSON.stringify({
+            fetchedAt: Date.now() - 120000,
+            value: [
+                { id: 2, address: "0xeb196c161EFA30939f78170694bb908E17fd1479" },
+                { id: 1, address: "0xeb196c161EFA30939f78170694bb908E17fd1479" },
+                { id: 0, address: "0x55B3977C7B7b913eaf175A7364c8375732d22241" },
+            ],
+        }));
+        jest.spyOn(publicClient, "readContract").mockRejectedValue(new Error("rpc_failed"));
+
+        const length = await contract.get_quiz_lenght();
+
+        expect(length).toBe(3);
     });
 });

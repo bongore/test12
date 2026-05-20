@@ -58,7 +58,17 @@ function List_quiz_top(props) {
     const [initialListLoadResolved, setInitialListLoadResolved] = useState(() => Array.isArray(initialListCache?.quizList) && initialListCache.quizList.length > 0);
     const targetRef = useRef(null);
     const quizSumRef = useRef(0);
+    const quizListRef = useRef(Array.isArray(initialListCache?.quizList) ? initialListCache.quizList : []);
+    const quizSumStateRef = useRef(quiz_sum);
     const getQuizCacheKey = (quiz) => normalizeDeletedQuizKey(`${quiz?.sourceAddress || quiz?.[12] || ""}:${Number(quiz?.[0])}`);
+
+    useEffect(() => {
+        quizListRef.current = Array.isArray(quiz_list) ? quiz_list : [];
+    }, [quiz_list]);
+
+    useEffect(() => {
+        quizSumStateRef.current = quiz_sum;
+    }, [quiz_sum]);
 
     useEffect(() => {
         if (!Array.isArray(quiz_list) || quiz_list.length === 0) return;
@@ -93,6 +103,19 @@ function List_quiz_top(props) {
         try {
             const data = await cont.get_quiz_lenght();
             const nextLength = parseInt(Number(data), 10) || 0;
+            const visibleCount = Array.isArray(quizListRef.current) ? quizListRef.current.length : 0;
+            const cachedCount = Array.isArray(initialListCache?.quizList) ? initialListCache.quizList.length : 0;
+            const fallbackVisibleCount = Math.max(visibleCount, cachedCount, Number(quizSumStateRef.current || 0));
+
+            if (nextLength <= 0 && fallbackVisibleCount > 0) {
+                quizSumRef.current = fallbackVisibleCount;
+                now_numRef.current = fallbackVisibleCount;
+                if (quizSumStateRef.current == null || Number(quizSumStateRef.current) <= 0) {
+                    Set_quiz_sum(fallbackVisibleCount);
+                }
+                setLoadError("");
+                return;
+            }
 
             if (quizSumRef.current !== nextLength) {
                 quizSumRef.current = nextLength;
@@ -108,7 +131,7 @@ function List_quiz_top(props) {
             setLoadError("");
         } catch (error) {
             console.error("Failed to load quiz length", error);
-            if (quiz_sum == null) {
+            if (quizSumStateRef.current == null && (!Array.isArray(quizListRef.current) || quizListRef.current.length === 0)) {
                 Set_quiz_sum(0);
                 now_numRef.current = 0;
             }
