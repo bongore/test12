@@ -283,6 +283,15 @@ function List_quiz_top(props) {
         ...pendingCreatedQuizzes.filter((quiz) => !visibleQuizKeys.has(getQuizCacheKey(quiz))),
         ...quiz_list,
     ];
+    const filteredQuizList = mergedQuizList
+        .filter((quiz) => !deletedQuizMap[getQuizCacheKey(quiz)])
+        .filter((quiz) => {
+            const localId = Number(quiz?.[0]);
+            const sourceAddress = quiz?.sourceAddress || quiz?.[12] || "";
+            return toGlobalId(localId, sourceAddress) !== -1;
+        });
+    const hasRenderableQuizList = filteredQuizList.length > 0;
+    const shouldShowSyncBanner = !deletedQuizReady;
 
     if (quiz_sum != null) {
         return (
@@ -332,21 +341,15 @@ function List_quiz_top(props) {
                             </button>
                         </div>
                     ) : null}
-                    {!deletedQuizReady ? (
+                    {shouldShowSyncBanner ? (
                         <div className="glass-card" style={{ padding: "var(--space-5)", color: "#fff" }}>
                             <div style={{ fontWeight: 700, marginBottom: "10px" }}>削除済み問題の同期中です...</div>
                             <div style={{ color: "rgba(255,255,255,0.8)" }}>
-                                教員側で非表示にした問題を全端末で揃えるため、一覧表示を待機しています。
+                                教員側で非表示にした問題を各端末へ反映しています。同期中でも問題一覧は先に表示します。
                             </div>
                         </div>
-                    ) : mergedQuizList
-                        .filter((quiz) => !deletedQuizMap[getQuizCacheKey(quiz)])
-                        .filter((quiz) => {
-                            const localId = Number(quiz?.[0]);
-                            const sourceAddress = quiz?.sourceAddress || quiz?.[12] || "";
-                            return toGlobalId(localId, sourceAddress) !== -1;
-                        })
-                        .map((quiz, index) => (
+                    ) : null}
+                    {filteredQuizList.map((quiz, index) => (
                         <div key={`${quiz?.sourceAddress || quiz?.[12] || "default"}-${Number(quiz?.[0] ?? index)}-${index}`}>
                             <Simple_quiz
                                 quiz={quiz}
@@ -358,6 +361,14 @@ function List_quiz_top(props) {
                             />
                         </div>
                     ))}
+                    {!loadError && !hasRenderableQuizList && deletedQuizReady ? (
+                        <div className="glass-card" style={{ padding: "var(--space-5)", color: "#fff" }}>
+                            <div style={{ fontWeight: 700, marginBottom: "10px" }}>表示できる問題がまだありません</div>
+                            <div style={{ color: "rgba(255,255,255,0.8)" }}>
+                                ネットワークが混雑している場合は、このまま数秒待つか再読み込みしてください。
+                            </div>
+                        </div>
+                    ) : null}
                 </div>
 
                 {!loadError && (
