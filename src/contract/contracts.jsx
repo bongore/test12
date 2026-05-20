@@ -74,6 +74,11 @@ let quizInventoryCacheFetchedAt = 0;
 let quizInventoryCachePromise = null;
 const quizSimpleCacheMemory = new Map();
 
+function setReadAccountCacheValue(account = "") {
+    readAccountCacheValue = account ? String(account) : "";
+    readAccountCacheFetchedAt = Date.now();
+}
+
 function readScoreCache() {
     if (typeof localStorage === "undefined") return {};
     try {
@@ -1000,7 +1005,10 @@ class Contracts_MetaMask {
         const provider = await this.getEthereumProviderReady();
         if (!provider) return [];
         try {
-            return await provider.request({ method: "eth_requestAccounts" });
+            const accounts = await provider.request({ method: "eth_requestAccounts" });
+            const nextAccount = Array.isArray(accounts) && accounts[0] ? accounts[0] : "";
+            setReadAccountCacheValue(nextAccount);
+            return accounts;
         } catch (error) {
             console.error("Failed to request wallet access", error);
             throw error;
@@ -1052,6 +1060,7 @@ class Contracts_MetaMask {
         try {
             const existingAccounts = await provider.request({ method: "eth_accounts" });
             if (Array.isArray(existingAccounts) && existingAccounts.length > 0) {
+                setReadAccountCacheValue(existingAccounts[0] || "");
                 return existingAccounts;
             }
         } catch (error) {
@@ -1061,6 +1070,7 @@ class Contracts_MetaMask {
         try {
             const requestedAccounts = await this.request_wallet_access();
             if (Array.isArray(requestedAccounts) && requestedAccounts.length > 0) {
+                setReadAccountCacheValue(requestedAccounts[0] || "");
                 return requestedAccounts;
             }
         } catch (error) {
@@ -1069,8 +1079,9 @@ class Contracts_MetaMask {
 
         for (let attempt = 0; attempt < 4; attempt += 1) {
             await sleep(350 * (attempt + 1));
-            const address = await this.get_address();
+            const address = await this.get_read_account_cached(true);
             if (address) {
+                setReadAccountCacheValue(address);
                 return [address];
             }
         }
@@ -2115,10 +2126,14 @@ class Contracts_MetaMask {
                 throw new Error("amoy_network_unavailable");
             }
 
-            let account = await this.get_address();
+            const connectedAccounts = await this.ensure_wallet_connected();
+            let account = Array.isArray(connectedAccounts) && connectedAccounts[0]
+                ? String(connectedAccounts[0])
+                : await this.get_read_account_cached(true);
             if (!account) {
                 throw new Error("wallet_not_connected");
             }
+            setReadAccountCacheValue(account);
 
             setShow(true);
             setContent("書き込み中...");

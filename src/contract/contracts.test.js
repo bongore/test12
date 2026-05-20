@@ -97,4 +97,36 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
         expect(contract.request_wallet_access).not.toHaveBeenCalled();
         expect(accounts).toEqual(["0xabc"]);
     });
+
+    test("request_wallet_access caches the connected account immediately", async () => {
+        const contract = new Contracts_MetaMask();
+        const provider = {
+            request: jest.fn().mockResolvedValue(["0xdef"]),
+        };
+
+        contract.getEthereumProviderReady = jest.fn().mockResolvedValue(provider);
+
+        const accounts = await contract.request_wallet_access();
+
+        expect(accounts).toEqual(["0xdef"]);
+        await expect(contract.get_address()).resolves.toBe("0xdef");
+    });
+
+    test("create_answer uses the account returned by ensure_wallet_connected", async () => {
+        const contract = new Contracts_MetaMask();
+        contract.getEthereumProviderReady = jest.fn().mockResolvedValue({});
+        contract.ensure_amoy_network = jest.fn().mockResolvedValue(true);
+        contract.ensure_wallet_connected = jest.fn().mockResolvedValue(["0x999"]);
+        contract._save_answer = jest.fn().mockResolvedValue("0xhash");
+        contract.waitForReceiptWithRetry = jest.fn().mockResolvedValue({ status: "success", transactionHash: "0xhash" });
+        contract.invalidateQuizSimpleCache = jest.fn();
+
+        const setShow = jest.fn();
+        const setContent = jest.fn();
+
+        await contract.create_answer(2, "A", setShow, setContent, "");
+
+        expect(contract._save_answer).toHaveBeenCalledWith("0x999", 2, "A", "");
+        expect(contract.waitForReceiptWithRetry).toHaveBeenCalledWith("0xhash");
+    });
 });
