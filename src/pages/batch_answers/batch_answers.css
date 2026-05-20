@@ -3,6 +3,10 @@
   gap: var(--space-5);
 }
 
+.batch-answer-page-nav {
+  margin-top: var(--space-3);
+}
+
 .batch-answer-card,
 .batch-answer-report {
   padding: var(--space-5);

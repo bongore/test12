@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import Wait_Modal from "../../contract/wait_Modal";
 import { Contracts_MetaMask } from "../../contract/contracts";
 import { useAccessControl } from "../../utils/accessControl";
@@ -16,7 +16,6 @@ import { buildAnswerQuizPath, buildAnswerQuizState, rememberQuizSource } from ".
 import "./batch_answers.css";
 
 function Batch_answers() {
-    const navigate = useNavigate();
     const contract = useMemo(() => new Contracts_MetaMask(), []);
     const access = useAccessControl(contract);
     const [queue, setQueue] = useState(() => getBatchAnswerQueue());
@@ -121,6 +120,11 @@ function Batch_answers() {
             <div className="page-header">
                 <h1 className="page-title">🗂 まとめて解答</h1>
                 <p className="page-subtitle">各問題で保存した解答を確認し、最後にまとめて送信できます。</p>
+                <div className="batch-answer-page-nav">
+                    <Link to="/list_quiz" className="btn-secondary-custom" style={{ textDecoration: "none" }}>
+                        クイズ一覧へ戻る
+                    </Link>
+                </div>
             </div>
 
             {!access.canAnswerQuiz ? (
