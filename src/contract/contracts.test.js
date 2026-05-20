@@ -196,4 +196,18 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
         expect(contract.approve).toHaveBeenCalled();
         expect(contract._investment_to_quiz).toHaveBeenCalled();
     });
+
+    test("providerRequestWithRetry retries provider limit errors", async () => {
+        const contract = new Contracts_MetaMask();
+        const provider = {
+            request: jest.fn()
+                .mockRejectedValueOnce(new Error("Request exceeds defined limit."))
+                .mockResolvedValueOnce(["0xabc"]),
+        };
+
+        const result = await contract.providerRequestWithRetry(provider, { method: "eth_accounts" }, 2, 1);
+
+        expect(result).toEqual(["0xabc"]);
+        expect(provider.request).toHaveBeenCalledTimes(2);
+    });
 });

@@ -99,6 +99,14 @@ function getCachedChainId() {
     return chainIdCacheValue;
 }
 
+function isProviderLimitError(error) {
+    const message = String(error?.shortMessage || error?.message || "").toLowerCase();
+    return message.includes("request exceeds defined limit")
+        || message.includes("rate limit")
+        || message.includes("too many requests")
+        || message.includes("limit exceeded");
+}
+
 function readScoreCache() {
     if (typeof localStorage === "undefined") return {};
     try {
@@ -620,6 +628,22 @@ class Contracts_MetaMask {
         }
     }
 
+    async providerRequestWithRetry(provider, payload, attempts = 3, baseDelayMs = 500) {
+        let lastError = null;
+        for (let attempt = 0; attempt < attempts; attempt += 1) {
+            try {
+                return await provider.request(payload);
+            } catch (error) {
+                lastError = error;
+                if (!isProviderLimitError(error) || attempt >= attempts - 1) {
+                    throw error;
+                }
+                await sleep(baseDelayMs * (attempt + 1));
+            }
+        }
+        throw lastError;
+    }
+
     getAccessControlAddresses() {
         return [class_room_address, quiz_address, ...(legacy_quiz_addresses || [])].filter(
             (address, index, list) => Boolean(address) && list.indexOf(address) === index
@@ -932,7 +956,7 @@ class Contracts_MetaMask {
         if (!provider || !address) return false;
         try {
             await this.ensure_amoy_network();
-            const added = await provider.request({
+            const added = await this.providerRequestWithRetry(provider, {
                 method: "wallet_watchAsset",
                 params: {
                     type: "ERC20",
@@ -942,7 +966,7 @@ class Contracts_MetaMask {
                         decimals,
                     },
                 },
-            });
+            }, 2, 600);
             return { added: Boolean(added), fallback: null, address, symbol, decimals };
         } catch (error) {
             console.error("Failed to add watch asset", error);
@@ -1002,7 +1026,7 @@ class Contracts_MetaMask {
     async read_chain_id_with_provider(provider) {
         if (!provider) return null;
         try {
-            const chainIdRaw = await provider.request({ method: "eth_chainId" });
+            const chainIdRaw = await this.providerRequestWithRetry(provider, { method: "eth_chainId" }, 3, 350);
             if (chainIdRaw == null || chainIdRaw === "") return null;
             if (typeof chainIdRaw === "string" && /^0x/i.test(chainIdRaw)) {
                 const parsedHex = Number.parseInt(chainIdRaw, 16);
@@ -1029,7 +1053,7 @@ class Contracts_MetaMask {
         const provider = await this.getEthereumProviderReady();
         if (!provider) return [];
         try {
-            const accounts = await provider.request({ method: "eth_requestAccounts" });
+            const accounts = await this.providerRequestWithRetry(provider, { method: "eth_requestAccounts" }, 2, 700);
             const nextAccount = Array.isArray(accounts) && accounts[0] ? accounts[0] : "";
             setReadAccountCacheValue(nextAccount);
             return accounts;
@@ -1086,7 +1110,7 @@ class Contracts_MetaMask {
         }
 
         try {
-            const existingAccounts = await provider.request({ method: "eth_accounts" });
+            const existingAccounts = await this.providerRequestWithRetry(provider, { method: "eth_accounts" }, 2, 350);
             if (Array.isArray(existingAccounts) && existingAccounts.length > 0) {
                 setReadAccountCacheValue(existingAccounts[0] || "");
                 return existingAccounts;
@@ -1176,10 +1200,10 @@ class Contracts_MetaMask {
         const provider = await this.getEthereumProviderReady();
         if (!provider) return false;
         try {
-            await provider.request({
+            await this.providerRequestWithRetry(provider, {
                 method: "wallet_switchEthereumChain",
                 params: [{ chainId: `0x${amoy.id.toString(16)}` }],
-            });
+            }, 2, 700);
             return true;
         } catch (e) {
             //userがrejectした場合
@@ -1193,10 +1217,10 @@ class Contracts_MetaMask {
         let lastError = null;
         for (const rpcUrl of this.getAmoyRpcCandidates()) {
             try {
-                await provider.request({
+                await this.providerRequestWithRetry(provider, {
                     method: "wallet_addEthereumChain",
                     params: [this.getAmoyAddChainParams(rpcUrl)],
-                });
+                }, 2, 800);
                 return true;
             } catch (e) {
                 lastError = e;
