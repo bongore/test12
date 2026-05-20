@@ -599,6 +599,11 @@ class Contracts_MetaMask {
         return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || "");
     }
 
+    isAppleMobileDevice() {
+        if (typeof navigator === "undefined") return false;
+        return /iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+    }
+
     async copyTextToClipboard(value) {
         if (!value) return false;
         try {
@@ -944,14 +949,43 @@ class Contracts_MetaMask {
         let lastError = null;
         for (let attempt = 0; attempt < 3; attempt += 1) {
             try {
-                return await walletClient.writeContract({
+                const writeConfig = {
                     account,
                     address,
                     abi,
                     functionName,
                     args,
                     chain: amoy,
-                });
+                };
+
+                try {
+                    const estimatedGas = await publicClient.estimateContractGas(writeConfig);
+                    if (estimatedGas && estimatedGas > 0n) {
+                        writeConfig.gas = this.isAppleMobileDevice()
+                            ? (estimatedGas * 14n) / 10n
+                            : (estimatedGas * 12n) / 10n;
+                    }
+                } catch (gasError) {
+                    console.log(gasError);
+                }
+
+                try {
+                    const estimatedFees = await publicClient.estimateFeesPerGas();
+                    if (estimatedFees?.maxFeePerGas) {
+                        writeConfig.maxFeePerGas = this.isAppleMobileDevice()
+                            ? (estimatedFees.maxFeePerGas * 13n) / 10n
+                            : (estimatedFees.maxFeePerGas * 11n) / 10n;
+                    }
+                    if (estimatedFees?.maxPriorityFeePerGas) {
+                        writeConfig.maxPriorityFeePerGas = this.isAppleMobileDevice()
+                            ? (estimatedFees.maxPriorityFeePerGas * 13n) / 10n
+                            : (estimatedFees.maxPriorityFeePerGas * 11n) / 10n;
+                    }
+                } catch (feeError) {
+                    console.log(feeError);
+                }
+
+                return await walletClient.writeContract(writeConfig);
             } catch (error) {
                 lastError = error;
                 if (!isProviderLimitError(error) || attempt >= 2) {

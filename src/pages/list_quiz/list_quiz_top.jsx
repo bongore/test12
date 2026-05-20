@@ -11,13 +11,41 @@ import { getBatchAnswerQueue, subscribeBatchAnswerQueue } from "../../utils/batc
 import { Link } from "react-router-dom";
 import "./list_quiz_top.css";
 
+const QUIZ_LIST_PAGE_CACHE_KEY = "web3_quiz_list_page_cache_v1";
+
+function readQuizListPageCache() {
+    if (typeof localStorage === "undefined") return null;
+    try {
+        const parsed = JSON.parse(localStorage.getItem(QUIZ_LIST_PAGE_CACHE_KEY) || "null");
+        if (!parsed || typeof parsed !== "object") return null;
+        if (!Array.isArray(parsed.quizList)) return null;
+        return parsed;
+    } catch (error) {
+        return null;
+    }
+}
+
+function writeQuizListPageCache(payload) {
+    if (typeof localStorage === "undefined") return;
+    try {
+        localStorage.setItem(QUIZ_LIST_PAGE_CACHE_KEY, JSON.stringify(payload));
+    } catch (error) {
+        console.error("Failed to persist quiz list page cache", error);
+    }
+}
+
 function List_quiz_top(props) {
     const cont = useMemo(() => new Contracts_MetaMask(), []);
     const access = useAccessControl(cont);
+    const initialListCache = useMemo(() => readQuizListPageCache(), []);
 
     const now_numRef = useRef(0);
-    const [quiz_sum, Set_quiz_sum] = useState(null);
-    const [quiz_list, Set_quiz_list] = useState([]);
+    const [quiz_sum, Set_quiz_sum] = useState(() => {
+        if (!initialListCache) return null;
+        const cachedSum = Number(initialListCache?.quizSum ?? initialListCache?.quizList?.length ?? 0);
+        return Number.isFinite(cachedSum) ? cachedSum : null;
+    });
+    const [quiz_list, Set_quiz_list] = useState(() => Array.isArray(initialListCache?.quizList) ? initialListCache.quizList : []);
     const [add_num, Set_add_num] = useState(7);
     const [currentEpoch, setCurrentEpoch] = useState(() => Math.floor(Date.now() / 1000));
     const [correctAnswerMap, setCorrectAnswerMap] = useState({});
@@ -30,6 +58,15 @@ function List_quiz_top(props) {
     const targetRef = useRef(null);
     const quizSumRef = useRef(0);
     const getQuizCacheKey = (quiz) => normalizeDeletedQuizKey(`${quiz?.sourceAddress || quiz?.[12] || ""}:${Number(quiz?.[0])}`);
+
+    useEffect(() => {
+        if (!Array.isArray(quiz_list) || quiz_list.length === 0) return;
+        writeQuizListPageCache({
+            quizSum: Number(quiz_sum || quiz_list.length || 0),
+            quizList: quiz_list.slice(0, 40),
+            savedAt: Date.now(),
+        });
+    }, [quiz_list, quiz_sum]);
 
     const syncPendingCreatedQuizzes = async () => {
         const localPending = getPendingCreatedQuizzes().map((entry) => toPendingQuizSimple(entry)).filter(Boolean);

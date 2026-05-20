@@ -3,6 +3,8 @@ import { Contracts_MetaMask } from "./contracts";
 const mockWaitForTransactionReceipt = jest.fn();
 const mockAllowance = jest.fn();
 const mockWriteContract = jest.fn();
+const mockEstimateContractGas = jest.fn();
+const mockEstimateFeesPerGas = jest.fn();
 
 jest.mock("./contractClients", () => ({
     ethereum: {},
@@ -12,6 +14,8 @@ jest.mock("./contractClients", () => ({
     publicClient: {
         waitForTransactionReceipt: (...args) => mockWaitForTransactionReceipt(...args),
         readContract: jest.fn(),
+        estimateContractGas: (...args) => mockEstimateContractGas(...args),
+        estimateFeesPerGas: (...args) => mockEstimateFeesPerGas(...args),
     },
     token_abi: [],
     quiz_abi: [],
@@ -53,6 +57,11 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
         mockWaitForTransactionReceipt.mockResolvedValue({ status: "success" });
         mockAllowance.mockResolvedValue(0n);
         mockWriteContract.mockResolvedValue("0xwrite");
+        mockEstimateContractGas.mockResolvedValue(21000n);
+        mockEstimateFeesPerGas.mockResolvedValue({
+            maxFeePerGas: 100n,
+            maxPriorityFeePerGas: 10n,
+        });
     });
 
     test("settle_quiz_rewards_manually sends payout to the original quiz contract address", async () => {
