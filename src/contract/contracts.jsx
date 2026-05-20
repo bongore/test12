@@ -862,6 +862,10 @@ class Contracts_MetaMask {
         return this.getEthereumProvider() || await waitForEthereumProvider(350);
     }
 
+    get_read_account_nonblocking() {
+        return readAccountCacheValue ? String(readAccountCacheValue) : "";
+    }
+
     async get_read_account_cached(forceRefresh = false) {
         const now = Date.now();
         if (!forceRefresh && readAccountCacheValue && now - readAccountCacheFetchedAt < READ_ACCOUNT_CACHE_TTL_MS) {
@@ -2515,7 +2519,7 @@ class Contracts_MetaMask {
     async get_quiz_all_data_list(start, end) {
         const inventory = await this.getQuizInventory();
         const refs = this.getQuizWindowFromInventory(inventory, start, end);
-        const account = await this.get_read_account_cached();
+        const account = this.get_read_account_nonblocking();
 
         const settled = await Promise.allSettled(refs.map((ref) => this.get_quiz_all_data(ref.id, ref.address, account)));
 
@@ -2526,10 +2530,12 @@ class Contracts_MetaMask {
 
     //startからendまでのクイズを取得
 
-    async get_quiz_list(start, end) {
+    async get_quiz_list(start, end, options = {}) {
         const inventory = await this.getQuizInventory();
         const refs = this.getQuizWindowFromInventory(inventory, start, end);
-        const account = await this.get_read_account_cached();
+        const account = options?.preferCachedAccountOnly
+            ? this.get_read_account_nonblocking()
+            : await this.get_read_account_cached();
 
         const settled = await Promise.allSettled(refs.map((ref) => this.get_quiz_simple(ref.id, ref.address, account)));
 
@@ -2540,7 +2546,7 @@ class Contracts_MetaMask {
 
     async get_all_quiz_simple_list() {
         const inventory = await this.getQuizInventory();
-        const account = await this.get_read_account_cached();
+        const account = this.get_read_account_nonblocking();
         const settled = await Promise.allSettled(
             inventory.map((ref) => this.get_quiz_simple(ref.id, ref.address, account))
         );

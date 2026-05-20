@@ -341,6 +341,7 @@ function Answer_quiz() {
                 title: quiz?.[2] || `問題 ${id}`,
                 answer: finalAnswer,
                 answerType: Number(quiz?.[13] || 0),
+                deadlineEpoch: Number(quiz?.[9] || 0),
                 savedAt: new Date().toISOString(),
             });
             return "Polygon Amoy への接続確認に失敗しました。回答は自動で『まとめて解答リスト』に保存しました。ネットワーク接続を確認してから再送してください。";
@@ -359,6 +360,7 @@ function Answer_quiz() {
                 title: quiz?.[2] || `問題 ${id}`,
                 answer: finalAnswer,
                 answerType: Number(quiz?.[13] || 0),
+                deadlineEpoch: Number(quiz?.[9] || 0),
                 savedAt: new Date().toISOString(),
             });
             return "POL が不足しているか、ネットワーク手数料の確認に失敗しました。回答は自動で『まとめて解答リスト』に保存しました。POL 補充後に再送してください。";
@@ -379,6 +381,7 @@ function Answer_quiz() {
                 title: quiz?.[2] || `問題 ${id}`,
                 answer: finalAnswer,
                 answerType: Number(quiz?.[13] || 0),
+                deadlineEpoch: Number(quiz?.[9] || 0),
                 savedAt: new Date().toISOString(),
             });
             return "通信が不安定だったため、回答は自動で『まとめて解答リスト』に保存しました。回線が安定したら一括送信から再送できます。";
@@ -391,6 +394,7 @@ function Answer_quiz() {
             title: quiz?.[2] || `問題 ${id}`,
             answer: finalAnswer,
             answerType: Number(quiz?.[13] || 0),
+            deadlineEpoch: Number(quiz?.[9] || 0),
             savedAt: new Date().toISOString(),
         });
         return "回答送信に失敗しました。回答は『まとめて解答リスト』へ保存してから再送するのがおすすめです。";
@@ -578,6 +582,7 @@ function Answer_quiz() {
             title: quiz?.[2] || `問題 ${id}`,
             answer: finalAnswer,
             answerType: Number(quiz?.[13] || 0),
+            deadlineEpoch: Number(quiz?.[9] || 0),
             savedAt: new Date().toISOString(),
         });
         appendActivityLog(ACTION_TYPES.ANSWER_DRAFT_SAVED, {

@@ -213,6 +213,14 @@ function List_quiz_top(props) {
     }, [cont]);
 
     useEffect(() => {
+        if (!access.address) return;
+        if (quiz_sum == null) return;
+        now_numRef.current = quizSumRef.current || Number(quiz_sum) || 0;
+        Set_quiz_list([]);
+        setListRefreshKey((current) => current + 1);
+    }, [access.address, quiz_sum]);
+
+    useEffect(() => {
         const timer = window.setInterval(() => {
             setCurrentEpoch(Math.floor(Date.now() / 1000));
         }, 30000);

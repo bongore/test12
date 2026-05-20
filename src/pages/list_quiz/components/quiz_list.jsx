@@ -18,10 +18,10 @@ function Quiz_list(props) {
 
         try {
             if (now - add_num.current < 0) {
-                add_quiz_list = await props.cont.get_quiz_list(now, 0);
+                add_quiz_list = await props.cont.get_quiz_list(now, 0, { preferCachedAccountOnly: true });
                 props.now_numRef.current = 0;
             } else {
-                add_quiz_list = await props.cont.get_quiz_list(now, now - add_num.current);
+                add_quiz_list = await props.cont.get_quiz_list(now, now - add_num.current, { preferCachedAccountOnly: true });
                 props.now_numRef.current = now - add_num.current;
             }
 

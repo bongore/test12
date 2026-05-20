@@ -12,6 +12,11 @@ import {
     checkAndSendDeadlineNotifications,
     readDeadlineNotificationSettings,
 } from "./utils/quizDeadlineNotifications";
+import {
+    AUTO_SUBMIT_CHECK_INTERVAL_MS,
+    AUTO_SUBMIT_INITIAL_DELAY_MS,
+    processAutoSubmitBatchAnswers,
+} from "./utils/batchAnswerAutoSubmit";
 import "bootstrap/dist/css/bootstrap.min.css";
 
 const routerBasename = (() => {
@@ -134,6 +139,47 @@ function DeadlineReminderBootstrap({ cont }) {
     return null;
 }
 
+function BatchAnswerAutoSubmitBootstrap({ cont }) {
+    useEffect(() => {
+        let intervalId = null;
+        let initialTimerId = null;
+        let isRunning = false;
+
+        const runCheck = async () => {
+            if (isRunning) return;
+            isRunning = true;
+            try {
+                await processAutoSubmitBatchAnswers(cont);
+            } catch (error) {
+                console.error("Batch answer auto submit failed", error);
+            } finally {
+                isRunning = false;
+            }
+        };
+
+        initialTimerId = window.setTimeout(runCheck, AUTO_SUBMIT_INITIAL_DELAY_MS);
+        intervalId = window.setInterval(runCheck, AUTO_SUBMIT_CHECK_INTERVAL_MS);
+
+        const handleVisible = () => {
+            if (document.visibilityState === "visible") {
+                runCheck();
+            }
+        };
+
+        document.addEventListener("visibilitychange", handleVisible);
+        window.addEventListener("focus", handleVisible);
+
+        return () => {
+            if (initialTimerId) window.clearTimeout(initialTimerId);
+            if (intervalId) window.clearInterval(intervalId);
+            document.removeEventListener("visibilitychange", handleVisible);
+            window.removeEventListener("focus", handleVisible);
+        };
+    }, [cont]);
+
+    return null;
+}
+
 class RouteErrorBoundary extends Component {
     constructor(props) {
         super(props);
@@ -228,6 +274,7 @@ function App() {
                 }}
             >
                 <DeadlineReminderBootstrap cont={cont} />
+                <BatchAnswerAutoSubmitBootstrap cont={cont} />
                 <AppRoutes cont={cont} />
             </BrowserRouter>
         </div>
