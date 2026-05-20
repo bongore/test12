@@ -1,4 +1,6 @@
 import {
+    AUTO_SUBMIT_WINDOW_SECONDS,
+    getEarliestBatchAnswerDeadlineEpoch,
     getAutoSubmitReadyBatchAnswerQueue,
     removeBatchAnswerQueueItem,
     updateBatchAnswerQueueItem,
@@ -7,6 +9,7 @@ import { ACTION_TYPES, appendActivityLog } from "./activityLog";
 
 const AUTO_SUBMIT_CHECK_INTERVAL_MS = 60 * 1000;
 const AUTO_SUBMIT_INITIAL_DELAY_MS = 20 * 1000;
+const AUTO_SUBMIT_IDLE_RECHECK_MS = 10 * 60 * 1000;
 
 let autoSubmitInFlight = false;
 
@@ -92,8 +95,24 @@ async function processAutoSubmitBatchAnswers(cont) {
     }
 }
 
+function getNextBatchAutoSubmitDelayMs(nowEpoch = Math.floor(Date.now() / 1000)) {
+    const earliestDeadlineEpoch = Number(getEarliestBatchAnswerDeadlineEpoch() || 0);
+    if (!earliestDeadlineEpoch) {
+        return AUTO_SUBMIT_IDLE_RECHECK_MS;
+    }
+
+    const autoSubmitStartEpoch = earliestDeadlineEpoch - AUTO_SUBMIT_WINDOW_SECONDS;
+    if (nowEpoch >= autoSubmitStartEpoch) {
+        return AUTO_SUBMIT_CHECK_INTERVAL_MS;
+    }
+
+    return Math.max(30 * 1000, (autoSubmitStartEpoch - nowEpoch) * 1000);
+}
+
 export {
     AUTO_SUBMIT_CHECK_INTERVAL_MS,
+    AUTO_SUBMIT_IDLE_RECHECK_MS,
     AUTO_SUBMIT_INITIAL_DELAY_MS,
+    getNextBatchAutoSubmitDelayMs,
     processAutoSubmitBatchAnswers,
 };

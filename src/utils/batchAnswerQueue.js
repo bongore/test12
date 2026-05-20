@@ -92,6 +92,15 @@ function getAutoSubmitReadyBatchAnswerQueue(nowEpoch = Math.floor(Date.now() / 1
     });
 }
 
+function getEarliestBatchAnswerDeadlineEpoch() {
+    const deadlines = readBatchAnswerQueue()
+        .map((entry) => Number(entry.deadlineEpoch || 0))
+        .filter((deadlineEpoch) => deadlineEpoch > 0);
+
+    if (!deadlines.length) return 0;
+    return Math.min(...deadlines);
+}
+
 function removeBatchAnswerQueueItem(key) {
     const current = readBatchAnswerQueue();
     const next = current.filter((entry) => entry.key !== key);
@@ -122,6 +131,7 @@ export {
     AUTO_SUBMIT_WINDOW_SECONDS,
     buildBatchAnswerKey,
     clearBatchAnswerQueue,
+    getEarliestBatchAnswerDeadlineEpoch,
     getAutoSubmitReadyBatchAnswerQueue,
     getBatchAnswerQueue,
     removeBatchAnswerQueueItem,

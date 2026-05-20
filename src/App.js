@@ -14,7 +14,9 @@ import {
 } from "./utils/quizDeadlineNotifications";
 import {
     AUTO_SUBMIT_CHECK_INTERVAL_MS,
+    AUTO_SUBMIT_IDLE_RECHECK_MS,
     AUTO_SUBMIT_INITIAL_DELAY_MS,
+    getNextBatchAutoSubmitDelayMs,
     processAutoSubmitBatchAnswers,
 } from "./utils/batchAnswerAutoSubmit";
 import "bootstrap/dist/css/bootstrap.min.css";
@@ -141,9 +143,18 @@ function DeadlineReminderBootstrap({ cont }) {
 
 function BatchAnswerAutoSubmitBootstrap({ cont }) {
     useEffect(() => {
-        let intervalId = null;
-        let initialTimerId = null;
+        let timerId = null;
         let isRunning = false;
+
+        const clearSchedule = () => {
+            if (timerId) window.clearTimeout(timerId);
+            timerId = null;
+        };
+
+        const scheduleNext = (delayMs = AUTO_SUBMIT_IDLE_RECHECK_MS) => {
+            clearSchedule();
+            timerId = window.setTimeout(runCheck, Math.max(15 * 1000, delayMs));
+        };
 
         const runCheck = async () => {
             if (isRunning) return;
@@ -154,11 +165,11 @@ function BatchAnswerAutoSubmitBootstrap({ cont }) {
                 console.error("Batch answer auto submit failed", error);
             } finally {
                 isRunning = false;
+                scheduleNext(getNextBatchAutoSubmitDelayMs());
             }
         };
 
-        initialTimerId = window.setTimeout(runCheck, AUTO_SUBMIT_INITIAL_DELAY_MS);
-        intervalId = window.setInterval(runCheck, AUTO_SUBMIT_CHECK_INTERVAL_MS);
+        scheduleNext(AUTO_SUBMIT_INITIAL_DELAY_MS);
 
         const handleVisible = () => {
             if (document.visibilityState === "visible") {
@@ -170,8 +181,7 @@ function BatchAnswerAutoSubmitBootstrap({ cont }) {
         window.addEventListener("focus", handleVisible);
 
         return () => {
-            if (initialTimerId) window.clearTimeout(initialTimerId);
-            if (intervalId) window.clearInterval(intervalId);
+            clearSchedule();
             document.removeEventListener("visibilitychange", handleVisible);
             window.removeEventListener("focus", handleVisible);
         };

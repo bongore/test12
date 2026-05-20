@@ -3,6 +3,9 @@ import { useLocation } from "react-router-dom";
 
 function getInitialBatchSize() {
     if (typeof window === "undefined") return 8;
+    const userAgent = window.navigator?.userAgent || "";
+    if (/iPhone|iPad|iPod/i.test(userAgent)) return 4;
+    if (/Android/i.test(userAgent)) return 6;
     return Math.max(8, Math.floor(window.innerHeight / 100) + 2);
 }
 

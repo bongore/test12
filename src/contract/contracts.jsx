@@ -176,6 +176,17 @@ async function retryReadContractBalance(readFn, attempts = 3) {
     throw lastError;
 }
 
+async function runSettledInChunks(items, chunkSize, mapper) {
+    const settled = [];
+    const safeChunkSize = Math.max(1, Number(chunkSize || 1));
+    for (let index = 0; index < items.length; index += safeChunkSize) {
+        const chunk = items.slice(index, index + safeChunkSize);
+        const chunkResults = await Promise.allSettled(chunk.map((item, chunkIndex) => mapper(item, index + chunkIndex)));
+        settled.push(...chunkResults);
+    }
+    return settled;
+}
+
 const IS_TEACHER_NO_ARG_ABI = {
     type: "function",
     name: "_isTeacher",
@@ -602,6 +613,12 @@ class Contracts_MetaMask {
     isAppleMobileDevice() {
         if (typeof navigator === "undefined") return false;
         return /iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+    }
+
+    getQuizReadChunkSize() {
+        if (this.isAppleMobileDevice()) return 3;
+        if (this.isMobileDevice()) return 4;
+        return 8;
     }
 
     async copyTextToClipboard(value) {
@@ -2536,8 +2553,11 @@ class Contracts_MetaMask {
         const account = options?.preferCachedAccountOnly
             ? this.get_read_account_nonblocking()
             : await this.get_read_account_cached();
-
-        const settled = await Promise.allSettled(refs.map((ref) => this.get_quiz_simple(ref.id, ref.address, account)));
+        const settled = await runSettledInChunks(
+            refs,
+            this.getQuizReadChunkSize(),
+            (ref) => this.get_quiz_simple(ref.id, ref.address, account)
+        );
 
         return settled
             .filter((result) => result.status === "fulfilled")
@@ -2547,8 +2567,10 @@ class Contracts_MetaMask {
     async get_all_quiz_simple_list() {
         const inventory = await this.getQuizInventory();
         const account = this.get_read_account_nonblocking();
-        const settled = await Promise.allSettled(
-            inventory.map((ref) => this.get_quiz_simple(ref.id, ref.address, account))
+        const settled = await runSettledInChunks(
+            inventory,
+            this.getQuizReadChunkSize(),
+            (ref) => this.get_quiz_simple(ref.id, ref.address, account)
         );
 
         return settled
