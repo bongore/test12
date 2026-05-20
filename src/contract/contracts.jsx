@@ -1117,6 +1117,23 @@ class Contracts_MetaMask {
         return [];
     }
 
+    async getConnectedWriteAccount() {
+        let account = await this.get_read_account_cached();
+        if (account) {
+            setReadAccountCacheValue(account);
+            return account;
+        }
+
+        const connectedAccounts = await this.ensure_wallet_connected();
+        account = Array.isArray(connectedAccounts) && connectedAccounts[0]
+            ? String(connectedAccounts[0])
+            : "";
+        if (account) {
+            setReadAccountCacheValue(account);
+        }
+        return account;
+    }
+
     async wait_for_amoy_confirmation(provider, attempts = 8, delayMs = 600) {
         for (let attempt = 0; attempt < attempts; attempt += 1) {
             const chainId = await this.read_chain_id_with_provider(provider);
@@ -1628,11 +1645,16 @@ class Contracts_MetaMask {
     async add_quiz_reward_delta(id, deltaRewardTft, respondentLimit, setShow, sourceAddress = "") {
         if (setShow) setShow(true);
         try {
-            if (!ethereum) {
+            const provider = await this.getEthereumProviderReady();
+            if (!provider) {
                 throw new Error("ethereum_not_found");
             }
+            const onAmoy = await this.ensure_amoy_network();
+            if (!onAmoy) {
+                throw new Error("amoy_network_unavailable");
+            }
 
-            const account = await this.get_address();
+            const account = await this.getConnectedWriteAccount();
             if (!account) {
                 throw new Error("wallet_not_connected");
             }
@@ -1652,7 +1674,7 @@ class Contracts_MetaMask {
             const requiredAmount = rewardDeltaWei * BigInt(studentLimit);
             let approvalHash = null;
             let approvalReceipt = null;
-            const approval = await token.read.allowance({ account, args: [account, targetQuizAddress] });
+            const approval = await this.readTokenAllowance(account, targetQuizAddress);
 
             if (approval < requiredAmount) {
                 approvalHash = await this.approve(account, requiredAmount, targetQuizAddress);
@@ -1689,11 +1711,16 @@ class Contracts_MetaMask {
     async reduce_quiz_reward(id, newRewardTft, setShow, sourceAddress = "") {
         if (setShow) setShow(true);
         try {
-            if (!ethereum) {
+            const provider = await this.getEthereumProviderReady();
+            if (!provider) {
                 throw new Error("ethereum_not_found");
             }
+            const onAmoy = await this.ensure_amoy_network();
+            if (!onAmoy) {
+                throw new Error("amoy_network_unavailable");
+            }
 
-            const account = await this.get_address();
+            const account = await this.getConnectedWriteAccount();
             if (!account) {
                 throw new Error("wallet_not_connected");
             }
@@ -2103,8 +2130,12 @@ class Contracts_MetaMask {
             if (!provider) {
                 throw new Error("ethereum_not_found");
             }
+            const onAmoy = await this.ensure_amoy_network();
+            if (!onAmoy) {
+                throw new Error("amoy_network_unavailable");
+            }
 
-            const account = await this.get_address();
+            const account = await this.getConnectedWriteAccount();
             if (!account) {
                 throw new Error("wallet_not_connected");
             }
@@ -2169,17 +2200,10 @@ class Contracts_MetaMask {
                 throw new Error("amoy_network_unavailable");
             }
 
-            let account = await this.get_read_account_cached();
-            if (!account) {
-                const connectedAccounts = await this.ensure_wallet_connected();
-                account = Array.isArray(connectedAccounts) && connectedAccounts[0]
-                    ? String(connectedAccounts[0])
-                    : "";
-            }
+            const account = await this.getConnectedWriteAccount();
             if (!account) {
                 throw new Error("wallet_not_connected");
             }
-            setReadAccountCacheValue(account);
 
             setShow(true);
             setContent("書き込み中...");

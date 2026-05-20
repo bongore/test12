@@ -146,4 +146,54 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
         expect(contract._save_answer).toHaveBeenCalledWith("0x999", 2, "A", "");
         expect(contract.waitForReceiptWithRetry).toHaveBeenCalledWith("0xhash");
     });
+
+    test("edit_quiz uses the connected write account and amoy preflight", async () => {
+        const contract = new Contracts_MetaMask();
+        contract.getEthereumProviderReady = jest.fn().mockResolvedValue({});
+        contract.ensure_amoy_network = jest.fn().mockResolvedValue(true);
+        contract.getConnectedWriteAccount = jest.fn().mockResolvedValue("0x777");
+        contract._edit_quiz = jest.fn().mockResolvedValue("0xedit");
+
+        mockWaitForTransactionReceipt.mockResolvedValueOnce({ status: "success" });
+
+        const receipt = await contract.edit_quiz(1, "0xowner", "t", "e", "u", "c", "2026-05-20T10:00", "2026-05-20T11:00", jest.fn(), "");
+
+        expect(contract.ensure_amoy_network).toHaveBeenCalled();
+        expect(contract._edit_quiz).toHaveBeenCalledWith(
+            "0x777",
+            1,
+            "0xowner",
+            "t",
+            "e",
+            "u",
+            "c",
+            "2026-05-20T10:00",
+            "2026-05-20T11:00",
+            ""
+        );
+        expect(receipt).toEqual({ status: "success" });
+    });
+
+    test("add_quiz_reward_delta reads allowance via public read helper", async () => {
+        const contract = new Contracts_MetaMask();
+        contract.getEthereumProviderReady = jest.fn().mockResolvedValue({});
+        contract.ensure_amoy_network = jest.fn().mockResolvedValue(true);
+        contract.getConnectedWriteAccount = jest.fn().mockResolvedValue("0x777");
+        contract.readTokenAllowance = jest.fn().mockResolvedValue(0n);
+        contract.approve = jest.fn().mockResolvedValue("0xapprove");
+        contract._investment_to_quiz = jest.fn().mockResolvedValue("0xinvest");
+
+        mockWaitForTransactionReceipt
+            .mockResolvedValueOnce({ status: "success" })
+            .mockResolvedValueOnce({ status: "success" });
+
+        await contract.add_quiz_reward_delta(2, "10", 5, jest.fn(), "");
+
+        expect(contract.readTokenAllowance).toHaveBeenCalledWith(
+            "0x777",
+            "0xeb196c161EFA30939f78170694bb908E17fd1479"
+        );
+        expect(contract.approve).toHaveBeenCalled();
+        expect(contract._investment_to_quiz).toHaveBeenCalled();
+    });
 });
