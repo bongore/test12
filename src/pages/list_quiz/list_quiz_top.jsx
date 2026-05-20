@@ -216,7 +216,6 @@ function List_quiz_top(props) {
         if (!access.address) return;
         if (quiz_sum == null) return;
         now_numRef.current = quizSumRef.current || Number(quiz_sum) || 0;
-        Set_quiz_list([]);
         setListRefreshKey((current) => current + 1);
     }, [access.address, quiz_sum]);
 

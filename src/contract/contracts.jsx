@@ -2464,14 +2464,31 @@ class Contracts_MetaMask {
         }
 
         try {
-            const result = await publicClient.readContract({
-                account,
+            const readQuizSimple = async (readAccount) => await publicClient.readContract({
+                account: readAccount,
                 address: targetQuizAddress,
                 abi: quiz_abi,
                 functionName: "get_quiz_simple",
                 args: [id],
             });
+
+            let result;
+            try {
+                result = await readQuizSimple(account);
+            } catch (firstError) {
+                if (!account) throw firstError;
+                result = await readQuizSimple(undefined);
+            }
             const normalized = toQuizSimpleArray(result);
+            if (
+                !String(normalized?.[1] || "").trim()
+                && !String(normalized?.[2] || "").trim()
+                && Number(normalized?.[5] || 0) === 0
+                && Number(normalized?.[6] || 0) === 0
+                && Number(normalized?.[7] || 0) === 0
+            ) {
+                throw new Error("quiz_simple_empty_payload");
+            }
             this.setQuizSimpleCacheEntry(targetQuizAddress, id, account || "public", normalized);
             return withQuizSourceMetadata(normalized, targetQuizAddress);
         } catch (error) {
@@ -2479,7 +2496,7 @@ class Contracts_MetaMask {
             if (cachedQuiz) {
                 return withQuizSourceMetadata(cachedQuiz, targetQuizAddress);
             }
-            return withQuizSourceMetadata([Number(id), "", "", "", "", 0, 0, 0, 0, 0, 0, false], this.resolveQuizAddress(sourceAddress));
+            throw error;
         }
     }
 

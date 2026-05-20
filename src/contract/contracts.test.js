@@ -52,6 +52,8 @@ jest.mock("../utils/quizCorrectAnswerStore", () => ({
 }));
 
 describe("Contracts_MetaMask legacy quiz settlement", () => {
+    const { publicClient } = require("./contractClients");
+
     beforeEach(() => {
         jest.clearAllMocks();
         mockWaitForTransactionReceipt.mockResolvedValue({ status: "success" });
@@ -259,5 +261,15 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
             700
         );
         expect(account).toBe("0xmobile");
+    });
+
+    test("get_quiz_simple throws instead of returning empty placeholder when read fails without cache", async () => {
+        const contract = new Contracts_MetaMask();
+        contract.get_read_account_cached = jest.fn().mockResolvedValue("");
+        jest.spyOn(publicClient, "readContract").mockRejectedValueOnce(new Error("rpc_failed"));
+
+        await expect(contract.get_quiz_simple(1, "0xeb196c161EFA30939f78170694bb908E17fd1479"))
+            .rejects
+            .toThrow("rpc_failed");
     });
 });
