@@ -941,14 +941,27 @@ class Contracts_MetaMask {
             throw new Error("ethereum_not_found");
         }
 
-        return await walletClient.writeContract({
-            account,
-            address,
-            abi,
-            functionName,
-            args,
-            chain: amoy,
-        });
+        let lastError = null;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            try {
+                return await walletClient.writeContract({
+                    account,
+                    address,
+                    abi,
+                    functionName,
+                    args,
+                    chain: amoy,
+                });
+            } catch (error) {
+                lastError = error;
+                if (!isProviderLimitError(error) || attempt >= 2) {
+                    throw error;
+                }
+                await sleep(700 * (attempt + 1));
+            }
+        }
+
+        throw lastError || new Error("write_contract_failed");
     }
 
     async add_watch_asset(address, symbol, decimals = 18) {

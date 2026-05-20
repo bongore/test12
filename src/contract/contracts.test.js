@@ -2,10 +2,13 @@ import { Contracts_MetaMask } from "./contracts";
 
 const mockWaitForTransactionReceipt = jest.fn();
 const mockAllowance = jest.fn();
+const mockWriteContract = jest.fn();
 
 jest.mock("./contractClients", () => ({
     ethereum: {},
-    walletClient: null,
+    walletClient: {
+        writeContract: (...args) => mockWriteContract(...args),
+    },
     publicClient: {
         waitForTransactionReceipt: (...args) => mockWaitForTransactionReceipt(...args),
         readContract: jest.fn(),
@@ -49,6 +52,7 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
         jest.clearAllMocks();
         mockWaitForTransactionReceipt.mockResolvedValue({ status: "success" });
         mockAllowance.mockResolvedValue(0n);
+        mockWriteContract.mockResolvedValue("0xwrite");
     });
 
     test("settle_quiz_rewards_manually sends payout to the original quiz contract address", async () => {
@@ -209,5 +213,24 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
 
         expect(result).toEqual(["0xabc"]);
         expect(provider.request).toHaveBeenCalledTimes(2);
+    });
+
+    test("writeContractDirect retries provider limit errors from wallet writes", async () => {
+        const contract = new Contracts_MetaMask();
+        contract.getEthereumProviderReady = jest.fn().mockResolvedValue({});
+        mockWriteContract
+            .mockRejectedValueOnce(new Error("Request exceeds defined limit."))
+            .mockResolvedValueOnce("0xretry");
+
+        const hash = await contract.writeContractDirect({
+            account: "0xabc",
+            address: "0xdef",
+            abi: [],
+            functionName: "save_answer",
+            args: [1, "A"],
+        });
+
+        expect(hash).toBe("0xretry");
+        expect(mockWriteContract).toHaveBeenCalledTimes(2);
     });
 });
