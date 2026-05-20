@@ -112,10 +112,27 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
         await expect(contract.get_address()).resolves.toBe("0xdef");
     });
 
+    test("ensure_wallet_connected reuses cached account without extra provider requests", async () => {
+        const contract = new Contracts_MetaMask();
+        const provider = {
+            request: jest.fn().mockResolvedValue(["0xaaa"]),
+        };
+
+        contract.getEthereumProviderReady = jest.fn().mockResolvedValue(provider);
+        await contract.request_wallet_access();
+
+        provider.request.mockClear();
+        const accounts = await contract.ensure_wallet_connected();
+
+        expect(accounts).toEqual(["0xaaa"]);
+        expect(provider.request).not.toHaveBeenCalled();
+    });
+
     test("create_answer uses the account returned by ensure_wallet_connected", async () => {
         const contract = new Contracts_MetaMask();
         contract.getEthereumProviderReady = jest.fn().mockResolvedValue({});
         contract.ensure_amoy_network = jest.fn().mockResolvedValue(true);
+        contract.get_read_account_cached = jest.fn().mockResolvedValue("");
         contract.ensure_wallet_connected = jest.fn().mockResolvedValue(["0x999"]);
         contract._save_answer = jest.fn().mockResolvedValue("0xhash");
         contract.waitForReceiptWithRetry = jest.fn().mockResolvedValue({ status: "success", transactionHash: "0xhash" });

@@ -58,6 +58,9 @@ const READ_ACCOUNT_CACHE_TTL_MS = 8 * 1000;
 const QUIZ_INVENTORY_CACHE_TTL_MS = 20 * 1000;
 const QUIZ_INVENTORY_PERSIST_TTL_MS = 90 * 1000;
 const QUIZ_SIMPLE_CACHE_TTL_MS = 45 * 1000;
+const WALLET_CONNECTION_CACHE_TTL_MS = 10 * 1000;
+const CHAIN_ID_CACHE_TTL_MS = 8 * 1000;
+const AMOY_READY_CACHE_TTL_MS = 10 * 1000;
 
 let studentListCacheMemory = null;
 let studentListCacheFetchedAt = 0;
@@ -73,10 +76,27 @@ let quizInventoryCacheMemory = null;
 let quizInventoryCacheFetchedAt = 0;
 let quizInventoryCachePromise = null;
 const quizSimpleCacheMemory = new Map();
+let walletConnectionReadyUntil = 0;
+let chainIdCacheValue = null;
+let chainIdCacheFetchedAt = 0;
+let amoyReadyUntil = 0;
 
 function setReadAccountCacheValue(account = "") {
     readAccountCacheValue = account ? String(account) : "";
     readAccountCacheFetchedAt = Date.now();
+    walletConnectionReadyUntil = readAccountCacheValue ? Date.now() + WALLET_CONNECTION_CACHE_TTL_MS : 0;
+}
+
+function setChainIdCacheValue(chainId = null) {
+    chainIdCacheValue = Number.isFinite(Number(chainId)) ? Number(chainId) : null;
+    chainIdCacheFetchedAt = Date.now();
+    amoyReadyUntil = chainIdCacheValue === amoy.id ? Date.now() + AMOY_READY_CACHE_TTL_MS : 0;
+}
+
+function getCachedChainId() {
+    if (chainIdCacheValue == null) return null;
+    if (Date.now() - chainIdCacheFetchedAt > CHAIN_ID_CACHE_TTL_MS) return null;
+    return chainIdCacheValue;
 }
 
 function readScoreCache() {
@@ -986,10 +1006,14 @@ class Contracts_MetaMask {
             if (chainIdRaw == null || chainIdRaw === "") return null;
             if (typeof chainIdRaw === "string" && /^0x/i.test(chainIdRaw)) {
                 const parsedHex = Number.parseInt(chainIdRaw, 16);
-                return Number.isFinite(parsedHex) ? parsedHex : null;
+                const nextChainId = Number.isFinite(parsedHex) ? parsedHex : null;
+                setChainIdCacheValue(nextChainId);
+                return nextChainId;
             }
             const parsedNumber = Number(chainIdRaw);
-            return Number.isFinite(parsedNumber) ? parsedNumber : null;
+            const nextChainId = Number.isFinite(parsedNumber) ? parsedNumber : null;
+            setChainIdCacheValue(nextChainId);
+            return nextChainId;
         } catch (error) {
             console.error("Failed to read chain id with provider", error);
             return null;
@@ -1052,6 +1076,10 @@ class Contracts_MetaMask {
     }
 
     async ensure_wallet_connected() {
+        if (readAccountCacheValue && Date.now() < walletConnectionReadyUntil) {
+            return [readAccountCacheValue];
+        }
+
         const provider = await this.getEthereumProviderReady();
         if (!provider) {
             return [];
@@ -1170,26 +1198,41 @@ class Contracts_MetaMask {
 
         await this.ensure_wallet_connected();
 
-        const currentChainId = await this.read_chain_id_with_provider(provider);
+        if (Date.now() < amoyReadyUntil) {
+            return true;
+        }
+
+        const currentChainId = getCachedChainId() ?? await this.read_chain_id_with_provider(provider);
         if (currentChainId === amoy.id) {
+            amoyReadyUntil = Date.now() + AMOY_READY_CACHE_TTL_MS;
             return true;
         }
 
         try {
-            return await this.change_network();
+            const changed = await this.change_network();
+            if (changed) {
+                amoyReadyUntil = Date.now() + AMOY_READY_CACHE_TTL_MS;
+            }
+            return changed;
         } catch (error) {
             if (error?.code === 4902 || String(error?.message || "").includes("4902") || this.shouldRefreshAmoyRpc(error)) {
                 const recheckedChainId = await this.read_chain_id_with_provider(provider);
                 if (recheckedChainId === amoy.id) {
+                    amoyReadyUntil = Date.now() + AMOY_READY_CACHE_TTL_MS;
                     return true;
                 }
                 await this.add_network();
                 const afterAddConfirmation = await this.wait_for_amoy_confirmation(provider, 6, 700);
                 if (afterAddConfirmation === amoy.id) {
+                    amoyReadyUntil = Date.now() + AMOY_READY_CACHE_TTL_MS;
                     return true;
                 }
                 await this.change_network();
-                return (await this.wait_for_amoy_confirmation(provider, 6, 700)) === amoy.id;
+                const confirmed = (await this.wait_for_amoy_confirmation(provider, 6, 700)) === amoy.id;
+                if (confirmed) {
+                    amoyReadyUntil = Date.now() + AMOY_READY_CACHE_TTL_MS;
+                }
+                return confirmed;
             }
             if (error?.code === 4001) {
                 return false;
@@ -2126,10 +2169,13 @@ class Contracts_MetaMask {
                 throw new Error("amoy_network_unavailable");
             }
 
-            const connectedAccounts = await this.ensure_wallet_connected();
-            let account = Array.isArray(connectedAccounts) && connectedAccounts[0]
-                ? String(connectedAccounts[0])
-                : await this.get_read_account_cached(true);
+            let account = await this.get_read_account_cached();
+            if (!account) {
+                const connectedAccounts = await this.ensure_wallet_connected();
+                account = Array.isArray(connectedAccounts) && connectedAccounts[0]
+                    ? String(connectedAccounts[0])
+                    : "";
+            }
             if (!account) {
                 throw new Error("wallet_not_connected");
             }
