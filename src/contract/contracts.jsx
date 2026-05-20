@@ -649,6 +649,25 @@ class Contracts_MetaMask {
         throw lastError;
     }
 
+    async ensureWalletWriteReady(provider, fallbackAccount = "") {
+        const hasFreshCachedAccount = Boolean(readAccountCacheValue) && Date.now() < walletConnectionReadyUntil;
+        if (hasFreshCachedAccount && !this.isMobileDevice()) {
+            return readAccountCacheValue;
+        }
+
+        const accounts = await this.providerRequestWithRetry(provider, { method: "eth_requestAccounts" }, 2, 700);
+        const nextAccount = Array.isArray(accounts) && accounts[0]
+            ? String(accounts[0])
+            : String(fallbackAccount || "");
+        if (nextAccount) {
+            setReadAccountCacheValue(nextAccount);
+        }
+        if (this.isMobileDevice()) {
+            await sleep(250);
+        }
+        return nextAccount;
+    }
+
     getAccessControlAddresses() {
         return [class_room_address, quiz_address, ...(legacy_quiz_addresses || [])].filter(
             (address, index, list) => Boolean(address) && list.indexOf(address) === index
@@ -946,11 +965,16 @@ class Contracts_MetaMask {
             throw new Error("ethereum_not_found");
         }
 
+        const writeAccount = await this.ensureWalletWriteReady(provider, account);
+        if (!writeAccount) {
+            throw new Error("wallet_not_connected");
+        }
+
         let lastError = null;
         for (let attempt = 0; attempt < 3; attempt += 1) {
             try {
                 const writeConfig = {
-                    account,
+                    account: writeAccount,
                     address,
                     abi,
                     functionName,

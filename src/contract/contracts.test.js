@@ -227,6 +227,7 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
     test("writeContractDirect retries provider limit errors from wallet writes", async () => {
         const contract = new Contracts_MetaMask();
         contract.getEthereumProviderReady = jest.fn().mockResolvedValue({});
+        contract.ensureWalletWriteReady = jest.fn().mockResolvedValue("0xabc");
         mockWriteContract
             .mockRejectedValueOnce(new Error("Request exceeds defined limit."))
             .mockResolvedValueOnce("0xretry");
@@ -241,5 +242,22 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
 
         expect(hash).toBe("0xretry");
         expect(mockWriteContract).toHaveBeenCalledTimes(2);
+    });
+
+    test("ensureWalletWriteReady explicitly requests accounts on mobile", async () => {
+        const contract = new Contracts_MetaMask();
+        const provider = { request: jest.fn().mockResolvedValue(["0xmobile"]) };
+        contract.isMobileDevice = jest.fn().mockReturnValue(true);
+        contract.providerRequestWithRetry = jest.fn().mockResolvedValue(["0xmobile"]);
+
+        const account = await contract.ensureWalletWriteReady(provider, "");
+
+        expect(contract.providerRequestWithRetry).toHaveBeenCalledWith(
+            provider,
+            { method: "eth_requestAccounts" },
+            2,
+            700
+        );
+        expect(account).toBe("0xmobile");
     });
 });
