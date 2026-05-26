@@ -376,54 +376,67 @@ function Token_grant_panel(props) {
                     await persistGrantRecordToServer(item.address, target.assetKey, pendingPayload);
                 }
 
-                const recipientResults = await props.cont.grantStudentStarterTokens([item.address], {
-                    pol: item.shouldGrant.POL ? requestedAmounts.POL : 0,
-                    tft: item.shouldGrant.TFT ? requestedAmounts.TFT : 0,
-                    ttt: item.shouldGrant.TTT ? requestedAmounts.TTT : 0,
-                });
-                results.push(...recipientResults);
-                const settledAssetKeys = new Set();
+                try {
+                    const recipientResults = await props.cont.grantStudentStarterTokens([item.address], {
+                        pol: item.shouldGrant.POL ? requestedAmounts.POL : 0,
+                        tft: item.shouldGrant.TFT ? requestedAmounts.TFT : 0,
+                        ttt: item.shouldGrant.TTT ? requestedAmounts.TTT : 0,
+                    });
+                    results.push(...recipientResults);
+                    const settledAssetKeys = new Set();
 
-                for (const result of recipientResults) {
-                    const assetKey =
-                        result.asset === "POL"
-                            ? TOKEN_GRANT_KEYS.POL
-                            : result.asset === "TFT"
-                                ? TOKEN_GRANT_KEYS.TFT
-                                : TOKEN_GRANT_KEYS.TTT;
-                    settledAssetKeys.add(assetKey);
+                    for (const result of recipientResults) {
+                        const assetKey =
+                            result.asset === "POL"
+                                ? TOKEN_GRANT_KEYS.POL
+                                : result.asset === "TFT"
+                                    ? TOKEN_GRANT_KEYS.TFT
+                                    : TOKEN_GRANT_KEYS.TTT;
+                        settledAssetKeys.add(assetKey);
 
-                    const payload = {
-                        grantedAt: new Date().toISOString(),
-                        amount: result.amount,
-                        txHash: result.hash,
-                        source: sourceLabel,
-                        confirmed: result.confirmed !== false,
-                    };
-
-                    if (result.confirmed !== false) {
-                        markGrantedToken(item.address, assetKey, payload);
-                        await persistGrantRecordToServer(item.address, assetKey, payload);
-                    } else {
-                        const clearPayload = {
+                        const payload = {
                             grantedAt: new Date().toISOString(),
                             amount: result.amount,
+                            txHash: result.hash,
+                            source: sourceLabel,
+                            confirmed: result.confirmed !== false,
+                        };
+
+                        if (result.confirmed !== false) {
+                            markGrantedToken(item.address, assetKey, payload);
+                            await persistGrantRecordToServer(item.address, assetKey, payload);
+                        } else {
+                            const clearPayload = {
+                                grantedAt: new Date().toISOString(),
+                                amount: result.amount,
+                                source: `${sourceLabel}_rollback_pending`,
+                            };
+                            clearGrantedToken(item.address, assetKey, clearPayload);
+                            await removeGrantRecordFromServer(item.address, assetKey, clearPayload);
+                        }
+                    }
+
+                    for (const target of pendingTargets) {
+                        if (settledAssetKeys.has(target.assetKey)) continue;
+                        const clearPayload = {
+                            grantedAt: new Date().toISOString(),
+                            amount: target.amount,
                             source: `${sourceLabel}_rollback_pending`,
                         };
-                        clearGrantedToken(item.address, assetKey, clearPayload);
-                        await removeGrantRecordFromServer(item.address, assetKey, clearPayload);
+                        clearGrantedToken(item.address, target.assetKey, clearPayload);
+                        await removeGrantRecordFromServer(item.address, target.assetKey, clearPayload);
                     }
-                }
-
-                for (const target of pendingTargets) {
-                    if (settledAssetKeys.has(target.assetKey)) continue;
-                    const clearPayload = {
-                        grantedAt: new Date().toISOString(),
-                        amount: target.amount,
-                        source: `${sourceLabel}_rollback_pending`,
-                    };
-                    clearGrantedToken(item.address, target.assetKey, clearPayload);
-                    await removeGrantRecordFromServer(item.address, target.assetKey, clearPayload);
+                } catch (error) {
+                    for (const target of pendingTargets) {
+                        const clearPayload = {
+                            grantedAt: new Date().toISOString(),
+                            amount: target.amount,
+                            source: `${sourceLabel}_rollback_pending`,
+                        };
+                        clearGrantedToken(item.address, target.assetKey, clearPayload);
+                        await removeGrantRecordFromServer(item.address, target.assetKey, clearPayload);
+                    }
+                    throw error;
                 }
             }
 

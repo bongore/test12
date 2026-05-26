@@ -42,6 +42,10 @@ function buildChunkTxMap(addresses = [], receipts = []) {
     return txMap;
 }
 
+function isRewardSettlementPending(row) {
+    return Boolean(row?.submitted) && Number(row?.state || 0) === 3;
+}
+
 function Investment_to_quiz() {
     const navigate = useNavigate();
     const location = useLocation();
@@ -127,8 +131,8 @@ function Investment_to_quiz() {
     };
 
     const handleExecute = async () => {
-        const submittedStudentAddresses = studentRows
-            .filter((row) => row.submitted)
+        const pendingSubmittedRows = studentRows.filter((row) => isRewardSettlementPending(row));
+        const submittedStudentAddresses = pendingSubmittedRows
             .map((row) => row.address);
 
         if (gradingMode === "auto" && isNotPayingOut === "false" && !autoAnswer.trim()) {
@@ -137,11 +141,16 @@ function Investment_to_quiz() {
         }
 
         const correctStudents = studentRows
-            .filter((row) => row.submitted && gradingMap[row.address] === "correct")
+            .filter((row) => isRewardSettlementPending(row) && gradingMap[row.address] === "correct")
             .map((row) => row.address);
         const incorrectStudents = studentRows
-            .filter((row) => row.submitted && gradingMap[row.address] === "incorrect")
+            .filter((row) => isRewardSettlementPending(row) && gradingMap[row.address] === "incorrect")
             .map((row) => row.address);
+
+        if (isNotPayingOut === "false" && pendingSubmittedRows.length === 0) {
+            alert("未確定の回答がありません。すでに報酬配布または不正解確定が完了した回答には再送しません。");
+            return;
+        }
 
         if (gradingMode === "manual" && isNotPayingOut === "false" && correctStudents.length === 0 && incorrectStudents.length === 0) {
             alert("手動判定で払い出しを行う場合は、少なくとも1件を正解または不正解に判定してください。");
@@ -226,8 +235,11 @@ function Investment_to_quiz() {
                     );
                     const rewardEntries = (Array.isArray(refreshedRows) ? refreshedRows : [])
                         .filter((row) => {
-                            if (gradingMode === "auto") return row.submitted;
-                            return correctStudents.includes(row.address) || incorrectStudents.includes(row.address);
+                            if (gradingMode === "auto") {
+                                return submittedStudentAddresses.includes(row.address) && [1, 2].includes(Number(row.state || 0));
+                            }
+                            return (correctStudents.includes(row.address) || incorrectStudents.includes(row.address))
+                                && [1, 2].includes(Number(row.state || 0));
                         })
                         .map((row) => {
                             const normalizedStudent = normalizeAddress(row.address);
@@ -258,7 +270,9 @@ function Investment_to_quiz() {
                                 mode: gradingMode,
                                 contractTypeLabel,
                                 paidAt: new Date().toISOString(),
-                                confirmed: Boolean(txHash) || rewardTft === 0,
+                                confirmed: row.state === 2
+                                    ? rewardTft > 0
+                                    : row.state === 1,
                             };
                         });
                     if (rewardEntries.length > 0) {

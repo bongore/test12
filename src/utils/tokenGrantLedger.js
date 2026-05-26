@@ -1,6 +1,7 @@
 import { fetchLiveSignalJson } from "./liveSignalApi";
 
 const STORAGE_KEY = "web3_quiz_token_grant_ledger_v1";
+const PENDING_GRANT_TTL_MS = 10 * 60 * 1000;
 
 const TOKEN_GRANT_KEYS = {
     POL: "answer_pol",
@@ -47,6 +48,12 @@ function normalizeGrantRecord(record = null) {
         active: record.active !== false,
         history,
     };
+}
+
+function getRecordTimestamp(record) {
+    if (!record?.grantedAt) return 0;
+    const timestamp = new Date(record.grantedAt).getTime();
+    return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
 function normalizeLedger(rawLedger = {}) {
@@ -193,8 +200,17 @@ function isGrantActive(record) {
     return Boolean(record?.active !== false && record?.confirmed !== false && record?.grantedAt);
 }
 
+function isGrantPending(record) {
+    if (!record || record?.active === false || record?.confirmed !== false || !record?.grantedAt) {
+        return false;
+    }
+    const grantedAt = getRecordTimestamp(record);
+    if (!grantedAt) return false;
+    return (Date.now() - grantedAt) <= PENDING_GRANT_TTL_MS;
+}
+
 function isGrantReserved(record) {
-    return Boolean(record?.active !== false && record?.grantedAt);
+    return Boolean(isGrantActive(record) || isGrantPending(record));
 }
 
 function hasGrantedToken(address, assetKey) {

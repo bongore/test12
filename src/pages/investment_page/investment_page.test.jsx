@@ -41,6 +41,7 @@ jest.mock("react-router-dom", () => {
 
 describe("Investment_page", () => {
     const confirmSpy = jest.spyOn(window, "confirm").mockImplementation(() => true);
+    const alertSpy = jest.spyOn(window, "alert").mockImplementation(() => {});
 
     beforeEach(() => {
         jest.clearAllMocks();
@@ -68,10 +69,10 @@ describe("Investment_page", () => {
         mockContract.get_student_answer_detail.mockResolvedValue({
             answerText: "1/6",
             submitted: true,
-            state: 2,
+            state: 3,
             answerTime: 1710000000,
             reward: 0,
-            result: true,
+            result: false,
         });
         mockContract.settle_quiz_rewards_manually.mockResolvedValue({
             res: {
@@ -91,6 +92,7 @@ describe("Investment_page", () => {
 
     afterAll(() => {
         confirmSpy.mockRestore();
+        alertSpy.mockRestore();
     });
 
     test("shows legacy/current contract info and confirms destination address before payout", async () => {
@@ -114,6 +116,7 @@ describe("Investment_page", () => {
         await waitFor(() => {
             expect(screen.getByRole("radio", { name: /採点結果を確定して報酬を払い出す/ })).toBeChecked();
         });
+        fireEvent.click(screen.getByRole("button", { name: "正解にする" }));
         fireEvent.click(screen.getByRole("button", { name: "🚀 採点結果を反映する" }));
 
         await waitFor(() => {
