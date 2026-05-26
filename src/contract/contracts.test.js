@@ -105,6 +105,7 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
         const students = Array.from({ length: 16 }, (_, index) => `0x${(index + 1).toString(16).padStart(40, "0")}`);
 
         contract.getConnectedWriteAccount = jest.fn().mockResolvedValue("0xd5670D7B88411d03741680451C2ea630B68C6944");
+        contract.buildAutoRewardChunks = jest.fn().mockResolvedValue([students.slice(0, 15), students.slice(15)]);
         contract._payment_of_reward = jest.fn()
             .mockResolvedValueOnce("0xhash1")
             .mockResolvedValueOnce("0xhash2");
@@ -137,6 +138,64 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
             legacyQuizAddress
         );
         expect(result.payoutHashes).toEqual(["0xhash1", "0xhash2"]);
+    });
+
+    test("buildAutoRewardChunks splits payout groups when estimated fee is too high", async () => {
+        const contract = new Contracts_MetaMask();
+        const students = [
+            "0x0000000000000000000000000000000000000001",
+            "0x0000000000000000000000000000000000000002",
+        ];
+
+        mockEstimateContractGas
+            .mockResolvedValueOnce(2000000n)
+            .mockResolvedValueOnce(200000n)
+            .mockResolvedValueOnce(200000n);
+        mockEstimateFeesPerGas.mockResolvedValue({
+            maxFeePerGas: 30_000_000_000n,
+            maxPriorityFeePerGas: 1_000_000_000n,
+        });
+
+        const chunks = await contract.buildAutoRewardChunks(
+            "0xd5670D7B88411d03741680451C2ea630B68C6944",
+            3,
+            "1/6",
+            students,
+            "0xeb196c161EFA30939f78170694bb908E17fd1479"
+        );
+
+        expect(chunks).toEqual([[students[0]], [students[1]]]);
+    });
+
+    test("buildManualRewardChunks splits payout groups when estimated fee is too high", async () => {
+        const contract = new Contracts_MetaMask();
+        const correctStudents = [
+            "0x0000000000000000000000000000000000000001",
+            "0x0000000000000000000000000000000000000002",
+        ];
+
+        mockEstimateContractGas
+            .mockResolvedValueOnce(2000000n)
+            .mockResolvedValueOnce(200000n)
+            .mockResolvedValueOnce(200000n);
+        mockEstimateFeesPerGas.mockResolvedValue({
+            maxFeePerGas: 30_000_000_000n,
+            maxPriorityFeePerGas: 1_000_000_000n,
+        });
+
+        const chunks = await contract.buildManualRewardChunks(
+            "0xd5670D7B88411d03741680451C2ea630B68C6944",
+            3,
+            "1/6",
+            correctStudents,
+            [],
+            "0xeb196c161EFA30939f78170694bb908E17fd1479"
+        );
+
+        expect(chunks).toEqual([
+            { correctStudents: [correctStudents[0]], incorrectStudents: [] },
+            { correctStudents: [correctStudents[1]], incorrectStudents: [] },
+        ]);
     });
 
     test("settle_quiz_rewards_manually does not add extra investment tx when additional reward is zero", async () => {

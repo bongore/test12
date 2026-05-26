@@ -62,6 +62,8 @@ const QUIZ_SIMPLE_CACHE_TTL_MS = 45 * 1000;
 const WALLET_CONNECTION_CACHE_TTL_MS = 10 * 1000;
 const CHAIN_ID_CACHE_TTL_MS = 8 * 1000;
 const AMOY_READY_CACHE_TTL_MS = 10 * 1000;
+const MAX_PAYOUT_GAS_PER_TX = 900000n;
+const MAX_PAYOUT_FEE_PER_TX_WEI = parseEther("0.05");
 
 let studentListCacheMemory = null;
 let studentListCacheFetchedAt = 0;
@@ -1974,6 +1976,95 @@ class Contracts_MetaMask {
         }
     }
 
+    async estimateWriteCost(writeConfig) {
+        const gas = await publicClient.estimateContractGas(writeConfig);
+        const fees = await publicClient.estimateFeesPerGas({ chain: amoy });
+        const maxFeePerGas = BigInt(fees?.maxFeePerGas || 0n);
+        return {
+            gas,
+            maxFeePerGas,
+            totalFeeWei: gas * maxFeePerGas,
+        };
+    }
+
+    async buildAutoRewardChunks(account, quizId, answer, students, sourceAddress = "") {
+        const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
+        const normalizedStudents = Array.from(new Set((students || []).filter(Boolean)));
+
+        const splitChunk = async (studentChunk) => {
+            if (studentChunk.length <= 1) {
+                return [studentChunk];
+            }
+
+            try {
+                const estimate = await this.estimateWriteCost({
+                    account,
+                    address: targetQuizAddress,
+                    abi: quiz_abi,
+                    functionName: "payment_of_reward",
+                    args: [quizId, String(answer || ""), studentChunk],
+                    chain: amoy,
+                });
+                if (estimate.gas <= MAX_PAYOUT_GAS_PER_TX && estimate.totalFeeWei <= MAX_PAYOUT_FEE_PER_TX_WEI) {
+                    return [studentChunk];
+                }
+            } catch (error) {
+                console.log("auto reward chunk estimate fallback", error);
+            }
+
+            const middle = Math.ceil(studentChunk.length / 2);
+            const left = await splitChunk(studentChunk.slice(0, middle));
+            const right = await splitChunk(studentChunk.slice(middle));
+            return [...left, ...right];
+        };
+
+        return await splitChunk(normalizedStudents);
+    }
+
+    async buildManualRewardChunks(account, quizId, confirmAnswer, correctStudents, incorrectStudents, sourceAddress = "") {
+        const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
+        const combinedEntries = [
+            ...(correctStudents || []).filter(Boolean).map((address) => ({ address, correct: true })),
+            ...(incorrectStudents || []).filter(Boolean).map((address) => ({ address, correct: false })),
+        ];
+
+        const splitEntries = async (entryChunk) => {
+            if (entryChunk.length <= 1) {
+                return [entryChunk];
+            }
+
+            const correctChunk = entryChunk.filter((entry) => entry.correct).map((entry) => entry.address);
+            const incorrectChunk = entryChunk.filter((entry) => !entry.correct).map((entry) => entry.address);
+
+            try {
+                const estimate = await this.estimateWriteCost({
+                    account,
+                    address: targetQuizAddress,
+                    abi: [PAYMENT_OF_REWARD_MANUAL_ABI],
+                    functionName: "payment_of_reward_manual",
+                    args: [quizId, String(confirmAnswer || ""), correctChunk, incorrectChunk, false],
+                    chain: amoy,
+                });
+                if (estimate.gas <= MAX_PAYOUT_GAS_PER_TX && estimate.totalFeeWei <= MAX_PAYOUT_FEE_PER_TX_WEI) {
+                    return [entryChunk];
+                }
+            } catch (error) {
+                console.log("manual reward chunk estimate fallback", error);
+            }
+
+            const middle = Math.ceil(entryChunk.length / 2);
+            const left = await splitEntries(entryChunk.slice(0, middle));
+            const right = await splitEntries(entryChunk.slice(middle));
+            return [...left, ...right];
+        };
+
+        const rawChunks = await splitEntries(combinedEntries);
+        return rawChunks.map((entries) => ({
+            correctStudents: entries.filter((entry) => entry.correct).map((entry) => entry.address),
+            incorrectStudents: entries.filter((entry) => !entry.correct).map((entry) => entry.address),
+        }));
+    }
+
     async _adding_reward(account, id, reward, sourceAddress = "") {
         console.log([account, id, reward]);
         try {
@@ -2038,23 +2129,24 @@ class Contracts_MetaMask {
             }
 
             if (normalizedCorrectStudents.length > 0 || normalizedIncorrectStudents.length > 0) {
-                const batchSize = 15;
-                const totalBatchCount = Math.max(
-                    Math.ceil(normalizedCorrectStudents.length / batchSize),
-                    Math.ceil(normalizedIncorrectStudents.length / batchSize),
-                    1
+                const payoutChunks = await this.buildManualRewardChunks(
+                    account,
+                    id,
+                    confirmAnswer,
+                    normalizedCorrectStudents,
+                    normalizedIncorrectStudents,
+                    targetQuizAddress
                 );
 
-                for (let index = 0; index < totalBatchCount; index += 1) {
-                    const correctChunk = normalizedCorrectStudents.slice(index * batchSize, (index + 1) * batchSize);
-                    const incorrectChunk = normalizedIncorrectStudents.slice(index * batchSize, (index + 1) * batchSize);
+                for (let index = 0; index < payoutChunks.length; index += 1) {
+                    const { correctStudents: correctChunk, incorrectStudents: incorrectChunk } = payoutChunks[index];
                     const payoutHash = await this._payment_of_reward_manual(
                         account,
                         id,
                         confirmAnswer,
                         correctChunk,
                         incorrectChunk,
-                        index === totalBatchCount - 1,
+                        index === payoutChunks.length - 1,
                         targetQuizAddress
                     );
                     if (payoutHash) {
@@ -2107,9 +2199,9 @@ class Contracts_MetaMask {
                 throw new Error("wallet_not_connected");
             }
 
-            const batchSize = 15;
-            for (let index = 0; index < normalizedStudents.length; index += batchSize) {
-                const studentChunk = normalizedStudents.slice(index, index + batchSize);
+            const payoutChunks = await this.buildAutoRewardChunks(account, id, answer, normalizedStudents, targetQuizAddress);
+            for (let index = 0; index < payoutChunks.length; index += 1) {
+                const studentChunk = payoutChunks[index];
                 const payoutHash = await this._payment_of_reward(account, id, String(answer || ""), studentChunk, targetQuizAddress);
                 if (!payoutHash) continue;
                 payoutHashes.push(payoutHash);
