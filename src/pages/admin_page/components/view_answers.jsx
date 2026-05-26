@@ -5,6 +5,43 @@ import { keccak256, toHex, encodePacked } from "viem";
 import { getMergedActivityLogs, syncSharedActivityLogs } from "../../../utils/activityLog";
 import { getRewardPayoutEntries, syncRewardPayoutLedgerFromServer } from "../../../utils/rewardPayoutLedger";
 
+const AMOY_EXPLORER_TX_BASE = "https://amoy.polygonscan.com/tx/";
+
+export function buildExplorerTxUrl(txHash) {
+    return txHash ? `${AMOY_EXPLORER_TX_BASE}${txHash}` : "";
+}
+
+export function buildAnswerExportRows(answers = [], selectedQuiz = null, selectedQuizTitle = "") {
+    return (answers || []).map((item, index) => ({
+        no: index + 1,
+        quizId: selectedQuiz ? selectedQuiz.split(":").slice(-1)[0] : "",
+        quizTitle: selectedQuizTitle || "",
+        walletAddress: item.address || "",
+        answer: item.answer || "未回答",
+        answerHash: item.hash || "",
+        txHash: item.txHash || "",
+        txUrl: buildExplorerTxUrl(item.txHash || ""),
+        verificationStatus: item.verificationStatus || "",
+    }));
+}
+
+export function buildRewardPayoutExportRows(entries = []) {
+    return entries.map((entry) => ({
+        quizId: entry.quizId,
+        quizTitle: entry.quizTitle,
+        walletAddress: entry.studentAddress,
+        studentName: entry.studentName || "",
+        result: entry.resultState,
+        rewardTft: entry.rewardTft,
+        txHash: entry.txHash || "",
+        txUrl: buildExplorerTxUrl(entry.txHash || ""),
+        paidAt: entry.paidAt,
+        mode: entry.mode,
+        contract: entry.contractTypeLabel,
+        confirmed: entry.confirmed !== false ? "true" : "false",
+    }));
+}
+
 function downloadTextFile(filename, content, mimeType) {
     const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
@@ -166,18 +203,15 @@ function View_answers() {
         return map;
     }, [selectedQuizRewardPayoutEntries]);
 
-    const exportAnswerRows = useMemo(() => (
-        (answers || []).map((item, index) => ({
-            no: index + 1,
-            quizId: selectedQuiz ? selectedQuiz.split(":").slice(-1)[0] : "",
-            quizTitle: selectedQuizTitle || "",
-            walletAddress: item.address || "",
-            answer: item.answer || "未回答",
-            answerHash: item.hash || "",
-            txHash: item.txHash || "",
-            verificationStatus: item.verificationStatus || "",
-        }))
-    ), [answers, selectedQuiz, selectedQuizTitle]);
+    const exportAnswerRows = useMemo(
+        () => buildAnswerExportRows(answers || [], selectedQuiz, selectedQuizTitle),
+        [answers, selectedQuiz, selectedQuizTitle]
+    );
+
+    const exportRewardPayoutRows = useMemo(
+        () => buildRewardPayoutExportRows(selectedQuizRewardPayoutEntries),
+        [selectedQuizRewardPayoutEntries]
+    );
 
     const handleExportAnswersJson = () => {
         downloadTextFile(
@@ -189,7 +223,7 @@ function View_answers() {
 
     const handleExportAnswersCsv = () => {
         const rows = [
-            ["No", "Quiz ID", "Quiz Title", "Wallet Address", "Answer", "Answer Hash", "Tx Hash", "Verification Status"],
+            ["No", "Quiz ID", "Quiz Title", "Wallet Address", "Answer", "Answer Hash", "Tx Hash", "Tx URL", "Verification Status"],
             ...exportAnswerRows.map((row) => [
                 row.no,
                 row.quizId,
@@ -198,6 +232,7 @@ function View_answers() {
                 row.answer,
                 row.answerHash,
                 row.txHash,
+                row.txUrl,
                 row.verificationStatus,
             ]),
         ];
@@ -212,26 +247,27 @@ function View_answers() {
     const handleExportRewardPayoutJson = () => {
         downloadTextFile(
             `reward_payouts_${selectedQuizTitle || "quiz"}.json`,
-            JSON.stringify(selectedQuizRewardPayoutEntries, null, 2),
+            JSON.stringify(exportRewardPayoutRows, null, 2),
             "application/json;charset=utf-8"
         );
     };
 
     const handleExportRewardPayoutCsv = () => {
         const rows = [
-            ["Quiz ID", "Quiz Title", "Wallet Address", "Student Name", "Result", "Reward TFT", "Tx Hash", "Paid At", "Mode", "Contract", "Confirmed"],
-            ...selectedQuizRewardPayoutEntries.map((entry) => [
+            ["Quiz ID", "Quiz Title", "Wallet Address", "Student Name", "Result", "Reward TFT", "Tx Hash", "Tx URL", "Paid At", "Mode", "Contract", "Confirmed"],
+            ...exportRewardPayoutRows.map((entry) => [
                 entry.quizId,
                 entry.quizTitle,
-                entry.studentAddress,
-                entry.studentName || "",
-                entry.resultState,
+                entry.walletAddress,
+                entry.studentName,
+                entry.result,
                 entry.rewardTft,
                 entry.txHash,
+                entry.txUrl,
                 entry.paidAt,
                 entry.mode,
-                entry.contractTypeLabel,
-                entry.confirmed !== false ? "true" : "false",
+                entry.contract,
+                entry.confirmed,
             ]),
         ];
         const csv = rows.map((row) => row.map(escapeCsv).join(",")).join("\n");

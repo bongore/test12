@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Contracts_MetaMask } from "../../../contract/contracts";
-import View_answers from "./view_answers";
+import View_answers, { buildAnswerExportRows, buildRewardPayoutExportRows, buildExplorerTxUrl } from "./view_answers";
 import { getRewardPayoutEntries, syncRewardPayoutLedgerFromServer } from "../../../utils/rewardPayoutLedger";
 
 const mockContract = {
@@ -181,5 +181,39 @@ describe("View_answers", () => {
         expect(screen.getByText("回答報酬の付与履歴")).toBeInTheDocument();
         expect(screen.getByText("📤 回答報酬履歴を CSV 出力")).toBeInTheDocument();
         expect(screen.getByText("学生A")).toBeInTheDocument();
+    });
+
+    test("builds answer and reward payout export rows with explorer urls", () => {
+        expect(buildExplorerTxUrl("0xabc")).toBe("https://amoy.polygonscan.com/tx/0xabc");
+
+        const answerRows = buildAnswerExportRows([
+            {
+                address: "0x1111111111111111111111111111111111111111",
+                answer: "1/6",
+                hash: "0xhash",
+                txHash: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+                verificationStatus: "receipt_confirmed",
+            },
+        ], "0xeb196c161EFA30939f78170694bb908E17fd1479:1", "確認用クイズ");
+        expect(answerRows[0].txUrl).toBe("https://amoy.polygonscan.com/tx/0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890");
+        expect(answerRows[0].verificationStatus).toBe("receipt_confirmed");
+
+        const rewardRows = buildRewardPayoutExportRows([
+            {
+                quizId: 1,
+                quizTitle: "確認用クイズ",
+                studentAddress: "0x1111111111111111111111111111111111111111",
+                studentName: "学生A",
+                resultState: "correct",
+                rewardTft: 50,
+                txHash: "0xfeed1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+                paidAt: "2026-05-27T10:00:00.000Z",
+                mode: "manual",
+                contractTypeLabel: "現在コントラクト",
+                confirmed: true,
+            },
+        ]);
+        expect(rewardRows[0].txUrl).toBe("https://amoy.polygonscan.com/tx/0xfeed1234567890abcdef1234567890abcdef1234567890abcdef1234567890");
+        expect(rewardRows[0].walletAddress).toBe("0x1111111111111111111111111111111111111111");
     });
 });
