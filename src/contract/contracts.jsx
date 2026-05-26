@@ -1114,13 +1114,16 @@ class Contracts_MetaMask {
 
     getAmoyRpcCandidates() {
         return Array.from(new Set([
-            "https://rpc-amoy.polygon.technology",
             "https://polygon-amoy-bor-rpc.publicnode.com",
+            "https://polygon-amoy.drpc.org",
+            "https://rpc-amoy.polygon.technology",
+            "https://polygon-amoy.blockpi.network/v1/rpc/public",
+            "https://api.zan.top/polygon-amoy",
             ...(amoy.rpcUrls?.default?.http || []),
         ].filter(Boolean)));
     }
 
-    getAmoyAddChainParams(preferredRpcUrl = "https://rpc-amoy.polygon.technology") {
+    getAmoyAddChainParams(preferredRpcUrl = "https://polygon-amoy-bor-rpc.publicnode.com") {
         const orderedRpcUrls = Array.from(new Set([
             preferredRpcUrl,
             ...this.getAmoyRpcCandidates(),

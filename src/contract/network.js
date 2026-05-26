@@ -12,9 +12,11 @@ export const amoy = {
     rpcUrls: {
         default: {
             http: [
-                "https://rpc-amoy.polygon.technology",
-                "https://polygon-amoy.drpc.org",
                 "https://polygon-amoy-bor-rpc.publicnode.com",
+                "https://polygon-amoy.drpc.org",
+                "https://rpc-amoy.polygon.technology",
+                "https://polygon-amoy.blockpi.network/v1/rpc/public",
+                "https://api.zan.top/polygon-amoy",
             ],
         },
     },

@@ -3,9 +3,11 @@
 
 const chainId = "0x13882"; // (required) chainId to be used
 const rpc_urls = [
-    "https://rpc-amoy.polygon.technology",
-    "https://polygon-amoy.drpc.org",
     "https://polygon-amoy-bor-rpc.publicnode.com",
+    "https://polygon-amoy.drpc.org",
+    "https://rpc-amoy.polygon.technology",
+    "https://polygon-amoy.blockpi.network/v1/rpc/public",
+    "https://api.zan.top/polygon-amoy",
 ];
 const rpc = rpc_urls[0]; // default RPC endpoint
 
