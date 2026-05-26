@@ -68,8 +68,19 @@ function Bulk_reward_panel({ cont }) {
             })
         );
 
-        const pendingStudents = details.filter((detail) => isRewardSettlementPending(detail));
-        const settledStudents = details.filter((detail) => [1, 2].includes(Number(detail?.state || 0)));
+        const ledgerKeys = new Set(
+            (Array.isArray(rewardPayoutEntries) ? rewardPayoutEntries : [])
+                .map((e) => `${normalizeAddress(e.sourceAddress)}:${e.quizId}:${normalizeAddress(e.studentAddress)}`)
+        );
+
+        const pendingStudents = details.filter((detail) => 
+            isRewardSettlementPending(detail) && 
+            !ledgerKeys.has(`${normalizeAddress(sourceAddress)}:${quizId}:${normalizeAddress(detail.address)}`)
+        );
+        const settledStudents = details.filter((detail) => 
+            [1, 2].includes(Number(detail?.state || 0)) ||
+            ledgerKeys.has(`${normalizeAddress(sourceAddress)}:${quizId}:${normalizeAddress(detail.address)}`)
+        );
         return {
             key: `${sourceAddress}:${quizId}`,
             quizId,

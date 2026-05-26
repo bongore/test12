@@ -137,7 +137,16 @@ function Investment_to_quiz() {
             latestGradingMap[row.address] = gradingMap[row.address] || (row.state === 2 ? "correct" : row.state === 1 ? "incorrect" : "pending");
         });
 
-        const pendingSubmittedRows = targetRows.filter((row) => isRewardSettlementPending(row));
+        const ledgerKeys = new Set(
+            (Array.isArray(rewardPayoutEntries) ? rewardPayoutEntries : [])
+                .map((e) => `${normalizeAddress(e.sourceAddress)}:${e.quizId}:${normalizeAddress(e.studentAddress)}`)
+        );
+
+        const isPending = (row) => 
+            isRewardSettlementPending(row) && 
+            !ledgerKeys.has(`${normalizeAddress(sourceAddress)}:${id}:${normalizeAddress(row.address)}`);
+
+        const pendingSubmittedRows = targetRows.filter((row) => isPending(row));
         const submittedStudentAddresses = pendingSubmittedRows
             .map((row) => row.address);
 
@@ -147,10 +156,10 @@ function Investment_to_quiz() {
         }
 
         const correctStudents = targetRows
-            .filter((row) => isRewardSettlementPending(row) && latestGradingMap[row.address] === "correct")
+            .filter((row) => isPending(row) && latestGradingMap[row.address] === "correct")
             .map((row) => row.address);
         const incorrectStudents = targetRows
-            .filter((row) => isRewardSettlementPending(row) && latestGradingMap[row.address] === "incorrect")
+            .filter((row) => isPending(row) && latestGradingMap[row.address] === "incorrect")
             .map((row) => row.address);
 
         if (isNotPayingOut === "false" && pendingSubmittedRows.length === 0) {
