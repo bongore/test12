@@ -27,6 +27,7 @@ import {
     waitForEthereumProvider,
 } from "./contractClients";
 import { getRegisteredCorrectAnswer } from "../utils/quizCorrectAnswerStore";
+import { getRewardPayoutEntries } from "../utils/rewardPayoutLedger";
 
 function sleep(ms) {
     return new Promise((resolve) => {
@@ -151,6 +152,18 @@ function writeTimedCache(key, payload) {
 function deleteTimedCache(key) {
     if (typeof localStorage === "undefined") return;
     localStorage.removeItem(key);
+}
+
+function buildRewardLedgerQuizKey(sourceAddress = "", quizId = 0) {
+    return `${String(sourceAddress || "").toLowerCase()}:${Number(quizId)}`;
+}
+
+function buildRewardLedgerSignature(entries = []) {
+    return (Array.isArray(entries) ? entries : [])
+        .filter((entry) => entry?.confirmed !== false && String(entry?.resultState || "") === "correct")
+        .map((entry) => `${buildRewardLedgerQuizKey(entry?.sourceAddress, entry?.quizId)}:${String(entry?.studentAddress || "").toLowerCase()}:${Number(entry?.rewardTft || 0)}:${String(entry?.txHash || "")}`)
+        .sort()
+        .join("|");
 }
 
 function buildQuizSimpleCacheKey(sourceAddress = "", quizId = 0, account = "") {
@@ -1568,27 +1581,80 @@ class Contracts_MetaMask {
 
     async get_quiz_reward_tft(address) {
         try {
-            const historyLength = await this.get_user_history_len(address);
-            if (!historyLength || historyLength <= 0) return 0;
-
             const cacheKey = this.normalizeAddress(address);
             const scoreCache = readScoreCache();
+            const historyLength = await this.get_user_history_len(address);
             const cached = scoreCache[cacheKey];
-            if (cached && Number(cached.historyLength || 0) === Number(historyLength)) {
+            const payoutEntries = getRewardPayoutEntries({ studentAddress: address })
+                .filter((entry) => entry.confirmed !== false && String(entry.resultState || "") === "correct");
+            const payoutLedgerSignature = payoutEntries
+                .map((entry) => `${buildRewardLedgerQuizKey(entry.sourceAddress, entry.quizId)}:${Number(entry.rewardTft || 0)}:${String(entry.txHash || "")}`)
+                .sort()
+                .join("|");
+            if (
+                cached
+                && String(cached.payoutLedgerSignature || "") === payoutLedgerSignature
+                && Number(cached.historyLength || 0) === Number(historyLength || 0)
+            ) {
                 return Number(cached.score || 0);
             }
 
-            const history = await this.get_token_history(address, historyLength, 0);
-            const score = (Array.isArray(history) ? history : []).reduce((sum, entry) => {
-                const explanation = getTokenHistoryExplanation(entry).toLowerCase();
-                if (!explanation.includes("correct answer")) {
+            let score = 0;
+            const countedQuizKeys = new Set();
+            try {
+                const inventory = await this.getQuizInventory(true);
+                const settled = await runSettledInChunks(
+                    Array.isArray(inventory) ? inventory : [],
+                    5,
+                    async (quiz) => {
+                        const quizId = Number(quiz?.id || 0);
+                        const sourceAddress = quiz?.address || "";
+                        const detail = await this.get_student_answer_detail(address, quizId, sourceAddress);
+                        return {
+                            quizKey: buildRewardLedgerQuizKey(sourceAddress, quizId),
+                            rewardTft: Number(detail?.reward || 0) / 10 ** 18,
+                        };
+                    }
+                );
+                score += settled.reduce((sum, item) => {
+                    const rewardTft = Number(item?.rewardTft || 0);
+                    if (rewardTft > 0) {
+                        countedQuizKeys.add(String(item.quizKey || ""));
+                        return sum + rewardTft;
+                    }
+                    return sum;
+                }, 0);
+            } catch (quizRewardError) {
+                console.log(quizRewardError);
+            }
+
+            const payoutLedgerScore = payoutEntries.reduce((sum, entry) => {
+                const quizKey = buildRewardLedgerQuizKey(entry.sourceAddress, entry.quizId);
+                if (countedQuizKeys.has(quizKey)) {
                     return sum;
                 }
-                return sum + getTokenHistoryValueTft(entry);
+                countedQuizKeys.add(quizKey);
+                return sum + Number(entry.rewardTft || 0);
             }, 0);
+            score += payoutLedgerScore;
+
+            if (score <= 0) {
+                if (historyLength && historyLength > 0) {
+                    const history = await this.get_token_history(address, historyLength, 0);
+                    score = (Array.isArray(history) ? history : []).reduce((sum, entry) => {
+                        const explanation = getTokenHistoryExplanation(entry).toLowerCase();
+                        if (!explanation.includes("correct answer")) {
+                            return sum;
+                        }
+                        return sum + getTokenHistoryValueTft(entry);
+                    }, 0);
+                }
+            }
+
             scoreCache[cacheKey] = {
-                historyLength: Number(historyLength),
+                historyLength: Number(historyLength || 0),
                 score: Number(score || 0),
+                payoutLedgerSignature,
                 updatedAt: new Date().toISOString(),
             };
             writeScoreCache(scoreCache);
@@ -3019,7 +3085,12 @@ class Contracts_MetaMask {
 
     async get_results() {
         const now = Date.now();
-        if (Array.isArray(resultsCacheMemory) && now - resultsCacheFetchedAt < RESULTS_CACHE_TTL_MS) {
+        const rewardLedgerSignature = buildRewardLedgerSignature(getRewardPayoutEntries());
+        if (
+            Array.isArray(resultsCacheMemory)
+            && now - resultsCacheFetchedAt < RESULTS_CACHE_TTL_MS
+            && String(resultsCacheMemory?.__rewardLedgerSignature || "") === rewardLedgerSignature
+        ) {
             return resultsCacheMemory;
         }
 
@@ -3027,9 +3098,11 @@ class Contracts_MetaMask {
         if (
             Array.isArray(persistedCache?.value)
             && now - Number(persistedCache?.fetchedAt || 0) < RESULTS_CACHE_TTL_MS
+            && String(persistedCache?.rewardLedgerSignature || "") === rewardLedgerSignature
         ) {
             resultsCacheMemory = persistedCache.value;
             resultsCacheFetchedAt = Number(persistedCache.fetchedAt || now);
+            resultsCacheMemory.__rewardLedgerSignature = rewardLedgerSignature;
             return resultsCacheMemory;
         }
 
@@ -3049,11 +3122,13 @@ class Contracts_MetaMask {
                         };
                     })
                 );
+                rows.__rewardLedgerSignature = rewardLedgerSignature;
                 resultsCacheMemory = rows;
                 resultsCacheFetchedAt = Date.now();
                 writeTimedCache(RESULTS_CACHE_KEY, {
                     value: rows,
                     fetchedAt: resultsCacheFetchedAt,
+                    rewardLedgerSignature,
                 });
                 return rows;
             } catch (fallbackError) {

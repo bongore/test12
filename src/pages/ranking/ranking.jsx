@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { Contracts_MetaMask } from "../../contract/contracts";
 import { getCourseEnhancementSnapshot } from "../../utils/courseEnhancements";
+import { syncRewardPayoutLedgerFromServer } from "../../utils/rewardPayoutLedger";
 import { convertTftToPoint, normalizeTftAmount } from "../../utils/quizRewardRate";
 import "./ranking.css";
 
@@ -18,6 +19,7 @@ function Ranking() {
     useEffect(() => {
         async function loadData() {
             try {
+                await syncRewardPayoutLedgerFromServer().catch(() => []);
                 const addr = await cont.get_address();
                 setMyAddress(addr);
 

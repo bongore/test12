@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import Ranking from "./ranking";
 import { Contracts_MetaMask } from "../../contract/contracts";
 import { getCourseEnhancementSnapshot } from "../../utils/courseEnhancements";
+import { syncRewardPayoutLedgerFromServer } from "../../utils/rewardPayoutLedger";
 
 jest.mock("../../contract/contracts", () => ({
     Contracts_MetaMask: jest.fn(),
@@ -9,6 +10,10 @@ jest.mock("../../contract/contracts", () => ({
 
 jest.mock("../../utils/courseEnhancements", () => ({
     getCourseEnhancementSnapshot: jest.fn(),
+}));
+
+jest.mock("../../utils/rewardPayoutLedger", () => ({
+    syncRewardPayoutLedgerFromServer: jest.fn(async () => []),
 }));
 
 describe("Ranking", () => {
@@ -29,6 +34,7 @@ describe("Ranking", () => {
                 { user: "Bob", status: "visible" },
             ],
         });
+        syncRewardPayoutLedgerFromServer.mockResolvedValue([]);
     });
 
     test("switches between score ranking and board participation ranking", async () => {

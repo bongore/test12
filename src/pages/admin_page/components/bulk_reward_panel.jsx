@@ -70,6 +70,7 @@ function Bulk_reward_panel({ cont }) {
 
         const ledgerKeys = new Set(
             (Array.isArray(rewardPayoutEntries) ? rewardPayoutEntries : [])
+                .filter((entry) => entry?.confirmed !== false && String(entry?.resultState || "") === "correct")
                 .map((e) => `${normalizeAddress(e.sourceAddress)}:${e.quizId}:${normalizeAddress(e.studentAddress)}`)
         );
 

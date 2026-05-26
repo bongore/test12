@@ -51,12 +51,19 @@ jest.mock("../utils/quizCorrectAnswerStore", () => ({
     getRegisteredCorrectAnswer: jest.fn(() => ""),
 }));
 
+const mockGetRewardPayoutEntries = jest.fn(() => []);
+
+jest.mock("../utils/rewardPayoutLedger", () => ({
+    getRewardPayoutEntries: (...args) => mockGetRewardPayoutEntries(...args),
+}));
+
 describe("Contracts_MetaMask legacy quiz settlement", () => {
     const { publicClient } = require("./contractClients");
 
     beforeEach(() => {
         jest.clearAllMocks();
         window.localStorage.clear();
+        mockGetRewardPayoutEntries.mockReturnValue([]);
         mockWaitForTransactionReceipt.mockResolvedValue({ status: "success" });
         mockAllowance.mockResolvedValue(0n);
         mockWriteContract.mockResolvedValue("0xwrite");
@@ -456,5 +463,30 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
         const length = await contract.get_quiz_lenght();
 
         expect(length).toBe(3);
+    });
+
+    test("get_quiz_reward_tft includes confirmed reward payout ledger entries", async () => {
+        const contract = new Contracts_MetaMask();
+        contract.get_user_history_len = jest.fn().mockResolvedValue(0);
+        contract.getQuizInventory = jest.fn().mockResolvedValue([
+            { id: 2, address: "0x55B3977C7B7b913eaf175A7364c8375732d22241" },
+        ]);
+        contract.get_student_answer_detail = jest.fn()
+            .mockResolvedValueOnce({ reward: 0n });
+        mockGetRewardPayoutEntries.mockReturnValue([
+            {
+                quizId: 2,
+                sourceAddress: "0x55b3977c7b7b913eaf175a7364c8375732d22241",
+                studentAddress: "0xabc",
+                rewardTft: 30,
+                resultState: "correct",
+                confirmed: true,
+                txHash: "0xhash",
+            },
+        ]);
+
+        const score = await contract.get_quiz_reward_tft("0xabc");
+
+        expect(score).toBe(30);
     });
 });
