@@ -1060,16 +1060,7 @@ class Contracts_MetaMask {
                     }
                 }
 
-                try {
-                    const fees = await publicClient.estimateFeesPerGas({ chain: amoy });
-                    if (fees?.maxFeePerGas) {
-                        writeConfig.maxFeePerGas = BigInt(fees.maxFeePerGas) + (BigInt(fees.maxFeePerGas) * 15n / 100n);
-                        const priorityFee = BigInt(fees.maxPriorityFeePerGas || fees.maxFeePerGas / 2n);
-                        writeConfig.maxPriorityFeePerGas = priorityFee + (priorityFee * 15n / 100n);
-                    }
-                } catch (feeError) {
-                    console.log("Fee estimation failed", feeError);
-                }
+                // Fee estimation override has been removed to rely on MetaMask's default.
 
                 return await walletClient.writeContract(writeConfig);
             } catch (error) {
@@ -2164,28 +2155,48 @@ class Contracts_MetaMask {
             }
 
             if (normalizedCorrectStudents.length > 0 || normalizedIncorrectStudents.length > 0) {
-                payoutChunks = await this.buildManualRewardChunks(
-                    account,
-                    id,
-                    confirmAnswer,
-                    normalizedCorrectStudents,
-                    normalizedIncorrectStudents,
-                    targetQuizAddress
-                );
-
-                for (let index = 0; index < payoutChunks.length; index += 1) {
-                    const { correctStudents: correctChunk, incorrectStudents: incorrectChunk } = payoutChunks[index];
-                    const payoutHash = await this._payment_of_reward_manual(
+                const isPayment = await this.get_is_payment(id, targetQuizAddress).catch(() => false);
+                
+                if (isPayment) {
+                    console.log("Quiz is locked! Falling back to direct transfer for manual distribution.");
+                    if (rewardPerStudent > 0n && normalizedCorrectStudents.length > 0) {
+                        for (const student of normalizedCorrectStudents) {
+                            try {
+                                const result = await this.transferErc20Token(token_address, student, Number(rewardPerStudent) / 10**18, "TFT", 18);
+                                if (result && result.hash) {
+                                    payoutReceipts.push(result.receipt);
+                                }
+                            } catch (err) {
+                                console.log("Fallback transfer failed for manual student", student, err);
+                                throw err;
+                            }
+                        }
+                    }
+                    payoutChunks = [{ correctStudents: normalizedCorrectStudents, incorrectStudents: normalizedIncorrectStudents }];
+                } else {
+                    payoutChunks = await this.buildManualRewardChunks(
                         account,
                         id,
                         confirmAnswer,
-                        correctChunk,
-                        incorrectChunk,
-                        index === payoutChunks.length - 1,
+                        normalizedCorrectStudents,
+                        normalizedIncorrectStudents,
                         targetQuizAddress
                     );
-                    if (payoutHash) {
-                        payoutReceipts.push(await this.waitForReceiptWithRetry(payoutHash));
+
+                    for (let index = 0; index < payoutChunks.length; index += 1) {
+                        const { correctStudents: correctChunk, incorrectStudents: incorrectChunk } = payoutChunks[index];
+                        const payoutHash = await this._payment_of_reward_manual(
+                            account,
+                            id,
+                            confirmAnswer,
+                            correctChunk,
+                            incorrectChunk,
+                            index === payoutChunks.length - 1,
+                            targetQuizAddress
+                        );
+                        if (payoutHash) {
+                            payoutReceipts.push(await this.waitForReceiptWithRetry(payoutHash));
+                        }
                     }
                 }
             }
@@ -2235,13 +2246,37 @@ class Contracts_MetaMask {
                 throw new Error("wallet_not_connected");
             }
 
-            payoutChunks = await this.buildAutoRewardChunks(account, id, answer, normalizedStudents, targetQuizAddress);
-            for (let index = 0; index < payoutChunks.length; index += 1) {
-                const studentChunk = payoutChunks[index];
-                const payoutHash = await this._payment_of_reward(account, id, String(answer || ""), studentChunk, targetQuizAddress);
-                if (!payoutHash) continue;
-                payoutHashes.push(payoutHash);
-                payoutReceipts.push(await this.waitForReceiptWithRetry(payoutHash));
+            const isPayment = await this.get_is_payment(id, targetQuizAddress).catch(() => false);
+
+            if (isPayment) {
+                console.log("Quiz is locked! Falling back to direct transfer.");
+                const quizData = await this.get_quiz_simple(id, targetQuizAddress);
+                const rewardTft = Number(quizData[7] || 0) / 10**18;
+                
+                if (rewardTft > 0) {
+                    for (const student of normalizedStudents) {
+                        try {
+                            const result = await this.transferErc20Token(token_address, student, rewardTft, "TFT", 18);
+                            if (result && result.hash) {
+                                payoutHashes.push(result.hash);
+                                payoutReceipts.push(result.receipt);
+                            }
+                        } catch (err) {
+                            console.log("Fallback transfer failed for student", student, err);
+                            throw err;
+                        }
+                    }
+                }
+                payoutChunks = [normalizedStudents];
+            } else {
+                payoutChunks = await this.buildAutoRewardChunks(account, id, answer, normalizedStudents, targetQuizAddress);
+                for (let index = 0; index < payoutChunks.length; index += 1) {
+                    const studentChunk = payoutChunks[index];
+                    const payoutHash = await this._payment_of_reward(account, id, String(answer || ""), studentChunk, targetQuizAddress);
+                    if (!payoutHash) continue;
+                    payoutHashes.push(payoutHash);
+                    payoutReceipts.push(await this.waitForReceiptWithRetry(payoutHash));
+                }
             }
         } catch (error) {
             console.log(error);
