@@ -287,12 +287,16 @@ function Bulk_reward_panel({ cont }) {
                         .map(({ address, detail }) => {
                             const normalizedStudent = normalizeAddress(address);
                             const wasPaidNow = payoutTxMap.has(normalizedStudent);
-                            // フォールバック直接送金の場合、ブロックチェーン上はstate=3のままだが、UI上は「正解(2)」として扱う
-                            const state = wasPaidNow ? 2 : Number(detail?.state || 0);
+                            const isCorrectAuto = detail?.answerText === refreshedRow.correctAnswer;
                             
-                            // ブロックチェーン上の報酬額が未反映の場合は、クイズの報酬設定値を適用する
+                            // フォールバック直接送金の場合、ブロックチェーン上はstate=3のままだが、UI上で自動判定結果を適用する
+                            const state = wasPaidNow 
+                                ? (isCorrectAuto ? 2 : 1) 
+                                : Number(detail?.state || 0);
+                            
+                            // ブロックチェーン上の報酬額が未反映の場合は、クイズの報酬設定値を適用する（正解の場合のみ）
                             let rewardWei = Number(detail?.reward || 0);
-                            if (wasPaidNow && rewardWei === 0) {
+                            if (wasPaidNow && rewardWei === 0 && state === 2) {
                                 rewardWei = Math.round((refreshedRow.rewardTft || 0) * 10 ** 18);
                             }
                             const rewardTft = rewardWei > 0 ? rewardWei / 10 ** 18 : 0;

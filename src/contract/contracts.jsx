@@ -2165,14 +2165,19 @@ class Contracts_MetaMask {
                                 const result = await this.transferErc20Token(token_address, student, Number(rewardPerStudent) / 10**18, "TFT", 18);
                                 if (result && result.hash) {
                                     payoutReceipts.push(result.receipt);
+                                    payoutChunks.push({ correctStudents: [student], incorrectStudents: [] });
                                 }
                             } catch (err) {
                                 console.log("Fallback transfer failed for manual student", student, err);
                                 throw err;
                             }
                         }
+                    } else if (normalizedCorrectStudents.length > 0) {
+                        payoutChunks.push({ correctStudents: normalizedCorrectStudents, incorrectStudents: [] });
                     }
-                    payoutChunks = [{ correctStudents: normalizedCorrectStudents, incorrectStudents: normalizedIncorrectStudents }];
+                    if (normalizedIncorrectStudents.length > 0) {
+                        payoutChunks.push({ correctStudents: [], incorrectStudents: normalizedIncorrectStudents });
+                    }
                 } else {
                     payoutChunks = await this.buildManualRewardChunks(
                         account,
@@ -2253,21 +2258,45 @@ class Contracts_MetaMask {
                 const quizData = await this.get_quiz_simple(id, targetQuizAddress);
                 const rewardTft = Number(quizData[7] || 0) / 10**18;
                 
-                if (rewardTft > 0) {
-                    for (const student of normalizedStudents) {
+                const correctStudents = [];
+                const incorrectStudents = [];
+                
+                // 事前に各学生の回答を取得し、正解かどうかを判定する
+                for (const student of normalizedStudents) {
+                    try {
+                        const studentDetail = await this.get_student_answer_detail(student, id, targetQuizAddress);
+                        if (String(studentDetail?.answerText || "") === String(answer || "")) {
+                            correctStudents.push(student);
+                        } else {
+                            incorrectStudents.push(student);
+                        }
+                    } catch (err) {
+                        console.log("Failed to get student answer for grading", student, err);
+                        incorrectStudents.push(student); // エラー時は安全のため不正解扱い
+                    }
+                }
+
+                if (rewardTft > 0 && correctStudents.length > 0) {
+                    for (const student of correctStudents) {
                         try {
                             const result = await this.transferErc20Token(token_address, student, rewardTft, "TFT", 18);
                             if (result && result.hash) {
                                 payoutHashes.push(result.hash);
                                 payoutReceipts.push(result.receipt);
+                                payoutChunks.push([student]);
                             }
                         } catch (err) {
                             console.log("Fallback transfer failed for student", student, err);
                             throw err;
                         }
                     }
+                } else if (correctStudents.length > 0) {
+                    payoutChunks.push(correctStudents);
                 }
-                payoutChunks = [normalizedStudents];
+                
+                if (incorrectStudents.length > 0) {
+                    payoutChunks.push(incorrectStudents);
+                }
             } else {
                 payoutChunks = await this.buildAutoRewardChunks(account, id, answer, normalizedStudents, targetQuizAddress);
                 for (let index = 0; index < payoutChunks.length; index += 1) {

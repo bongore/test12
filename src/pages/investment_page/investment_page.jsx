@@ -259,19 +259,21 @@ function Investment_to_quiz() {
                         .map((row) => {
                             const normalizedStudent = normalizeAddress(row.address);
                             const wasPaidNow = payoutTxMap.has(normalizedStudent);
+                            const manualDecision = latestGradingMap[row.address];
+                            const isAutoCorrect = gradingMode === "auto" && row.answerText === convertFullWidthNumbersToHalf(autoAnswer);
+                            
+                            const resultState = row.state === 2 || (gradingMode === "manual" && manualDecision === "correct") || (wasPaidNow && gradingMode === "auto" && isAutoCorrect)
+                                ? "correct"
+                                : row.state === 1 || (gradingMode === "manual" && manualDecision === "incorrect") || (wasPaidNow && gradingMode === "auto" && !isAutoCorrect)
+                                    ? "incorrect"
+                                    : "pending";
                             
                             let rewardWei = Number(row.reward || 0);
-                            if (wasPaidNow && rewardWei === 0) {
+                            if (wasPaidNow && rewardWei === 0 && resultState === "correct") {
                                 rewardWei = Math.round(Number(amount || 0) * 10 ** 18);
                             }
                             const rewardTft = rewardWei > 0 ? rewardWei / 10 ** 18 : 0;
                             
-                            const manualDecision = latestGradingMap[row.address];
-                            const resultState = row.state === 2 || manualDecision === "correct" || (wasPaidNow && rewardTft > 0)
-                                ? "correct"
-                                : row.state === 1 || manualDecision === "incorrect" || (wasPaidNow && rewardTft === 0)
-                                    ? "incorrect"
-                                    : "pending";
                             const txHash = payoutTxMap.get(normalizedStudent)
                                 || String(executionResult?.hash2 || "")
                                 || "";
