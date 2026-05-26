@@ -98,6 +98,46 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
         );
     });
 
+    test("settle_quiz_rewards_auto_existing sends pending students to the original quiz contract in chunks", async () => {
+        const contract = new Contracts_MetaMask();
+        const legacyQuizAddress = "0x55B3977C7B7b913eaf175A7364c8375732d22241";
+        const students = Array.from({ length: 16 }, (_, index) => `0x${(index + 1).toString(16).padStart(40, "0")}`);
+
+        contract.get_address = jest.fn().mockResolvedValue("0xd5670D7B88411d03741680451C2ea630B68C6944");
+        contract._payment_of_reward = jest.fn()
+            .mockResolvedValueOnce("0xhash1")
+            .mockResolvedValueOnce("0xhash2");
+        mockWaitForTransactionReceipt
+            .mockResolvedValueOnce({ status: "success", transactionHash: "0xhash1" })
+            .mockResolvedValueOnce({ status: "success", transactionHash: "0xhash2" });
+        contract.invalidateQuizSimpleCache = jest.fn();
+
+        const result = await contract.settle_quiz_rewards_auto_existing(
+            7,
+            "1/6",
+            students,
+            legacyQuizAddress
+        );
+
+        expect(contract._payment_of_reward).toHaveBeenNthCalledWith(
+            1,
+            "0xd5670D7B88411d03741680451C2ea630B68C6944",
+            7,
+            "1/6",
+            students.slice(0, 15),
+            legacyQuizAddress
+        );
+        expect(contract._payment_of_reward).toHaveBeenNthCalledWith(
+            2,
+            "0xd5670D7B88411d03741680451C2ea630B68C6944",
+            7,
+            "1/6",
+            students.slice(15),
+            legacyQuizAddress
+        );
+        expect(result.payoutHashes).toEqual(["0xhash1", "0xhash2"]);
+    });
+
     test("ensure_wallet_connected reuses existing accounts before requesting access again", async () => {
         const contract = new Contracts_MetaMask();
         const provider = {

@@ -2101,6 +2101,44 @@ class Contracts_MetaMask {
         return { res, payoutReceipts, hash };
     }
 
+    async settle_quiz_rewards_auto_existing(id, answer, students, sourceAddress = "") {
+        const normalizedStudents = Array.from(new Set((students || []).filter(Boolean)));
+        const payoutReceipts = [];
+        const payoutHashes = [];
+
+        try {
+            if (!ethereum) {
+                console.log("Ethereum object does not exist");
+                return { payoutReceipts, payoutHashes };
+            }
+
+            if (normalizedStudents.length === 0) {
+                return { payoutReceipts, payoutHashes };
+            }
+
+            const account = await this.get_address();
+            const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
+            if (!account) {
+                throw new Error("wallet_not_connected");
+            }
+
+            const batchSize = 15;
+            for (let index = 0; index < normalizedStudents.length; index += batchSize) {
+                const studentChunk = normalizedStudents.slice(index, index + batchSize);
+                const payoutHash = await this._payment_of_reward(account, id, String(answer || ""), studentChunk, targetQuizAddress);
+                if (!payoutHash) continue;
+                payoutHashes.push(payoutHash);
+                payoutReceipts.push(await publicClient.waitForTransactionReceipt({ hash: payoutHash }));
+            }
+        } catch (error) {
+            console.log(error);
+            throw error;
+        }
+
+        this.invalidateQuizSimpleCache(this.resolveQuizAddress(sourceAddress), id);
+        return { payoutReceipts, payoutHashes };
+    }
+
     async create_quiz(title, explanation, thumbnail_url, content, answer_type, answer_data, correct, reply_startline, reply_deadline, reward, correct_limit, setShow) {
         setShow(true);
         let res = null;
