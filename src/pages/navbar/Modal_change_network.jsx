@@ -36,6 +36,7 @@ function Modal_change_network(props) {
     const [currentChainId, setCurrentChainId] = useState(() => normalizeChainId(props.chain_id));
     const [hasEthereumProvider, setHasEthereumProvider] = useState(Boolean(props.cont?.getEthereumProvider?.()));
     const [chainResolved, setChainResolved] = useState(() => normalizeChainId(props.chain_id) != null);
+    const [autoAttempted, setAutoAttempted] = useState(false);
     const isVisible = hasEthereumProvider && chainResolved && currentChainId !== 80002;
 
     useEffect(() => {
@@ -172,12 +173,22 @@ function Modal_change_network(props) {
                 return;
             }
             if (error?.code === 4001) {
-                alert("MetaMask 側で操作がキャンセルされました。");
+                alert("MetaMask 側で操作がキャンセルされました。画面下のボタンから再度実行してください。");
                 return;
             }
             alert("Polygon Amoy への追加または切り替えに失敗しました。MetaMask のポップアップを確認してください。");
         }
     };
+
+    useEffect(() => {
+        if (isVisible && hasEthereumProvider && !autoAttempted && props.cont) {
+            setAutoAttempted(true);
+            const timer = setTimeout(() => {
+                handleSwitchNetwork();
+            }, 1000); // モーダル表示から1秒後に自動でポップアップを起動
+            return () => clearTimeout(timer);
+        }
+    }, [isVisible, hasEthereumProvider, autoAttempted, props.cont]); // eslint-disable-line react-hooks/exhaustive-deps
 
     return (
         <div className="network-modal-overlay">
