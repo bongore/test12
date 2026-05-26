@@ -279,18 +279,31 @@ function Bulk_reward_panel({ cont }) {
                     );
 
                     const rewardEntries = refreshedDetails
-                        .filter(({ detail }) => [1, 2].includes(Number(detail?.state || 0)))
+                        .filter(({ address, detail }) => {
+                            const normalizedStudent = normalizeAddress(address);
+                            const wasPaidNow = payoutTxMap.has(normalizedStudent);
+                            return [1, 2].includes(Number(detail?.state || 0)) || wasPaidNow;
+                        })
                         .map(({ address, detail }) => {
-                            const rewardWei = Number(detail?.reward || 0);
+                            const normalizedStudent = normalizeAddress(address);
+                            const wasPaidNow = payoutTxMap.has(normalizedStudent);
+                            // フォールバック直接送金の場合、ブロックチェーン上はstate=3のままだが、UI上は「正解(2)」として扱う
+                            const state = wasPaidNow ? 2 : Number(detail?.state || 0);
+                            
+                            // ブロックチェーン上の報酬額が未反映の場合は、クイズの報酬設定値を適用する
+                            let rewardWei = Number(detail?.reward || 0);
+                            if (wasPaidNow && rewardWei === 0) {
+                                rewardWei = Math.round((refreshedRow.rewardTft || 0) * 10 ** 18);
+                            }
                             const rewardTft = rewardWei > 0 ? rewardWei / 10 ** 18 : 0;
-                            const state = Number(detail?.state || 0);
+                            
                             return {
-                                id: [normalizeAddress(refreshedRow.sourceAddress), refreshedRow.quizId, normalizeAddress(address), payoutTxMap.get(normalizeAddress(address)) || new Date().toISOString(), state].join(":"),
+                                id: [normalizeAddress(refreshedRow.sourceAddress), refreshedRow.quizId, normalizedStudent, payoutTxMap.get(normalizedStudent) || new Date().toISOString(), state].join(":"),
                                 quizId: refreshedRow.quizId,
                                 sourceAddress: refreshedRow.sourceAddress,
                                 quizTitle: refreshedRow.title,
                                 studentAddress: address,
-                                studentName: studentNameMap[normalizeAddress(address)]?.name || "",
+                                studentName: studentNameMap[normalizedStudent]?.name || "",
                                 answerText: String(detail?.answerText || ""),
                                 resultState: state === 2 ? "correct" : state === 1 ? "incorrect" : "pending",
                                 rewardTft,

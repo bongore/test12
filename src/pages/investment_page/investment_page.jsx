@@ -247,20 +247,29 @@ function Investment_to_quiz() {
                     );
                     const rewardEntries = (Array.isArray(refreshedRows) ? refreshedRows : [])
                         .filter((row) => {
+                            const normalizedStudent = normalizeAddress(row.address);
+                            const wasPaidNow = payoutTxMap.has(normalizedStudent);
+                            
                             if (gradingMode === "auto") {
-                                return submittedStudentAddresses.includes(row.address) && [1, 2].includes(Number(row.state || 0));
+                                return submittedStudentAddresses.includes(row.address) && ([1, 2].includes(Number(row.state || 0)) || wasPaidNow);
                             }
                             return (correctStudents.includes(row.address) || incorrectStudents.includes(row.address))
-                                && [1, 2].includes(Number(row.state || 0));
+                                && ([1, 2].includes(Number(row.state || 0)) || wasPaidNow);
                         })
                         .map((row) => {
                             const normalizedStudent = normalizeAddress(row.address);
-                            const rewardWei = Number(row.reward || 0);
+                            const wasPaidNow = payoutTxMap.has(normalizedStudent);
+                            
+                            let rewardWei = Number(row.reward || 0);
+                            if (wasPaidNow && rewardWei === 0) {
+                                rewardWei = Math.round(Number(amount || 0) * 10 ** 18);
+                            }
                             const rewardTft = rewardWei > 0 ? rewardWei / 10 ** 18 : 0;
+                            
                             const manualDecision = latestGradingMap[row.address];
-                            const resultState = row.state === 2 || manualDecision === "correct"
+                            const resultState = row.state === 2 || manualDecision === "correct" || (wasPaidNow && rewardTft > 0)
                                 ? "correct"
-                                : row.state === 1 || manualDecision === "incorrect"
+                                : row.state === 1 || manualDecision === "incorrect" || (wasPaidNow && rewardTft === 0)
                                     ? "incorrect"
                                     : "pending";
                             const txHash = payoutTxMap.get(normalizedStudent)
