@@ -1060,6 +1060,17 @@ class Contracts_MetaMask {
                     }
                 }
 
+                try {
+                    const fees = await publicClient.estimateFeesPerGas({ chain: amoy });
+                    if (fees?.maxFeePerGas) {
+                        writeConfig.maxFeePerGas = BigInt(fees.maxFeePerGas) + (BigInt(fees.maxFeePerGas) * 15n / 100n);
+                        const priorityFee = BigInt(fees.maxPriorityFeePerGas || fees.maxFeePerGas / 2n);
+                        writeConfig.maxPriorityFeePerGas = priorityFee + (priorityFee * 15n / 100n);
+                    }
+                } catch (feeError) {
+                    console.log("Fee estimation failed", feeError);
+                }
+
                 return await walletClient.writeContract(writeConfig);
             } catch (error) {
                 lastError = error;
