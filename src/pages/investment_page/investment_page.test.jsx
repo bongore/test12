@@ -13,6 +13,7 @@ const mockContract = {
     get_student_list: jest.fn(),
     get_user_data: jest.fn(),
     get_student_answer_detail: jest.fn(),
+    get_quiz_simple: jest.fn(),
     settle_quiz_rewards_manually: jest.fn(),
     investment_to_quiz: jest.fn(),
 };
@@ -23,6 +24,11 @@ jest.mock("../../contract/contracts", () => ({
 
 jest.mock("../../utils/accessControl", () => ({
     useAccessControl: jest.fn(),
+}));
+
+jest.mock("../../utils/rewardPayoutLedger", () => ({
+    syncRewardPayoutLedgerFromServer: jest.fn(async () => []),
+    persistRewardPayoutEntriesToServer: jest.fn(async () => []),
 }));
 
 jest.mock("react-router-dom", () => {
@@ -45,6 +51,20 @@ describe("Investment_page", () => {
         });
         mockContract.get_student_list.mockResolvedValue(["0x1111111111111111111111111111111111111111"]);
         mockContract.get_user_data.mockResolvedValue(["学生A"]);
+        mockContract.get_quiz_simple.mockResolvedValue([
+            1,
+            "0xteacher",
+            "確認用クイズ",
+            "",
+            "",
+            0,
+            0,
+            50000000000000000000,
+            1,
+            10,
+            0,
+            false,
+        ]);
         mockContract.get_student_answer_detail.mockResolvedValue({
             answerText: "1/6",
             submitted: true,

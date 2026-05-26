@@ -11,9 +11,42 @@ const REACTION_KEYS = ["understood", "repeat", "slow", "fast"];
 const STATE_FILE_PATH = path.join(__dirname, ".live-board-state.json");
 const MAX_ACTIVITY_LOGS = 30000;
 let tokenGrantLedger = {};
+let rewardPayoutEntries = [];
 let deletedQuizzes = {};
 let pendingCreatedQuizzes = {};
 let activityLogs = [];
+
+function normalizeRewardPayoutEntry(entry = {}) {
+    return {
+        id: String(entry?.id || ""),
+        quizId: Number(entry?.quizId || 0),
+        sourceAddress: String(entry?.sourceAddress || "").toLowerCase(),
+        quizTitle: String(entry?.quizTitle || ""),
+        studentAddress: String(entry?.studentAddress || "").toLowerCase(),
+        studentName: String(entry?.studentName || ""),
+        studentId: String(entry?.studentId || ""),
+        answerText: String(entry?.answerText || ""),
+        resultState: String(entry?.resultState || ""),
+        rewardTft: Number(entry?.rewardTft || 0),
+        rewardWei: String(entry?.rewardWei || ""),
+        txHash: String(entry?.txHash || ""),
+        actorAddress: String(entry?.actorAddress || "").toLowerCase(),
+        mode: String(entry?.mode || ""),
+        contractTypeLabel: String(entry?.contractTypeLabel || ""),
+        paidAt: entry?.paidAt || entry?.createdAt || new Date().toISOString(),
+        confirmed: entry?.confirmed !== false,
+    };
+}
+
+function normalizeRewardPayoutEntries(entries = []) {
+    const deduped = new Map();
+    (Array.isArray(entries) ? entries : []).forEach((entry) => {
+        const normalized = normalizeRewardPayoutEntry(entry);
+        if (!normalized.id || !normalized.quizId || !normalized.studentAddress) return;
+        deduped.set(normalized.id, normalized);
+    });
+    return Array.from(deduped.values()).sort((a, b) => new Date(b.paidAt || 0) - new Date(a.paidAt || 0));
+}
 
 function normalizeActivityLogs(logs = []) {
     return (Array.isArray(logs) ? logs : [])
@@ -157,6 +190,11 @@ const server = http.createServer((req, res) => {
 
     if (req.url === "/activity-logs" && req.method === "GET") {
         writeJson(res, 200, { ok: true, logs: activityLogs });
+        return;
+    }
+
+    if (req.url === "/reward-payouts" && req.method === "GET") {
+        writeJson(res, 200, { ok: true, entries: rewardPayoutEntries });
         return;
     }
 
@@ -332,6 +370,24 @@ const server = http.createServer((req, res) => {
         return;
     }
 
+    if (req.url === "/reward-payouts" && req.method === "POST") {
+        readRequestBody(req)
+            .then((body) => {
+                const entries = normalizeRewardPayoutEntries(body?.entries);
+                if (!entries.length) {
+                    writeJson(res, 400, { ok: false, error: "invalid_payload" });
+                    return;
+                }
+                rewardPayoutEntries = normalizeRewardPayoutEntries([...(rewardPayoutEntries || []), ...entries]);
+                persistState();
+                writeJson(res, 200, { ok: true, entries: rewardPayoutEntries });
+            })
+            .catch(() => {
+                writeJson(res, 400, { ok: false, error: "invalid_json" });
+            });
+        return;
+    }
+
     writeJson(res, 200, { ok: true, service: "live-signal-server" });
 });
 
@@ -451,6 +507,7 @@ function persistState() {
             currentReactionSession: serializeReactionSessionForStorage(currentReactionSession),
             currentBoardSession: serializeBoardSessionForStorage(currentBoardSession),
             tokenGrantLedger,
+            rewardPayoutEntries,
             deletedQuizzes,
             pendingCreatedQuizzes,
             activityLogs,
@@ -486,6 +543,7 @@ function loadPersistedState() {
         currentReactionSession = reviveReactionSession(payload?.currentReactionSession, "現在の授業");
         currentBoardSession = reviveBoardSession(payload?.currentBoardSession, "現在の授業");
         tokenGrantLedger = payload?.tokenGrantLedger && typeof payload.tokenGrantLedger === "object" ? payload.tokenGrantLedger : {};
+        rewardPayoutEntries = normalizeRewardPayoutEntries(payload?.rewardPayoutEntries);
         deletedQuizzes = normalizeDeletedQuizzes(payload?.deletedQuizzes && typeof payload.deletedQuizzes === "object" ? payload.deletedQuizzes : {});
         pendingCreatedQuizzes = normalizePendingCreatedQuizzes(payload?.pendingCreatedQuizzes && typeof payload.pendingCreatedQuizzes === "object" ? payload.pendingCreatedQuizzes : {});
         activityLogs = normalizeActivityLogs(payload?.activityLogs);

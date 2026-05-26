@@ -4,6 +4,7 @@ import { Contracts_MetaMask } from "../../contract/contracts";
 import { legacy_quiz_addresses, quiz_address } from "../../contract/config";
 import { useAccessControl } from "../../utils/accessControl";
 import { resolveGlobalId } from "../../utils/quizGlobalId";
+import { persistRewardPayoutEntriesToServer, syncRewardPayoutLedgerFromServer } from "../../utils/rewardPayoutLedger";
 import "./investment_page.css";
 
 const GRADE_LABEL = {
@@ -28,6 +29,19 @@ function normalizeAddress(value) {
     return String(value || "").trim().toLowerCase();
 }
 
+function buildChunkTxMap(addresses = [], receipts = []) {
+    const txMap = new Map();
+    const chunkSize = 15;
+    for (let index = 0; index < addresses.length; index += chunkSize) {
+        const receipt = receipts[Math.floor(index / chunkSize)];
+        const txHash = String(receipt?.transactionHash || receipt?.hash || "");
+        addresses.slice(index, index + chunkSize).forEach((address) => {
+            txMap.set(normalizeAddress(address), txHash);
+        });
+    }
+    return txMap;
+}
+
 function Investment_to_quiz() {
     const navigate = useNavigate();
     const location = useLocation();
@@ -48,6 +62,7 @@ function Investment_to_quiz() {
     const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(true);
     const [loadError, setLoadError] = useState("");
     const [executionSummary, setExecutionSummary] = useState(null);
+    const [quizTitle, setQuizTitle] = useState("");
 
     const Contract = useMemo(() => new Contracts_MetaMask(), []);
     const access = useAccessControl(Contract);
@@ -101,9 +116,11 @@ function Investment_to_quiz() {
 
             setStudentRows(rows);
             setGradingMap(nextGradingMap);
+            return rows;
         } catch (error) {
             console.error(error);
             setLoadError("学生の回答一覧の取得に失敗しました。");
+            return [];
         } finally {
             setIsLoadingSubmissions(false);
         }
@@ -191,7 +208,66 @@ function Investment_to_quiz() {
                     sourceAddress
                 );
             }
-            await loadStudentSubmissions();
+            const refreshedRows = await loadStudentSubmissions();
+            if (isNotPayingOut === "false") {
+                try {
+                    await syncRewardPayoutLedgerFromServer();
+                    const payoutReceipts = Array.isArray(executionResult?.payoutReceipts) ? executionResult.payoutReceipts : [];
+                    const payoutTargets = gradingMode === "auto"
+                        ? submittedStudentAddresses
+                        : [...correctStudents, ...incorrectStudents];
+                    const payoutTxMap = buildChunkTxMap(
+                        payoutTargets,
+                        payoutReceipts.length > 0
+                            ? payoutReceipts
+                            : (Array.isArray(executionResult?.payoutHashes)
+                                ? executionResult.payoutHashes.map((hash) => ({ transactionHash: hash }))
+                                : [])
+                    );
+                    const rewardEntries = (Array.isArray(refreshedRows) ? refreshedRows : [])
+                        .filter((row) => {
+                            if (gradingMode === "auto") return row.submitted;
+                            return correctStudents.includes(row.address) || incorrectStudents.includes(row.address);
+                        })
+                        .map((row) => {
+                            const normalizedStudent = normalizeAddress(row.address);
+                            const rewardWei = Number(row.reward || 0);
+                            const rewardTft = rewardWei > 0 ? rewardWei / 10 ** 18 : 0;
+                            const resultState = row.state === 2 || gradingMap[row.address] === "correct"
+                                ? "correct"
+                                : row.state === 1 || gradingMap[row.address] === "incorrect"
+                                    ? "incorrect"
+                                    : "pending";
+                            const txHash = payoutTxMap.get(normalizedStudent)
+                                || String(executionResult?.hash2 || "")
+                                || "";
+
+                            return {
+                                id: [normalizedSourceAddress, id, normalizedStudent, txHash || new Date().toISOString(), resultState].join(":"),
+                                quizId: Number(id),
+                                sourceAddress: resolvedQuizAddress,
+                                quizTitle,
+                                studentAddress: row.address,
+                                studentName: row.name || "",
+                                answerText: row.answerText || "",
+                                resultState,
+                                rewardTft,
+                                rewardWei: String(rewardWei || 0),
+                                txHash,
+                                actorAddress: access.address || "",
+                                mode: gradingMode,
+                                contractTypeLabel,
+                                paidAt: new Date().toISOString(),
+                                confirmed: Boolean(txHash) || rewardTft === 0,
+                            };
+                        });
+                    if (rewardEntries.length > 0) {
+                        await persistRewardPayoutEntriesToServer(rewardEntries);
+                    }
+                } catch (ledgerError) {
+                    console.error("Failed to persist reward payout ledger", ledgerError);
+                }
+            }
             setExecutionSummary({
                 executedAt: new Date().toISOString(),
                 gradingMode,
@@ -221,6 +297,23 @@ function Investment_to_quiz() {
         // quiz id changes when another quiz is selected.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id, sourceAddress]);
+
+    useEffect(() => {
+        let mounted = true;
+        (async () => {
+            try {
+                const quiz = await Contract.get_quiz_simple(id, sourceAddress);
+                if (!mounted) return;
+                setQuizTitle(String(quiz?.[2] || `問題 ${id}`));
+            } catch (error) {
+                if (!mounted) return;
+                setQuizTitle(`問題 ${id}`);
+            }
+        })();
+        return () => {
+            mounted = false;
+        };
+    }, [Contract, id, sourceAddress]);
 
     if (access.isLoading) {
         return <div className="investment-page">権限を確認中です...</div>;

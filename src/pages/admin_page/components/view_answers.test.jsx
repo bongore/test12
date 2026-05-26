@@ -1,10 +1,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Contracts_MetaMask } from "../../../contract/contracts";
 import View_answers from "./view_answers";
+import { getRewardPayoutEntries, syncRewardPayoutLedgerFromServer } from "../../../utils/rewardPayoutLedger";
 
 const mockContract = {
     get_all_quiz_simple_list: jest.fn(),
     get_quiz: jest.fn(),
+    get_user_data: jest.fn(),
     get_student_list: jest.fn(),
     get_students_answer_hash_list: jest.fn(),
     get_student_answer_detail: jest.fn(),
@@ -39,10 +41,81 @@ jest.mock("../../../utils/activityLog", () => ({
     ]),
 }));
 
+jest.mock("../../../utils/rewardPayoutLedger", () => ({
+    getRewardPayoutEntries: jest.fn(() => [
+        {
+            id: "reward-1",
+            quizId: 1,
+            sourceAddress: "0xeb196c161efa30939f78170694bb908e17fd1479",
+            quizTitle: "確認用クイズ",
+            studentAddress: "0x1111111111111111111111111111111111111111",
+            studentName: "学生A",
+            resultState: "correct",
+            rewardTft: 50,
+            txHash: "0xfeed1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+            paidAt: "2026-05-27T10:00:00.000Z",
+            mode: "manual",
+            contractTypeLabel: "現在コントラクト",
+            confirmed: true,
+        },
+    ]),
+    syncRewardPayoutLedgerFromServer: jest.fn(async () => [
+        {
+            id: "reward-1",
+            quizId: 1,
+            sourceAddress: "0xeb196c161efa30939f78170694bb908e17fd1479",
+            quizTitle: "確認用クイズ",
+            studentAddress: "0x1111111111111111111111111111111111111111",
+            studentName: "学生A",
+            resultState: "correct",
+            rewardTft: 50,
+            txHash: "0xfeed1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+            paidAt: "2026-05-27T10:00:00.000Z",
+            mode: "manual",
+            contractTypeLabel: "現在コントラクト",
+            confirmed: true,
+        },
+    ]),
+}));
+
 describe("View_answers", () => {
     beforeEach(() => {
         jest.clearAllMocks();
         Contracts_MetaMask.mockImplementation(() => mockContract);
+        getRewardPayoutEntries.mockReturnValue([
+            {
+                id: "reward-1",
+                quizId: 1,
+                sourceAddress: "0xeb196c161efa30939f78170694bb908e17fd1479",
+                quizTitle: "確認用クイズ",
+                studentAddress: "0x1111111111111111111111111111111111111111",
+                studentName: "学生A",
+                resultState: "correct",
+                rewardTft: 50,
+                txHash: "0xfeed1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+                paidAt: "2026-05-27T10:00:00.000Z",
+                mode: "manual",
+                contractTypeLabel: "現在コントラクト",
+                confirmed: true,
+            },
+        ]);
+        syncRewardPayoutLedgerFromServer.mockResolvedValue([
+            {
+                id: "reward-1",
+                quizId: 1,
+                sourceAddress: "0xeb196c161efa30939f78170694bb908e17fd1479",
+                quizTitle: "確認用クイズ",
+                studentAddress: "0x1111111111111111111111111111111111111111",
+                studentName: "学生A",
+                resultState: "correct",
+                rewardTft: 50,
+                txHash: "0xfeed1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+                paidAt: "2026-05-27T10:00:00.000Z",
+                mode: "manual",
+                contractTypeLabel: "現在コントラクト",
+                confirmed: true,
+            },
+        ]);
         mockContract.get_all_quiz_simple_list.mockResolvedValue([
             Object.assign([1, "0xteacher", "確認用クイズ", "", "", 0, 0, 0, 1, 10, 0, false], {
                 sourceAddress: "0xeb196c161EFA30939f78170694bb908E17fd1479",
@@ -67,6 +140,7 @@ describe("View_answers", () => {
             false,
         ]);
         mockContract.get_student_list.mockResolvedValue(["0x1111111111111111111111111111111111111111"]);
+        mockContract.get_user_data.mockResolvedValue(["学生A"]);
         mockContract.get_students_answer_hash_list.mockResolvedValue({
             "0x1111111111111111111111111111111111111111": "0x0000000000000000000000000000000000000000000000000000000000000000",
         });
@@ -102,7 +176,10 @@ describe("View_answers", () => {
         expect(screen.getByText("回答保存済み")).toBeInTheDocument();
         expect(screen.getByText("この問題の保存先 quiz.sol")).toBeInTheDocument();
         expect(screen.getByText("0xeb196c161EFA30939f78170694bb908E17fd1479")).toBeInTheDocument();
-        expect(screen.getByText("契約種別: 現在コントラクト")).toBeInTheDocument();
+        expect(screen.getAllByText("契約種別: 現在コントラクト").length).toBeGreaterThan(0);
         expect(screen.getByText("✅ 回答済:", { exact: false })).toBeInTheDocument();
+        expect(screen.getByText("回答報酬の付与履歴")).toBeInTheDocument();
+        expect(screen.getByText("📤 回答報酬履歴を CSV 出力")).toBeInTheDocument();
+        expect(screen.getByText("学生A")).toBeInTheDocument();
     });
 });

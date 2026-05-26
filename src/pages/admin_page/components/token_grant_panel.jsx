@@ -87,6 +87,7 @@ function Token_grant_panel(props) {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [grantLedgerEntries, setGrantLedgerEntries] = useState([]);
     const [grantSyncError, setGrantSyncError] = useState("");
+    const [studentNameMap, setStudentNameMap] = useState({});
 
     const typedAddresses = useMemo(() => normalizeAddressLines(bulkAddresses), [bulkAddresses]);
     const manualGrantEntries = useMemo(
@@ -108,9 +109,13 @@ function Token_grant_panel(props) {
                 return history.map((historyEntry, index) => ({
                     address: entry.address,
                     student_id: studentIndexMap.get(props.cont.normalizeAddress(entry.address)) || "",
+                    student_name: studentNameMap[props.cont.normalizeAddress(entry.address)] || "",
                     asset: asset.label,
                     current_status: record ? (isGrantActive(record) ? (isManualMarkedRecord(record) ? "既付与登録" : "付与済み") : isGrantReserved(record) ? "送金処理中" : "未付与") : "未付与",
                     current_amount: record?.amount ?? "",
+                    current_tx_hash: record?.txHash || "",
+                    current_tx_url: record?.txHash ? `${AMOY_EXPLORER_TX_BASE}${record.txHash}` : "",
+                    current_granted_at: record?.grantedAt || "",
                     history_index: index + 1,
                     history_type: historyEntry?.type === "manual_mark" ? "既付与登録" : historyEntry?.type === "clear" ? "既付与解除" : "送金確認",
                     amount: historyEntry?.amount ?? "",
@@ -124,7 +129,7 @@ function Token_grant_panel(props) {
                 }));
             })
         ))
-    ), [grantLedgerEntries, studentIndexMap, props.cont]);
+    ), [grantLedgerEntries, studentIndexMap, studentNameMap, props.cont]);
 
     async function refreshGrantLedger() {
         try {
@@ -143,10 +148,23 @@ function Token_grant_panel(props) {
     async function loadStudents() {
         try {
             const result = await props.cont.get_student_list();
-            setStudents(Array.isArray(result) ? result : []);
+            const nextStudents = Array.isArray(result) ? result : [];
+            setStudents(nextStudents);
+            const profileEntries = await Promise.all(
+                nextStudents.map(async (student) => {
+                    try {
+                        const userData = await props.cont.get_user_data(student);
+                        return [props.cont.normalizeAddress(student), String(userData?.[0] || "")];
+                    } catch (error) {
+                        return [props.cont.normalizeAddress(student), ""];
+                    }
+                })
+            );
+            setStudentNameMap(Object.fromEntries(profileEntries));
         } catch (error) {
             console.error("Failed to load students for token grant panel", error);
             setStudents([]);
+            setStudentNameMap({});
         }
     }
 
@@ -619,9 +637,13 @@ function Token_grant_panel(props) {
         const header = [
             "address",
             "student_id",
+            "student_name",
             "asset",
             "current_status",
             "current_amount",
+            "current_tx_hash",
+            "current_tx_url",
+            "current_granted_at",
             "history_index",
             "history_type",
             "amount",

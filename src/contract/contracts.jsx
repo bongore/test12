@@ -198,6 +198,10 @@ async function runSettledInChunks(items, chunkSize, mapper) {
         const chunk = items.slice(index, index + safeChunkSize);
         const chunkResults = await Promise.allSettled(chunk.map((item, chunkIndex) => mapper(item, index + chunkIndex)));
         settled.push(...chunkResults);
+        // チャンク間にメインスレッドへ処理を返す（UI応答性確保）
+        if (index + safeChunkSize < items.length) {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        }
     }
     return settled;
 }
@@ -631,9 +635,9 @@ class Contracts_MetaMask {
     }
 
     getQuizReadChunkSize() {
-        if (this.isAppleMobileDevice()) return 3;
-        if (this.isMobileDevice()) return 4;
-        return 8;
+        if (this.isAppleMobileDevice()) return 2;
+        if (this.isMobileDevice()) return 3;
+        return 6;
     }
 
     async copyTextToClipboard(value) {
@@ -1690,6 +1694,8 @@ class Contracts_MetaMask {
         let res2 = null;
         let hash = null;
         let hash2 = null;
+        let payoutReceipts = [];
+        let payoutHashes = [];
         let is_not_paying_out = null;
         let is_not_adding_reward = null;
         amount = Number(amount) * 10 ** 18;
@@ -1737,6 +1743,8 @@ class Contracts_MetaMask {
                         hash2 = await this._payment_of_reward(account, id, answer, addreses[i], targetQuizAddress);
                         if (hash2) {
                             res2 = await publicClient.waitForTransactionReceipt({ hash: hash2 });
+                            payoutHashes.push(hash2);
+                            payoutReceipts.push(res2);
                         }
                     }
                     if (is_not_adding_reward == false) {
@@ -1768,7 +1776,7 @@ class Contracts_MetaMask {
             console.log(err);
         }
         this.invalidateQuizSimpleCache(this.resolveQuizAddress(sourceAddress), id);
-        return { res, res2, hash, hash2 };
+        return { res, res2, hash, hash2, payoutReceipts, payoutHashes };
     }
 
     async _investment_to_quiz(account, id, amount, numOfStudent, sourceAddress = "") {
@@ -2513,15 +2521,26 @@ class Contracts_MetaMask {
                 result = await readQuizSimple(account);
             } catch (firstError) {
                 if (!account) throw firstError;
-                result = await readQuizSimple(undefined);
+                // アカウントなしでリトライ
+                try {
+                    result = await readQuizSimple(undefined);
+                } catch (retryError) {
+                    // 短い遅延後にもう一度リトライ（RPC一時的制限対応）
+                    await sleep(500);
+                    result = await readQuizSimple(undefined);
+                }
             }
             const normalized = toQuizSimpleArray(result);
+            // バリデーション強化: ownerもチェック
+            const hasOwner = Boolean(String(normalized?.[1] || "").trim());
+            const hasTitle = Boolean(String(normalized?.[2] || "").trim());
+            const hasTimeData = Number(normalized?.[5] || 0) !== 0 || Number(normalized?.[6] || 0) !== 0;
+            const hasReward = Number(normalized?.[7] || 0) !== 0;
             if (
-                !String(normalized?.[1] || "").trim()
-                && !String(normalized?.[2] || "").trim()
-                && Number(normalized?.[5] || 0) === 0
-                && Number(normalized?.[6] || 0) === 0
-                && Number(normalized?.[7] || 0) === 0
+                !hasOwner
+                && !hasTitle
+                && !hasTimeData
+                && !hasReward
             ) {
                 throw new Error("quiz_simple_empty_payload");
             }

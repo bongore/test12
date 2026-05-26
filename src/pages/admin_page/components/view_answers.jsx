@@ -3,6 +3,7 @@ import { Contracts_MetaMask } from "../../../contract/contracts";
 import { legacy_quiz_addresses, quiz_address } from "../../../contract/config";
 import { keccak256, toHex, encodePacked } from "viem";
 import { getMergedActivityLogs, syncSharedActivityLogs } from "../../../utils/activityLog";
+import { getRewardPayoutEntries, syncRewardPayoutLedgerFromServer } from "../../../utils/rewardPayoutLedger";
 
 function downloadTextFile(filename, content, mimeType) {
     const blob = new Blob([content], { type: mimeType });
@@ -69,14 +70,33 @@ function View_answers() {
     const [loading, setLoading] = useState(true);
     const [loadingAnswers, setLoadingAnswers] = useState(false);
     const [sharedLogs, setSharedLogs] = useState(() => getMergedActivityLogs());
+    const [rewardPayoutEntries, setRewardPayoutEntries] = useState(() => getRewardPayoutEntries());
 
     useEffect(() => {
         let mounted = true;
 
         const refreshLogs = async () => {
-            const merged = await syncSharedActivityLogs();
+            let merged = getMergedActivityLogs();
+            let payoutLedger = getRewardPayoutEntries();
+            try {
+                const nextMerged = await syncSharedActivityLogs();
+                if (Array.isArray(nextMerged)) {
+                    merged = nextMerged;
+                }
+            } catch (error) {
+                console.error("Failed to sync shared activity logs", error);
+            }
+            try {
+                const nextPayoutLedger = await syncRewardPayoutLedgerFromServer();
+                if (Array.isArray(nextPayoutLedger)) {
+                    payoutLedger = nextPayoutLedger;
+                }
+            } catch (error) {
+                console.error("Failed to sync reward payout ledger", error);
+            }
             if (!mounted) return;
             setSharedLogs(Array.isArray(merged) ? merged : getMergedActivityLogs());
+            setRewardPayoutEntries(Array.isArray(payoutLedger) ? payoutLedger : getRewardPayoutEntries());
         };
 
         const handleSharedUpdate = () => {
@@ -127,6 +147,25 @@ function View_answers() {
         return "参照先未判定";
     }, [selectedQuizSourceAddress]);
 
+    const selectedQuizRewardPayoutEntries = useMemo(() => {
+        const quizId = selectedQuiz ? Number(selectedQuiz.split(":").slice(-1)[0]) : null;
+        return (Array.isArray(rewardPayoutEntries) ? rewardPayoutEntries : []).filter((entry) => {
+            if (quizId != null && Number(entry.quizId) !== quizId) return false;
+            if (selectedQuizSourceAddress && normalizeAddress(entry.sourceAddress) !== normalizeAddress(selectedQuizSourceAddress)) return false;
+            return true;
+        });
+    }, [rewardPayoutEntries, selectedQuiz, selectedQuizSourceAddress]);
+
+    const latestRewardPayoutByStudent = useMemo(() => {
+        const map = new Map();
+        selectedQuizRewardPayoutEntries.forEach((entry) => {
+            const key = normalizeAddress(entry.studentAddress);
+            if (!key || map.has(key)) return;
+            map.set(key, entry);
+        });
+        return map;
+    }, [selectedQuizRewardPayoutEntries]);
+
     const exportAnswerRows = useMemo(() => (
         (answers || []).map((item, index) => ({
             no: index + 1,
@@ -165,6 +204,39 @@ function View_answers() {
         const csv = rows.map((row) => row.map(escapeCsv).join(",")).join("\n");
         downloadTextFile(
             `answers_${selectedQuizTitle || "quiz"}.csv`,
+            csv,
+            "text/csv;charset=utf-8"
+        );
+    };
+
+    const handleExportRewardPayoutJson = () => {
+        downloadTextFile(
+            `reward_payouts_${selectedQuizTitle || "quiz"}.json`,
+            JSON.stringify(selectedQuizRewardPayoutEntries, null, 2),
+            "application/json;charset=utf-8"
+        );
+    };
+
+    const handleExportRewardPayoutCsv = () => {
+        const rows = [
+            ["Quiz ID", "Quiz Title", "Wallet Address", "Student Name", "Result", "Reward TFT", "Tx Hash", "Paid At", "Mode", "Contract", "Confirmed"],
+            ...selectedQuizRewardPayoutEntries.map((entry) => [
+                entry.quizId,
+                entry.quizTitle,
+                entry.studentAddress,
+                entry.studentName || "",
+                entry.resultState,
+                entry.rewardTft,
+                entry.txHash,
+                entry.paidAt,
+                entry.mode,
+                entry.contractTypeLabel,
+                entry.confirmed !== false ? "true" : "false",
+            ]),
+        ];
+        const csv = rows.map((row) => row.map(escapeCsv).join(",")).join("\n");
+        downloadTextFile(
+            `reward_payouts_${selectedQuizTitle || "quiz"}.csv`,
             csv,
             "text/csv;charset=utf-8"
         );
@@ -371,6 +443,8 @@ function View_answers() {
                             <div className="csv-download-area" style={{ marginTop: 0, marginBottom: "16px" }}>
                                 <button className="btn-action" onClick={handleExportAnswersCsv}>📤 回答一覧を CSV 出力</button>
                                 <button className="btn-action" onClick={handleExportAnswersJson}>📤 回答一覧を JSON 出力</button>
+                                <button className="btn-action" onClick={handleExportRewardPayoutCsv}>📤 回答報酬履歴を CSV 出力</button>
+                                <button className="btn-action" onClick={handleExportRewardPayoutJson}>📤 回答報酬履歴を JSON 出力</button>
                             </div>
                             <table className="results-table">
                                 <thead>
@@ -383,6 +457,7 @@ function View_answers() {
                                         <th>Tx Hash</th>
                                         <th>判定</th>
                                         <th>報酬</th>
+                                        <th>報酬Tx</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -425,6 +500,11 @@ function View_answers() {
                                                         ? `予定 ${item.rewardPreviewTft} TFT`
                                                         : "-"}
                                             </td>
+                                            <td style={{ fontSize: "12px" }}>
+                                                {latestRewardPayoutByStudent.get(normalizeAddress(item.address))?.txHash
+                                                    ? `${latestRewardPayoutByStudent.get(normalizeAddress(item.address)).txHash.slice(0, 10)}…${latestRewardPayoutByStudent.get(normalizeAddress(item.address)).txHash.slice(-8)}`
+                                                    : "-"}
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -445,6 +525,46 @@ function View_answers() {
                                 <span>✅ 回答済: <strong style={{ color: "#4caf50" }}>{answers.filter((a) => a.submitted).length}人</strong></span>
                                 <span>⬜ 未回答: <strong style={{ color: "#ff9800" }}>{answers.filter((a) => !a.submitted).length}人</strong></span>
                                 <span>🔁 複数回答: <strong style={{ color: "#ffd27d" }}>{answers.filter((a) => Number(a.attemptCount || 0) > 1).length}人</strong></span>
+                            </div>
+
+                            <div className="glass-card" style={{ marginTop: "16px", padding: "16px", color: "#fff" }}>
+                                <div style={{ fontWeight: 700, marginBottom: "10px" }}>回答報酬の付与履歴</div>
+                                {selectedQuizRewardPayoutEntries.length === 0 ? (
+                                    <div style={{ color: "rgba(255,255,255,0.72)" }}>この問題の報酬付与履歴はまだありません。</div>
+                                ) : (
+                                    <div style={{ display: "grid", gap: "10px" }}>
+                                        {selectedQuizRewardPayoutEntries.map((entry) => (
+                                            <div key={entry.id} style={{ background: "rgba(255,255,255,0.05)", borderRadius: "12px", padding: "12px" }}>
+                                                <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+                                                    <div>
+                                                        <div style={{ fontWeight: 700 }}>{entry.studentName || entry.studentAddress}</div>
+                                                        <div style={{ color: "rgba(255,255,255,0.72)", fontSize: "13px", wordBreak: "break-all" }}>{entry.studentAddress}</div>
+                                                    </div>
+                                                    <div style={{ textAlign: "right" }}>
+                                                        <div>{entry.resultState === "correct" ? "正解報酬" : entry.resultState === "incorrect" ? "不正解確定" : "保留"}</div>
+                                                        <div style={{ color: "#ffd27d" }}>{Number(entry.rewardTft || 0)} TFT</div>
+                                                    </div>
+                                                </div>
+                                                <div style={{ marginTop: "8px", color: "rgba(255,255,255,0.82)", fontSize: "13px", display: "grid", gap: "4px" }}>
+                                                    <div>実行時刻: {entry.paidAt ? new Date(entry.paidAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }) : "-"}</div>
+                                                    <div>判定モード: {entry.mode === "auto" ? "自動判定" : entry.mode === "manual" ? "手動判定" : "-"}</div>
+                                                    <div>契約種別: {entry.contractTypeLabel || "-"}</div>
+                                                    <div>
+                                                        Tx:
+                                                        {" "}
+                                                        {entry.txHash ? (
+                                                            <a href={`https://amoy.polygonscan.com/tx/${entry.txHash}`} target="_blank" rel="noreferrer">
+                                                                {entry.txHash.slice(0, 10)}…{entry.txHash.slice(-8)}
+                                                            </a>
+                                                        ) : (
+                                                            "記録なし"
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     ) : (
