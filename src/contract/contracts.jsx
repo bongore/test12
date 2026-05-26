@@ -1955,7 +1955,8 @@ class Contracts_MetaMask {
             if (ethereum) {
                 try {
                     const recipientCount = Math.max(1, Array.isArray(students) ? students.length : 1);
-                    const gasOverride = 260000n + (BigInt(recipientCount) * 180000n);
+                    // 1人あたり約60kガス + ベース100kガスに調整してtx fee capエラーを防ぐ
+                    const gasOverride = 100000n + (BigInt(recipientCount) * 60000n);
                     return await this.writeContractDirect({
                         account,
                         address: this.resolveQuizAddress(sourceAddress),
@@ -1985,7 +1986,7 @@ class Contracts_MetaMask {
                         (Array.isArray(correctStudents) ? correctStudents.length : 0)
                         + (Array.isArray(incorrectStudents) ? incorrectStudents.length : 0)
                     );
-                    const gasOverride = 300000n + (BigInt(recipientCount) * 200000n);
+                    const gasOverride = 150000n + (BigInt(recipientCount) * 60000n);
                     return await this.writeContractDirect({
                         account,
                         address: this.resolveQuizAddress(sourceAddress),
