@@ -8,6 +8,7 @@ import View_live_history from "./components/view_live_history";
 import Course_operations_panel from "./components/course_operations_panel";
 import Token_grant_panel from "./components/token_grant_panel";
 import Reward_burn_panel from "./components/reward_burn_panel";
+import Platform_export_panel from "./components/platform_export_panel";
 import { useAccessControl } from "../../utils/accessControl";
 import "./admin.css";
 
@@ -35,6 +36,7 @@ function Admin_page(props) {
                 <button className={`admin-tab-btn ${component === "Add_students" ? "active" : ""}`} onClick={() => setComponent("Add_students")}>学生を追加</button>
                 <button className={`admin-tab-btn ${component === "Add_teacher" ? "active" : ""}`} onClick={() => setComponent("Add_teacher")}>教員を追加</button>
                 <button className={`admin-tab-btn ${component === "Token_grant" ? "active" : ""}`} onClick={() => setComponent("Token_grant")}>トークン付与</button>
+                <button className={`admin-tab-btn ${component === "Platform_export" ? "active" : ""}`} onClick={() => setComponent("Platform_export")}>全体出力</button>
                 <button className={`admin-tab-btn ${component === "Reward_burn" ? "active" : ""}`} onClick={() => setComponent("Reward_burn")}>報酬バーン</button>
                 <button className={`admin-tab-btn ${component === "View_result" ? "active" : ""}`} onClick={() => setComponent("View_result")}>成績を見る</button>
                 <button className={`admin-tab-btn ${component === "View_answers" ? "active" : ""}`} onClick={() => setComponent("View_answers")}>回答を見る</button>
@@ -47,6 +49,7 @@ function Admin_page(props) {
                 {component === "Add_students" && <Add_students cont={props.cont} />}
                 {component === "Add_teacher" && <Add_teacher cont={props.cont} />}
                 {component === "Token_grant" && <Token_grant_panel cont={props.cont} />}
+                {component === "Platform_export" && <Platform_export_panel cont={props.cont} />}
                 {component === "Reward_burn" && <Reward_burn_panel cont={props.cont} />}
                 {component === "View_result" && <View_result cont={props.cont} />}
                 {component === "View_answers" && <View_answers cont={props.cont} />}
