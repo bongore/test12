@@ -1022,7 +1022,7 @@ class Contracts_MetaMask {
         writeQuizSimpleCacheStore(persistedStore);
     }
 
-    async writeContractDirect({ account, address, abi, functionName, args = [] }) {
+    async writeContractDirect({ account, address, abi, functionName, args = [], gasOverride = null }) {
         const provider = await this.getEthereumProviderReady();
         if (!provider || !walletClient) {
             throw new Error("ethereum_not_found");
@@ -1045,15 +1045,19 @@ class Contracts_MetaMask {
                     chain: amoy,
                 };
 
-                try {
-                    const estimatedGas = await publicClient.estimateContractGas(writeConfig);
-                    if (estimatedGas && estimatedGas > 0n) {
-                        writeConfig.gas = this.isAppleMobileDevice()
-                            ? (estimatedGas * 14n) / 10n
-                            : (estimatedGas * 12n) / 10n;
+                if (gasOverride && BigInt(gasOverride) > 0n) {
+                    writeConfig.gas = BigInt(gasOverride);
+                } else {
+                    try {
+                        const estimatedGas = await publicClient.estimateContractGas(writeConfig);
+                        if (estimatedGas && estimatedGas > 0n) {
+                            writeConfig.gas = this.isAppleMobileDevice()
+                                ? (estimatedGas * 14n) / 10n
+                                : (estimatedGas * 12n) / 10n;
+                        }
+                    } catch (gasError) {
+                        console.log(gasError);
                     }
-                } catch (gasError) {
-                    console.log(gasError);
                 }
 
                 return await walletClient.writeContract(writeConfig);
@@ -1681,6 +1685,7 @@ class Contracts_MetaMask {
         let hash = null;
         let hash2 = null;
         let payoutReceipts = [];
+        let payoutChunks = [];
         let payoutHashes = [];
         let is_not_paying_out = null;
         let is_not_adding_reward = null;
@@ -1935,12 +1940,15 @@ class Contracts_MetaMask {
         try {
             if (ethereum) {
                 try {
+                    const recipientCount = Math.max(1, Array.isArray(students) ? students.length : 1);
+                    const gasOverride = 260000n + (BigInt(recipientCount) * 180000n);
                     return await this.writeContractDirect({
                         account,
                         address: this.resolveQuizAddress(sourceAddress),
                         abi: quiz_abi,
                         functionName: "payment_of_reward",
                         args: [id, answer, students],
+                        gasOverride,
                     });
                 } catch (e) {
                     console.log(e);
@@ -1958,12 +1966,19 @@ class Contracts_MetaMask {
         try {
             if (ethereum) {
                 try {
+                    const recipientCount = Math.max(
+                        1,
+                        (Array.isArray(correctStudents) ? correctStudents.length : 0)
+                        + (Array.isArray(incorrectStudents) ? incorrectStudents.length : 0)
+                    );
+                    const gasOverride = 300000n + (BigInt(recipientCount) * 200000n);
                     return await this.writeContractDirect({
                         account,
                         address: this.resolveQuizAddress(sourceAddress),
                         abi: [PAYMENT_OF_REWARD_MANUAL_ABI],
                         functionName: "payment_of_reward_manual",
                         args: [id, String(confirmAnswer || ""), correctStudents, incorrectStudents, Boolean(finalizePayment)],
+                        gasOverride,
                     });
                 } catch (e) {
                     console.log(e);
@@ -2091,6 +2106,7 @@ class Contracts_MetaMask {
     async settle_quiz_rewards_manually(id, amount, confirmAnswer, correctStudents, incorrectStudents, isNotAddingReward, sourceAddress = "") {
         let res = null;
         let payoutReceipts = [];
+        let payoutChunks = [];
         let hash = null;
         const normalizedCorrectStudents = Array.from(new Set((correctStudents || []).filter(Boolean)));
         const normalizedIncorrectStudents = Array.from(
@@ -2102,7 +2118,7 @@ class Contracts_MetaMask {
         try {
             if (!ethereum) {
                 console.log("Ethereum object does not exist");
-                return { res, payoutReceipts, hash };
+                return { res, payoutReceipts, hash, payoutChunks };
             }
 
             const account = await this.getConnectedWriteAccount();
@@ -2129,7 +2145,7 @@ class Contracts_MetaMask {
             }
 
             if (normalizedCorrectStudents.length > 0 || normalizedIncorrectStudents.length > 0) {
-                const payoutChunks = await this.buildManualRewardChunks(
+                payoutChunks = await this.buildManualRewardChunks(
                     account,
                     id,
                     confirmAnswer,
@@ -2175,13 +2191,14 @@ class Contracts_MetaMask {
 
         this.invalidateQuizSimpleCache(this.resolveQuizAddress(sourceAddress), id);
 
-        return { res, payoutReceipts, hash };
+        return { res, payoutReceipts, hash, payoutChunks };
     }
 
     async settle_quiz_rewards_auto_existing(id, answer, students, sourceAddress = "") {
         const normalizedStudents = Array.from(new Set((students || []).filter(Boolean)));
         const payoutReceipts = [];
         const payoutHashes = [];
+        let payoutChunks = [];
 
         try {
             if (!ethereum) {
@@ -2199,7 +2216,7 @@ class Contracts_MetaMask {
                 throw new Error("wallet_not_connected");
             }
 
-            const payoutChunks = await this.buildAutoRewardChunks(account, id, answer, normalizedStudents, targetQuizAddress);
+            payoutChunks = await this.buildAutoRewardChunks(account, id, answer, normalizedStudents, targetQuizAddress);
             for (let index = 0; index < payoutChunks.length; index += 1) {
                 const studentChunk = payoutChunks[index];
                 const payoutHash = await this._payment_of_reward(account, id, String(answer || ""), studentChunk, targetQuizAddress);
@@ -2213,7 +2230,7 @@ class Contracts_MetaMask {
         }
 
         this.invalidateQuizSimpleCache(this.resolveQuizAddress(sourceAddress), id);
-        return { payoutReceipts, payoutHashes };
+        return { payoutReceipts, payoutHashes, payoutChunks };
     }
 
     async create_quiz(title, explanation, thumbnail_url, content, answer_type, answer_data, correct, reply_startline, reply_deadline, reward, correct_limit, setShow) {

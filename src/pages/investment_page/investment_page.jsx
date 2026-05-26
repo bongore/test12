@@ -29,16 +29,15 @@ function normalizeAddress(value) {
     return String(value || "").trim().toLowerCase();
 }
 
-function buildChunkTxMap(addresses = [], receipts = []) {
+function buildChunkTxMap(addressGroups = [], receipts = []) {
     const txMap = new Map();
-    const chunkSize = 15;
-    for (let index = 0; index < addresses.length; index += chunkSize) {
-        const receipt = receipts[Math.floor(index / chunkSize)];
+    addressGroups.forEach((addresses, chunkIndex) => {
+        const receipt = receipts[chunkIndex];
         const txHash = String(receipt?.transactionHash || receipt?.hash || "");
-        addresses.slice(index, index + chunkSize).forEach((address) => {
+        (Array.isArray(addresses) ? addresses : []).forEach((address) => {
             txMap.set(normalizeAddress(address), txHash);
         });
-    }
+    });
     return txMap;
 }
 
@@ -233,7 +232,13 @@ function Investment_to_quiz() {
                         ? submittedStudentAddresses
                         : [...correctStudents, ...incorrectStudents];
                     const payoutTxMap = buildChunkTxMap(
-                        payoutTargets,
+                        Array.isArray(executionResult?.payoutChunks) && executionResult.payoutChunks.length > 0
+                            ? executionResult.payoutChunks.map((chunk) => (
+                                Array.isArray(chunk)
+                                    ? chunk
+                                    : [...(chunk?.correctStudents || []), ...(chunk?.incorrectStudents || [])]
+                            ))
+                            : [payoutTargets],
                         payoutReceipts.length > 0
                             ? payoutReceipts
                             : (Array.isArray(executionResult?.payoutHashes)

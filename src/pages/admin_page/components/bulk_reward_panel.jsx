@@ -7,16 +7,15 @@ function normalizeAddress(value) {
     return String(value || "").trim().toLowerCase();
 }
 
-function buildChunkTxMap(addresses = [], receipts = []) {
+function buildChunkTxMap(addressGroups = [], receipts = []) {
     const txMap = new Map();
-    const chunkSize = 15;
-    for (let index = 0; index < addresses.length; index += chunkSize) {
-        const receipt = receipts[Math.floor(index / chunkSize)];
+    addressGroups.forEach((addresses, chunkIndex) => {
+        const receipt = receipts[chunkIndex];
         const txHash = String(receipt?.transactionHash || receipt?.hash || "");
-        addresses.slice(index, index + chunkSize).forEach((address) => {
+        (Array.isArray(addresses) ? addresses : []).forEach((address) => {
             txMap.set(normalizeAddress(address), txHash);
         });
-    }
+    });
     return txMap;
 }
 
@@ -269,7 +268,9 @@ function Bulk_reward_panel({ cont }) {
                     );
 
                     const payoutTxMap = buildChunkTxMap(
-                        pendingAddresses,
+                        Array.isArray(result?.payoutChunks) && result.payoutChunks.length > 0
+                            ? result.payoutChunks
+                            : [pendingAddresses],
                         Array.isArray(result?.payoutReceipts)
                             ? result.payoutReceipts
                             : (Array.isArray(result?.payoutHashes)

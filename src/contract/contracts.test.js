@@ -371,6 +371,25 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
         expect(mockWriteContract).toHaveBeenCalledTimes(2);
     });
 
+    test("writeContractDirect uses manual gas override when provided", async () => {
+        const contract = new Contracts_MetaMask();
+        contract.getEthereumProviderReady = jest.fn().mockResolvedValue({});
+        contract.ensureWalletWriteReady = jest.fn().mockResolvedValue("0xabc");
+        mockWriteContract.mockResolvedValueOnce("0xgas");
+
+        await contract.writeContractDirect({
+            account: "0xabc",
+            address: "0xdef",
+            abi: [],
+            functionName: "payment_of_reward",
+            args: [1, "1/6", ["0x1"]],
+            gasOverride: 500000n,
+        });
+
+        expect(mockEstimateContractGas).not.toHaveBeenCalled();
+        expect(mockWriteContract).toHaveBeenCalledWith(expect.objectContaining({ gas: 500000n }));
+    });
+
     test("ensureWalletWriteReady explicitly requests accounts on mobile", async () => {
         const contract = new Contracts_MetaMask();
         const provider = { request: jest.fn().mockResolvedValue(["0xmobile"]) };
