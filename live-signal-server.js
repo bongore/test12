@@ -42,7 +42,7 @@ function normalizeRewardPayoutEntries(entries = []) {
     const deduped = new Map();
     (Array.isArray(entries) ? entries : []).forEach((entry) => {
         const normalized = normalizeRewardPayoutEntry(entry);
-        if (!normalized.id || !normalized.quizId || !normalized.studentAddress) return;
+        if (!normalized.id || normalized.quizId == null || !normalized.studentAddress) return;
         deduped.set(normalized.id, normalized);
     });
     return Array.from(deduped.values()).sort((a, b) => new Date(b.paidAt || 0) - new Date(a.paidAt || 0));

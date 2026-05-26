@@ -44,7 +44,7 @@ function normalizeEntries(entries = []) {
     const deduped = new Map();
     (Array.isArray(entries) ? entries : []).forEach((entry) => {
         const normalized = normalizeEntry(entry);
-        if (!normalized.quizId || !normalized.studentAddress) return;
+        if (normalized.quizId == null || !normalized.studentAddress) return;
         deduped.set(normalized.id, normalized);
     });
     return Array.from(deduped.values()).sort(
