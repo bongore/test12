@@ -2038,10 +2038,6 @@ class Contracts_MetaMask {
                 }
             } catch (error) {
                 console.log("auto reward chunk estimate fallback", error);
-                if (studentChunk.length === 1) {
-                    // Reverted for a single student (likely already paid). Skip this student.
-                    return [];
-                }
             }
 
             if (studentChunk.length === 1) {
@@ -2084,10 +2080,6 @@ class Contracts_MetaMask {
                 }
             } catch (error) {
                 console.log("manual reward chunk estimate fallback", error);
-                if (entryChunk.length === 1) {
-                    // Reverted for a single student. Skip this student.
-                    return [];
-                }
             }
 
             if (entryChunk.length === 1) {

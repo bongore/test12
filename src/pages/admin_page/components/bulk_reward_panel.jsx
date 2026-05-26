@@ -257,10 +257,6 @@ function Bulk_reward_panel({ cont }) {
                         refreshedRow.sourceAddress
                     );
 
-                    if (result?.payoutChunks && result.payoutChunks.length === 0 && pendingAddresses.length > 0) {
-                        alert(`【お知らせ】問題 #${row.quizId} の対象者はすでにブロックチェーン上で支払い済みと判定されたため、二重支払いを防ぐためにスキップされました（メタマスクは起動しません）。\n\n※ネットワークの反映遅延により、画面上は一時的に「未取得」と表示されている場合があります。数分経ってから再度読み込んでください。`);
-                    }
-
                     const refreshedDetails = await Promise.all(
                         pendingAddresses.map(async (studentAddress) => {
                             const detail = await cont.get_student_answer_detail(studentAddress, refreshedRow.quizId, refreshedRow.sourceAddress).catch(() => null);
