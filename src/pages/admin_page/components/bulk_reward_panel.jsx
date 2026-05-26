@@ -23,6 +23,10 @@ function isRewardSettlementPending(row) {
     return Boolean(row?.submitted) && Number(row?.state || 0) === 3;
 }
 
+function normalizeAnswerText(value) {
+    return String(value || "").trim();
+}
+
 function getContractTypeLabel(sourceAddress) {
     const normalizedSource = normalizeAddress(sourceAddress || quiz_address);
     if (normalizedSource === normalizeAddress(quiz_address)) return "現在コントラクト";
@@ -53,17 +57,21 @@ function Bulk_reward_panel({ cont }) {
         const title = String(quiz?.[2] || `問題 ${quizId}`);
         const rewardTft = Number(quiz?.[7] || 0) / 10 ** 18;
         const correctAnswer = await cont.get_revealed_correct_answer(quizId, sourceAddress).catch(() => "");
+        const normalizedCorrectAnswer = normalizeAnswerText(correctAnswer);
+        const hasCorrectAnswer = normalizedCorrectAnswer.length > 0;
 
         const details = await Promise.all(
             (Array.isArray(studentAddresses) ? studentAddresses : []).map(async (student) => {
                 const detail = await cont.get_student_answer_detail(student, quizId, sourceAddress).catch(() => null);
+                const normalizedAnswerText = normalizeAnswerText(detail?.answerText);
                 return {
                     address: student,
                     name: nextStudentNameMap[normalizeAddress(student)]?.name || "",
                     submitted: Boolean(detail?.submitted),
                     state: Number(detail?.state || 0),
-                    answerText: String(detail?.answerText || ""),
+                    answerText: normalizedAnswerText,
                     reward: Number(detail?.reward || 0),
+                    isCorrectByAnswer: hasCorrectAnswer && normalizedAnswerText === normalizedCorrectAnswer,
                 };
             })
         );
@@ -74,14 +82,39 @@ function Bulk_reward_panel({ cont }) {
                 .map((e) => `${normalizeAddress(e.sourceAddress)}:${e.quizId}:${normalizeAddress(e.studentAddress)}`)
         );
 
-        const pendingStudents = details.filter((detail) => 
-            isRewardSettlementPending(detail) && 
-            !ledgerKeys.has(`${normalizeAddress(sourceAddress)}:${quizId}:${normalizeAddress(detail.address)}`)
-        );
-        const settledStudents = details.filter((detail) => 
-            [1, 2].includes(Number(detail?.state || 0)) ||
-            ledgerKeys.has(`${normalizeAddress(sourceAddress)}:${quizId}:${normalizeAddress(detail.address)}`)
-        );
+        const pendingStudents = details.filter((detail) => {
+            if (!isRewardSettlementPending(detail)) {
+                return false;
+            }
+
+            const ledgerPaid = ledgerKeys.has(`${normalizeAddress(sourceAddress)}:${quizId}:${normalizeAddress(detail.address)}`);
+            if (ledgerPaid || Number(detail?.reward || 0) > 0) {
+                return false;
+            }
+
+            if (!hasCorrectAnswer) {
+                return true;
+            }
+
+            return Boolean(detail?.isCorrectByAnswer);
+        });
+
+        const settledStudents = details.filter((detail) => {
+            if ([1, 2].includes(Number(detail?.state || 0))) {
+                return true;
+            }
+
+            const ledgerPaid = ledgerKeys.has(`${normalizeAddress(sourceAddress)}:${quizId}:${normalizeAddress(detail.address)}`);
+            if (ledgerPaid || Number(detail?.reward || 0) > 0) {
+                return true;
+            }
+
+            if (!hasCorrectAnswer || !Boolean(detail?.submitted)) {
+                return false;
+            }
+
+            return !detail.isCorrectByAnswer;
+        });
         return {
             key: `${sourceAddress}:${quizId}`,
             quizId,

@@ -101,4 +101,45 @@ describe("Bulk_reward_panel", () => {
         const payoutLink = await screen.findByRole("link", { name: /0xfeed1234/i });
         expect(payoutLink).toHaveAttribute("href", "https://amoy.polygonscan.com/tx/0xfeed1234567890abcdef1234567890abcdef1234567890abcdef1234567890");
     });
+
+    test("treats wrong answers as settled once the correct answer is known", async () => {
+        mockContract.get_student_answer_detail.mockResolvedValue({
+            submitted: true,
+            state: 3,
+            answerText: "13/36",
+            reward: 0,
+        });
+
+        render(<Bulk_reward_panel cont={mockContract} />);
+
+        expect(await screen.findByText("未完了 0 問 / 配布完了 1 問 / 全 1 問")).toBeInTheDocument();
+        expect(screen.getByText("配布完了")).toBeInTheDocument();
+    });
+
+    test("treats state 3 correct answers with confirmed payout tx as completed", async () => {
+        const payoutEntries = [
+            {
+                quizId: 5,
+                sourceAddress: "0x55B3977C7B7b913eaf175A7364c8375732d22241",
+                studentAddress: "0x1111111111111111111111111111111111111111",
+                txHash: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+                resultState: "correct",
+                confirmed: true,
+            },
+        ];
+        getRewardPayoutEntries.mockReturnValue(payoutEntries);
+        syncRewardPayoutLedgerFromServer.mockResolvedValue(payoutEntries);
+        mockContract.get_student_answer_detail.mockResolvedValue({
+            submitted: true,
+            state: 3,
+            answerText: "1/6",
+            reward: 0,
+        });
+
+        render(<Bulk_reward_panel cont={mockContract} />);
+
+        expect(await screen.findByText("未完了 0 問 / 配布完了 1 問 / 全 1 問")).toBeInTheDocument();
+        const payoutLink = await screen.findByRole("link", { name: /0x12345678/i });
+        expect(payoutLink).toHaveAttribute("href", "https://amoy.polygonscan.com/tx/0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
+    });
 });
