@@ -1,12 +1,14 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import Bulk_reward_panel from "./bulk_reward_panel";
 import { useAccessControl } from "../../../utils/accessControl";
+import { getRewardPayoutEntries, syncRewardPayoutLedgerFromServer } from "../../../utils/rewardPayoutLedger";
 
 jest.mock("../../../utils/accessControl", () => ({
     useAccessControl: jest.fn(),
 }));
 
 jest.mock("../../../utils/rewardPayoutLedger", () => ({
+    getRewardPayoutEntries: jest.fn(() => []),
     persistRewardPayoutEntriesToServer: jest.fn(async () => []),
     syncRewardPayoutLedgerFromServer: jest.fn(async () => []),
 }));
@@ -72,5 +74,31 @@ describe("Bulk_reward_panel", () => {
         await waitFor(() => {
             expect(screen.getByRole("button", { name: "選択した問題を一括配布" })).toBeEnabled();
         });
+    });
+
+    test("shows payout transaction links for already completed quizzes from the payout ledger", async () => {
+        const payoutEntries = [
+            {
+                quizId: 5,
+                sourceAddress: "0x55B3977C7B7b913eaf175A7364c8375732d22241",
+                studentAddress: "0x1111111111111111111111111111111111111111",
+                txHash: "0xfeed1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+                confirmed: true,
+            },
+        ];
+        getRewardPayoutEntries.mockReturnValue(payoutEntries);
+        syncRewardPayoutLedgerFromServer.mockResolvedValue(payoutEntries);
+        mockContract.get_student_answer_detail.mockResolvedValue({
+            submitted: true,
+            state: 2,
+            answerText: "1/6",
+            reward: 50000000000000000000n,
+        });
+
+        render(<Bulk_reward_panel cont={mockContract} />);
+
+        expect(await screen.findByText("報酬配布が完了した問題")).toBeInTheDocument();
+        const payoutLink = await screen.findByRole("link", { name: /0xfeed1234/i });
+        expect(payoutLink).toHaveAttribute("href", "https://amoy.polygonscan.com/tx/0xfeed1234567890abcdef1234567890abcdef1234567890abcdef1234567890");
     });
 });

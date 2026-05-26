@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { legacy_quiz_addresses, quiz_address } from "../../../contract/config";
-import { persistRewardPayoutEntriesToServer, syncRewardPayoutLedgerFromServer } from "../../../utils/rewardPayoutLedger";
+import { getRewardPayoutEntries, persistRewardPayoutEntriesToServer, syncRewardPayoutLedgerFromServer } from "../../../utils/rewardPayoutLedger";
 import { useAccessControl } from "../../../utils/accessControl";
 
 function normalizeAddress(value) {
@@ -46,6 +46,7 @@ function Bulk_reward_panel({ cont }) {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [statusText, setStatusText] = useState("");
     const [executionRows, setExecutionRows] = useState([]);
+    const [rewardPayoutEntries, setRewardPayoutEntries] = useState(() => getRewardPayoutEntries());
 
     async function buildQuizRow(quiz, studentAddresses, nextStudentNameMap) {
         const quizId = Number(quiz?.[0] || 0);
@@ -97,6 +98,35 @@ function Bulk_reward_panel({ cont }) {
         () => quizRows.filter((row) => row.pendingCount > 0 || row.settledCount === 0),
         [quizRows]
     );
+    const payoutSummaryByQuiz = useMemo(() => {
+        const summary = new Map();
+        (Array.isArray(rewardPayoutEntries) ? rewardPayoutEntries : []).forEach((entry) => {
+            const key = `${normalizeAddress(entry?.sourceAddress || "")}:${Number(entry?.quizId || 0)}`;
+            if (!summary.has(key)) {
+                summary.set(key, {
+                    txHashes: [],
+                    txHashSet: new Set(),
+                    confirmedCount: 0,
+                    payoutCount: 0,
+                });
+            }
+            const current = summary.get(key);
+            current.payoutCount += 1;
+            if (entry?.confirmed !== false) {
+                current.confirmedCount += 1;
+            }
+            const txHash = String(entry?.txHash || "");
+            if (txHash && !current.txHashSet.has(txHash)) {
+                current.txHashSet.add(txHash);
+                current.txHashes.push(txHash);
+            }
+        });
+        return summary;
+    }, [rewardPayoutEntries]);
+
+    function getQuizPayoutSummary(row) {
+        return payoutSummaryByQuiz.get(`${normalizeAddress(row?.sourceAddress || "")}:${Number(row?.quizId || 0)}`) || null;
+    }
 
     async function loadStudents() {
         const studentAddresses = await cont.get_student_list().catch(() => []);
@@ -123,11 +153,21 @@ function Bulk_reward_panel({ cont }) {
         setStatusText("問題と未確定回答を確認中...");
         try {
             const quizList = await cont.get_all_quiz_simple_list().catch(() => []);
+            let payoutLedger = getRewardPayoutEntries();
+            try {
+                const syncedPayoutLedger = await syncRewardPayoutLedgerFromServer();
+                if (Array.isArray(syncedPayoutLedger)) {
+                    payoutLedger = syncedPayoutLedger;
+                }
+            } catch (ledgerError) {
+                console.error(ledgerError);
+            }
             const rows = await Promise.all(
                 (Array.isArray(quizList) ? quizList : []).map((quiz) => buildQuizRow(quiz, studentAddresses, nextStudentNameMap))
             );
 
             setQuizRows(rows);
+            setRewardPayoutEntries(Array.isArray(payoutLedger) ? payoutLedger : getRewardPayoutEntries());
             setSelectedKeys((current) => current.filter((key) => rows.some((row) => row.key === key)));
             setStatusText("");
         } catch (error) {
@@ -264,7 +304,8 @@ function Bulk_reward_panel({ cont }) {
                         });
 
                     if (rewardEntries.length > 0) {
-                        await persistRewardPayoutEntriesToServer(rewardEntries);
+                        const mergedEntries = await persistRewardPayoutEntriesToServer(rewardEntries);
+                        setRewardPayoutEntries(Array.isArray(mergedEntries) ? mergedEntries : getRewardPayoutEntries());
                     }
 
                     nextExecutionRows.push({
@@ -412,25 +453,40 @@ function Bulk_reward_panel({ cont }) {
                             <th>契約種別</th>
                             <th>1人あたり報酬</th>
                             <th>配布完了数</th>
+                            <th>報酬Tx</th>
                             <th>状態</th>
                         </tr>
                     </thead>
                     <tbody>
                         {completedRows.map((row) => {
+                            const payoutSummary = getQuizPayoutSummary(row);
                             return (
                                 <tr key={`${row.key}:completed`}>
                                     <td>#{row.quizId} {row.title}</td>
                                     <td style={{ fontSize: "12px", wordBreak: "break-all" }}>{row.sourceAddress || quiz_address}</td>
                                     <td>{row.contractTypeLabel}</td>
                                     <td>{row.rewardTft} TFT</td>
-                                    <td>{row.settledCount}件</td>
+                                    <td>{payoutSummary?.confirmedCount || row.settledCount}件</td>
+                                    <td style={{ fontSize: "12px" }}>
+                                        {payoutSummary?.txHashes?.length ? (
+                                            <div style={{ display: "grid", gap: "6px" }}>
+                                                {payoutSummary.txHashes.map((hash) => (
+                                                    <a key={hash} href={`https://amoy.polygonscan.com/tx/${hash}`} target="_blank" rel="noreferrer" className="token-grant-link">
+                                                        {formatTxHash(hash)}
+                                                    </a>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            "記録なし"
+                                        )}
+                                    </td>
                                     <td>配布完了</td>
                                 </tr>
                             );
                         })}
                         {completedRows.length === 0 && (
                             <tr>
-                                <td colSpan={6}>まだ配布完了の問題はありません。</td>
+                                <td colSpan={7}>まだ配布完了の問題はありません。</td>
                             </tr>
                         )}
                     </tbody>
