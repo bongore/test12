@@ -109,7 +109,7 @@ describe("Investment_page", () => {
         expect(screen.getByText("旧コントラクト")).toBeInTheDocument();
         expect(await screen.findByText("学生A")).toBeInTheDocument();
 
-        fireEvent.change(screen.getByPlaceholderText("1人あたりの報酬額を入力"), {
+        fireEvent.change(screen.getByPlaceholderText("追加で預けるTFTを入力（未入力なら 0）"), {
             target: { value: "50" },
         });
         fireEvent.click(screen.getByRole("radio", { name: /採点結果を確定して報酬を払い出す/ }));

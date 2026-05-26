@@ -71,11 +71,12 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
         const contract = new Contracts_MetaMask();
         const legacyQuizAddress = "0x55B3977C7B7b913eaf175A7364c8375732d22241";
 
-        contract.get_address = jest.fn().mockResolvedValue("0xd5670D7B88411d03741680451C2ea630B68C6944");
+        contract.getConnectedWriteAccount = jest.fn().mockResolvedValue("0xd5670D7B88411d03741680451C2ea630B68C6944");
         contract._payment_of_reward_manual = jest.fn().mockResolvedValue("0x1234");
         contract._investment_to_quiz = jest.fn().mockResolvedValue("");
         contract.approve = jest.fn().mockResolvedValue("");
         contract._adding_reward = jest.fn().mockResolvedValue("");
+        contract.waitForReceiptWithRetry = jest.fn().mockResolvedValue({ status: "success", transactionHash: "0x1234" });
 
         await contract.settle_quiz_rewards_manually(
             4,
@@ -103,11 +104,11 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
         const legacyQuizAddress = "0x55B3977C7B7b913eaf175A7364c8375732d22241";
         const students = Array.from({ length: 16 }, (_, index) => `0x${(index + 1).toString(16).padStart(40, "0")}`);
 
-        contract.get_address = jest.fn().mockResolvedValue("0xd5670D7B88411d03741680451C2ea630B68C6944");
+        contract.getConnectedWriteAccount = jest.fn().mockResolvedValue("0xd5670D7B88411d03741680451C2ea630B68C6944");
         contract._payment_of_reward = jest.fn()
             .mockResolvedValueOnce("0xhash1")
             .mockResolvedValueOnce("0xhash2");
-        mockWaitForTransactionReceipt
+        contract.waitForReceiptWithRetry = jest.fn()
             .mockResolvedValueOnce({ status: "success", transactionHash: "0xhash1" })
             .mockResolvedValueOnce({ status: "success", transactionHash: "0xhash2" });
         contract.invalidateQuizSimpleCache = jest.fn();
@@ -136,6 +137,30 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
             legacyQuizAddress
         );
         expect(result.payoutHashes).toEqual(["0xhash1", "0xhash2"]);
+    });
+
+    test("settle_quiz_rewards_manually does not add extra investment tx when additional reward is zero", async () => {
+        const contract = new Contracts_MetaMask();
+        const legacyQuizAddress = "0x55B3977C7B7b913eaf175A7364c8375732d22241";
+
+        contract.getConnectedWriteAccount = jest.fn().mockResolvedValue("0xd5670D7B88411d03741680451C2ea630B68C6944");
+        contract.readTokenAllowance = jest.fn().mockResolvedValue(0n);
+        contract._investment_to_quiz = jest.fn();
+        contract._payment_of_reward_manual = jest.fn().mockResolvedValue("0xpayout");
+        contract.waitForReceiptWithRetry = jest.fn().mockResolvedValue({ status: "success", transactionHash: "0xpayout" });
+
+        await contract.settle_quiz_rewards_manually(
+            4,
+            "0",
+            "1/6",
+            ["0x1111111111111111111111111111111111111111"],
+            [],
+            "true",
+            legacyQuizAddress
+        );
+
+        expect(contract._investment_to_quiz).not.toHaveBeenCalled();
+        expect(contract._payment_of_reward_manual).toHaveBeenCalled();
     });
 
     test("ensure_wallet_connected reuses existing accounts before requesting access again", async () => {

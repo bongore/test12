@@ -47,8 +47,54 @@ function Bulk_reward_panel({ cont }) {
     const [statusText, setStatusText] = useState("");
     const [executionRows, setExecutionRows] = useState([]);
 
+    async function buildQuizRow(quiz, studentAddresses, nextStudentNameMap) {
+        const quizId = Number(quiz?.[0] || 0);
+        const sourceAddress = quiz?.sourceAddress || quiz?.[12] || "";
+        const title = String(quiz?.[2] || `問題 ${quizId}`);
+        const rewardTft = Number(quiz?.[7] || 0) / 10 ** 18;
+        const correctAnswer = await cont.get_revealed_correct_answer(quizId, sourceAddress).catch(() => "");
+
+        const details = await Promise.all(
+            (Array.isArray(studentAddresses) ? studentAddresses : []).map(async (student) => {
+                const detail = await cont.get_student_answer_detail(student, quizId, sourceAddress).catch(() => null);
+                return {
+                    address: student,
+                    name: nextStudentNameMap[normalizeAddress(student)]?.name || "",
+                    submitted: Boolean(detail?.submitted),
+                    state: Number(detail?.state || 0),
+                    answerText: String(detail?.answerText || ""),
+                    reward: Number(detail?.reward || 0),
+                };
+            })
+        );
+
+        const pendingStudents = details.filter((detail) => isRewardSettlementPending(detail));
+        const settledStudents = details.filter((detail) => [1, 2].includes(Number(detail?.state || 0)));
+        return {
+            key: `${sourceAddress}:${quizId}`,
+            quizId,
+            sourceAddress,
+            title,
+            rewardTft,
+            correctAnswer,
+            contractTypeLabel: getContractTypeLabel(sourceAddress),
+            pendingCount: pendingStudents.length,
+            pendingStudents,
+            settledCount: settledStudents.length,
+            settledStudents,
+        };
+    }
+
     const eligibleRows = useMemo(
         () => quizRows.filter((row) => row.pendingStudents.length > 0 && row.correctAnswer),
+        [quizRows]
+    );
+    const completedRows = useMemo(
+        () => quizRows.filter((row) => row.pendingCount === 0 && row.settledCount > 0),
+        [quizRows]
+    );
+    const incompleteRows = useMemo(
+        () => quizRows.filter((row) => row.pendingCount > 0 || row.settledCount === 0),
         [quizRows]
     );
 
@@ -78,40 +124,7 @@ function Bulk_reward_panel({ cont }) {
         try {
             const quizList = await cont.get_all_quiz_simple_list().catch(() => []);
             const rows = await Promise.all(
-                (Array.isArray(quizList) ? quizList : []).map(async (quiz) => {
-                    const quizId = Number(quiz?.[0] || 0);
-                    const sourceAddress = quiz?.sourceAddress || quiz?.[12] || "";
-                    const title = String(quiz?.[2] || `問題 ${quizId}`);
-                    const rewardTft = Number(quiz?.[7] || 0) / 10 ** 18;
-                    const correctAnswer = await cont.get_revealed_correct_answer(quizId, sourceAddress).catch(() => "");
-
-                    const details = await Promise.all(
-                        (Array.isArray(studentAddresses) ? studentAddresses : []).map(async (student) => {
-                            const detail = await cont.get_student_answer_detail(student, quizId, sourceAddress).catch(() => null);
-                            return {
-                                address: student,
-                                name: nextStudentNameMap[normalizeAddress(student)]?.name || "",
-                                submitted: Boolean(detail?.submitted),
-                                state: Number(detail?.state || 0),
-                                answerText: String(detail?.answerText || ""),
-                                reward: Number(detail?.reward || 0),
-                            };
-                        })
-                    );
-
-                    const pendingStudents = details.filter((detail) => isRewardSettlementPending(detail));
-                    return {
-                        key: `${sourceAddress}:${quizId}`,
-                        quizId,
-                        sourceAddress,
-                        title,
-                        rewardTft,
-                        correctAnswer,
-                        contractTypeLabel: getContractTypeLabel(sourceAddress),
-                        pendingCount: pendingStudents.length,
-                        pendingStudents,
-                    };
-                })
+                (Array.isArray(quizList) ? quizList : []).map((quiz) => buildQuizRow(quiz, studentAddresses, nextStudentNameMap))
             );
 
             setQuizRows(rows);
@@ -176,18 +189,38 @@ function Bulk_reward_panel({ cont }) {
 
             for (const row of targetRows) {
                 try {
+                    const refreshedRow = await buildQuizRow(
+                        [row.quizId, "", row.title, "", "", 0, 0, BigInt(Math.round(row.rewardTft * 10 ** 18)), 0, 0, 0, false, row.sourceAddress],
+                        students,
+                        studentNameMap
+                    );
+                    if (refreshedRow.pendingCount === 0) {
+                        nextExecutionRows.push({
+                            key: row.key,
+                            quizId: row.quizId,
+                            title: row.title,
+                            sourceAddress: row.sourceAddress,
+                            contractTypeLabel: row.contractTypeLabel,
+                            pendingCount: 0,
+                            payoutTxCount: 0,
+                            payoutTxHashes: [],
+                            status: "skipped_completed",
+                        });
+                        continue;
+                    }
+
                     setStatusText(`問題 #${row.quizId} を配布中...`);
-                    const pendingAddresses = row.pendingStudents.map((student) => student.address);
+                    const pendingAddresses = refreshedRow.pendingStudents.map((student) => student.address);
                     const result = await cont.settle_quiz_rewards_auto_existing(
-                        row.quizId,
-                        row.correctAnswer,
+                        refreshedRow.quizId,
+                        refreshedRow.correctAnswer,
                         pendingAddresses,
-                        row.sourceAddress
+                        refreshedRow.sourceAddress
                     );
 
                     const refreshedDetails = await Promise.all(
                         pendingAddresses.map(async (studentAddress) => {
-                            const detail = await cont.get_student_answer_detail(studentAddress, row.quizId, row.sourceAddress).catch(() => null);
+                            const detail = await cont.get_student_answer_detail(studentAddress, refreshedRow.quizId, refreshedRow.sourceAddress).catch(() => null);
                             return {
                                 address: studentAddress,
                                 detail,
@@ -211,10 +244,10 @@ function Bulk_reward_panel({ cont }) {
                             const rewardTft = rewardWei > 0 ? rewardWei / 10 ** 18 : 0;
                             const state = Number(detail?.state || 0);
                             return {
-                                id: [normalizeAddress(row.sourceAddress), row.quizId, normalizeAddress(address), payoutTxMap.get(normalizeAddress(address)) || new Date().toISOString(), state].join(":"),
-                                quizId: row.quizId,
-                                sourceAddress: row.sourceAddress,
-                                quizTitle: row.title,
+                                id: [normalizeAddress(refreshedRow.sourceAddress), refreshedRow.quizId, normalizeAddress(address), payoutTxMap.get(normalizeAddress(address)) || new Date().toISOString(), state].join(":"),
+                                quizId: refreshedRow.quizId,
+                                sourceAddress: refreshedRow.sourceAddress,
+                                quizTitle: refreshedRow.title,
                                 studentAddress: address,
                                 studentName: studentNameMap[normalizeAddress(address)]?.name || "",
                                 answerText: String(detail?.answerText || ""),
@@ -224,7 +257,7 @@ function Bulk_reward_panel({ cont }) {
                                 txHash: payoutTxMap.get(normalizeAddress(address)) || "",
                                 actorAddress: access.address || "",
                                 mode: "bulk_auto",
-                                contractTypeLabel: row.contractTypeLabel,
+                                contractTypeLabel: refreshedRow.contractTypeLabel,
                                 paidAt: new Date().toISOString(),
                                 confirmed: state === 2 ? rewardTft > 0 : state === 1,
                             };
@@ -236,11 +269,11 @@ function Bulk_reward_panel({ cont }) {
 
                     nextExecutionRows.push({
                         key: row.key,
-                        quizId: row.quizId,
-                        title: row.title,
-                        sourceAddress: row.sourceAddress,
-                        contractTypeLabel: row.contractTypeLabel,
-                        pendingCount: row.pendingCount,
+                        quizId: refreshedRow.quizId,
+                        title: refreshedRow.title,
+                        sourceAddress: refreshedRow.sourceAddress,
+                        contractTypeLabel: refreshedRow.contractTypeLabel,
+                        pendingCount: refreshedRow.pendingCount,
                         payoutTxCount: Array.isArray(result?.payoutReceipts) ? result.payoutReceipts.length : 0,
                         payoutTxHashes: Array.isArray(result?.payoutReceipts)
                             ? result.payoutReceipts.map((item) => item?.transactionHash || item?.hash || "").filter(Boolean)
@@ -290,7 +323,7 @@ function Bulk_reward_panel({ cont }) {
             <div className="token-grant-card">
                 <div className="token-grant-card-title">一括配布対象</div>
                 <div className="token-grant-card-desc">
-                    {isLoading ? "対象問題を読み込み中です..." : `配布対象 ${eligibleRows.length} 問 / 全 ${quizRows.length} 問`}
+                    {isLoading ? "対象問題を読み込み中です..." : `未完了 ${eligibleRows.length} 問 / 配布完了 ${completedRows.length} 問 / 全 ${quizRows.length} 問`}
                 </div>
                 <div className="token-grant-actions">
                     <button className="btn-action" type="button" disabled={isLoading || isSubmitting} onClick={() => loadQuizzes(students, studentNameMap)}>
@@ -316,7 +349,12 @@ function Bulk_reward_panel({ cont }) {
                 )}
             </div>
 
-            <div className="results-table-wrap" style={{ marginTop: "var(--space-6)" }}>
+            <div className="token-grant-card" style={{ marginTop: "var(--space-6)" }}>
+                <div className="token-grant-card-title">未完了の問題</div>
+                <div className="token-grant-card-desc">未確定回答が残っている問題だけを表示します。ここに出ていない問題は一括配布の対象外です。</div>
+            </div>
+
+            <div className="results-table-wrap" style={{ marginTop: "var(--space-4)" }}>
                 <table className="results-table">
                     <thead>
                         <tr>
@@ -330,7 +368,7 @@ function Bulk_reward_panel({ cont }) {
                         </tr>
                     </thead>
                     <tbody>
-                        {quizRows.map((row) => {
+                        {incompleteRows.map((row) => {
                             const selectable = row.pendingStudents.length > 0 && row.correctAnswer;
                             return (
                                 <tr key={row.key}>
@@ -351,6 +389,50 @@ function Bulk_reward_panel({ cont }) {
                                 </tr>
                             );
                         })}
+                        {incompleteRows.length === 0 && (
+                            <tr>
+                                <td colSpan={7}>未完了の問題はありません。</td>
+                            </tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+
+            <div className="token-grant-card" style={{ marginTop: "var(--space-6)" }}>
+                <div className="token-grant-card-title">報酬配布が完了した問題</div>
+                <div className="token-grant-card-desc">未確定回答が残っていないため、この一覧からは再送できません。</div>
+            </div>
+
+            <div className="results-table-wrap" style={{ marginTop: "var(--space-4)" }}>
+                <table className="results-table">
+                    <thead>
+                        <tr>
+                            <th>問題</th>
+                            <th>保存先 quiz.sol</th>
+                            <th>契約種別</th>
+                            <th>1人あたり報酬</th>
+                            <th>配布完了数</th>
+                            <th>状態</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {completedRows.map((row) => {
+                            return (
+                                <tr key={`${row.key}:completed`}>
+                                    <td>#{row.quizId} {row.title}</td>
+                                    <td style={{ fontSize: "12px", wordBreak: "break-all" }}>{row.sourceAddress || quiz_address}</td>
+                                    <td>{row.contractTypeLabel}</td>
+                                    <td>{row.rewardTft} TFT</td>
+                                    <td>{row.settledCount}件</td>
+                                    <td>配布完了</td>
+                                </tr>
+                            );
+                        })}
+                        {completedRows.length === 0 && (
+                            <tr>
+                                <td colSpan={6}>まだ配布完了の問題はありません。</td>
+                            </tr>
+                        )}
                     </tbody>
                 </table>
             </div>
@@ -365,7 +447,7 @@ function Bulk_reward_panel({ cont }) {
                                     #{row.quizId} {row.title}
                                 </div>
                                 <div className="token-grant-card-desc">
-                                    状態: {row.status === "success" ? "配布完了" : `失敗 (${row.error || "-"})`}
+                                    状態: {row.status === "success" ? "配布完了" : row.status === "skipped_completed" ? "すでに配布完了" : `失敗 (${row.error || "-"})`}
                                 </div>
                                 <div className="token-grant-card-desc">
                                     保存先: {row.sourceAddress} / {row.contractTypeLabel}

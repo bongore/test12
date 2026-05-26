@@ -64,7 +64,7 @@ describe("Bulk_reward_panel", () => {
         expect(await screen.findByText("💸 全問題一括報酬配布")).toBeInTheDocument();
         expect(await screen.findByText(/応用数学第四回演習問題\(5\)/)).toBeInTheDocument();
         expect(screen.getByText("旧コントラクト")).toBeInTheDocument();
-        expect(screen.getByText("配布対象 1 問 / 全 1 問")).toBeInTheDocument();
+        expect(screen.getByText("未完了 1 問 / 配布完了 0 問 / 全 1 問")).toBeInTheDocument();
         expect(screen.getByRole("button", { name: "全対象問題を一括配布" })).toBeEnabled();
 
         fireEvent.click(screen.getByRole("button", { name: "対象を全選択" }));

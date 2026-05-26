@@ -1054,22 +1054,6 @@ class Contracts_MetaMask {
                     console.log(gasError);
                 }
 
-                try {
-                    const estimatedFees = await publicClient.estimateFeesPerGas();
-                    if (estimatedFees?.maxFeePerGas) {
-                        writeConfig.maxFeePerGas = this.isAppleMobileDevice()
-                            ? (estimatedFees.maxFeePerGas * 13n) / 10n
-                            : (estimatedFees.maxFeePerGas * 11n) / 10n;
-                    }
-                    if (estimatedFees?.maxPriorityFeePerGas) {
-                        writeConfig.maxPriorityFeePerGas = this.isAppleMobileDevice()
-                            ? (estimatedFees.maxPriorityFeePerGas * 13n) / 10n
-                            : (estimatedFees.maxPriorityFeePerGas * 11n) / 10n;
-                    }
-                } catch (feeError) {
-                    console.log(feeError);
-                }
-
                 return await walletClient.writeContract(writeConfig);
             } catch (error) {
                 lastError = error;
@@ -1698,7 +1682,9 @@ class Contracts_MetaMask {
         let payoutHashes = [];
         let is_not_paying_out = null;
         let is_not_adding_reward = null;
-        amount = Number(amount) * 10 ** 18;
+        const rewardText = String(amount ?? 0).trim() || "0";
+        const rewardWei = parseUnits(rewardText, 18);
+        const normalizedStudentCount = Number(numOfStudent || 0);
 
         if (isNotPayingOut === "false") {
             is_not_paying_out = false;
@@ -1713,59 +1699,57 @@ class Contracts_MetaMask {
 
         try {
             if (ethereum) {
-                let account = await this.get_address();
+                let account = await this.getConnectedWriteAccount();
                 const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
-                let approval = await token.read.allowance({ account, args: [account, targetQuizAddress] });
-                console.log(Number(approval));
-                console.log(amount * numOfStudent);
+                if (!account) {
+                    throw new Error("wallet_not_connected");
+                }
+                let approval = await this.readTokenAllowance(account, targetQuizAddress);
+                const requiredAmount = rewardWei > 0n && normalizedStudentCount > 0
+                    ? rewardWei * BigInt(normalizedStudentCount)
+                    : 0n;
+                console.log(String(approval || 0n));
+                console.log(String(requiredAmount));
 
-                if (Number(approval) >= Number(amount * numOfStudent)) {
-                    hash = await this._investment_to_quiz(account, id, amount, numOfStudent, targetQuizAddress);
-                    if (hash) {
-                        res = await publicClient.waitForTransactionReceipt({ hash });
-                    }
-                } else {
-                    hash = await this.approve(account, amount * numOfStudent, targetQuizAddress);
-                    if (hash) {
-                        res = await publicClient.waitForTransactionReceipt({ hash });
-                        hash = await this._investment_to_quiz(account, id, amount, numOfStudent, targetQuizAddress);
-                        console.log(hash);
+                if (requiredAmount > 0n && normalizedStudentCount > 0) {
+                    if (approval < requiredAmount) {
+                        hash = await this.approve(account, requiredAmount, targetQuizAddress);
                         if (hash) {
-                            res = await publicClient.waitForTransactionReceipt({ hash });
+                            res = await this.waitForReceiptWithRetry(hash);
                         }
+                    }
+
+                    hash = await this._investment_to_quiz(account, id, rewardWei, normalizedStudentCount, targetQuizAddress);
+                    if (hash) {
+                        res = await this.waitForReceiptWithRetry(hash);
                     }
                 }
 
-                if (is_not_paying_out == false) {
+                if (is_not_paying_out === false) {
                     let addreses = sliceByNumber(students, 15);
                     console.log(addreses)
                     for (let i = 0; i < addreses.length; i++) {
                         hash2 = await this._payment_of_reward(account, id, answer, addreses[i], targetQuizAddress);
                         if (hash2) {
-                            res2 = await publicClient.waitForTransactionReceipt({ hash: hash2 });
+                            res2 = await this.waitForReceiptWithRetry(hash2);
                             payoutHashes.push(hash2);
                             payoutReceipts.push(res2);
                         }
                     }
-                    if (is_not_adding_reward == false) {
+                    if (is_not_adding_reward === false) {
                         let reward = (await this.get_quiz_simple(id, targetQuizAddress))[7];
                         console.log(reward);
-                        approval = await token.read.allowance({ account, args: [account, targetQuizAddress] });
+                        approval = await this.readTokenAllowance(account, targetQuizAddress);
                         console.log(approval);
-                        if (Number(approval) >= Number(reward)) {
-                            hash = await this._adding_reward(account, id, reward, targetQuizAddress);
-                            if (hash) {
-                                res = await publicClient.waitForTransactionReceipt({ hash });
-                            }
-                        } else {
+                        if (BigInt(approval || 0n) < BigInt(reward || 0)) {
                             hash = await this.approve(account, reward, targetQuizAddress);
                             if (hash) {
-                                res = res = await publicClient.waitForTransactionReceipt({ hash });
-                                hash = await this._adding_reward(account, id, reward, targetQuizAddress);
-                                if (hash) {
-                                    res = await publicClient.waitForTransactionReceipt({ hash });
-                                }
+                                res = await this.waitForReceiptWithRetry(hash);
                             }
+                        }
+                        hash = await this._adding_reward(account, id, reward, targetQuizAddress);
+                        if (hash) {
+                            res = await this.waitForReceiptWithRetry(hash);
                         }
                     }
                 }
@@ -2021,7 +2005,8 @@ class Contracts_MetaMask {
         const normalizedIncorrectStudents = Array.from(
             new Set((incorrectStudents || []).filter((address) => Boolean(address) && !normalizedCorrectStudents.includes(address)))
         );
-        const rewardPerStudent = Number(amount || 0) * 10 ** 18;
+        const rewardText = String(amount ?? 0).trim() || "0";
+        const rewardPerStudent = parseUnits(rewardText, 18);
 
         try {
             if (!ethereum) {
@@ -2029,26 +2014,26 @@ class Contracts_MetaMask {
                 return { res, payoutReceipts, hash };
             }
 
-            const account = await this.get_address();
+            const account = await this.getConnectedWriteAccount();
             const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
             if (!account) {
                 throw new Error("wallet_not_connected");
             }
 
-            if (rewardPerStudent > 0 && normalizedCorrectStudents.length > 0) {
-                let approval = await token.read.allowance({ account, args: [account, targetQuizAddress] });
-                const requiredAmount = rewardPerStudent * normalizedCorrectStudents.length;
+            if (rewardPerStudent > 0n && normalizedCorrectStudents.length > 0) {
+                let approval = await this.readTokenAllowance(account, targetQuizAddress);
+                const requiredAmount = rewardPerStudent * BigInt(normalizedCorrectStudents.length);
 
-                if (Number(approval) < Number(requiredAmount)) {
+                if (approval < requiredAmount) {
                     hash = await this.approve(account, requiredAmount, targetQuizAddress);
                     if (hash) {
-                        res = await publicClient.waitForTransactionReceipt({ hash });
+                        res = await this.waitForReceiptWithRetry(hash);
                     }
                 }
 
                 hash = await this._investment_to_quiz(account, id, rewardPerStudent, normalizedCorrectStudents.length, targetQuizAddress);
                 if (hash) {
-                    res = await publicClient.waitForTransactionReceipt({ hash });
+                    res = await this.waitForReceiptWithRetry(hash);
                 }
             }
 
@@ -2073,23 +2058,23 @@ class Contracts_MetaMask {
                         targetQuizAddress
                     );
                     if (payoutHash) {
-                        payoutReceipts.push(await publicClient.waitForTransactionReceipt({ hash: payoutHash }));
+                        payoutReceipts.push(await this.waitForReceiptWithRetry(payoutHash));
                     }
                 }
             }
 
             if (isNotAddingReward === "false") {
                 let reward = (await this.get_quiz_simple(id, targetQuizAddress))[7];
-                let approval = await token.read.allowance({ account, args: [account, targetQuizAddress] });
-                if (Number(approval) < Number(reward)) {
+                let approval = await this.readTokenAllowance(account, targetQuizAddress);
+                if (BigInt(approval || 0n) < BigInt(reward || 0)) {
                     hash = await this.approve(account, reward, targetQuizAddress);
                     if (hash) {
-                        res = await publicClient.waitForTransactionReceipt({ hash });
+                        res = await this.waitForReceiptWithRetry(hash);
                     }
                 }
                 hash = await this._adding_reward(account, id, reward, targetQuizAddress);
                 if (hash) {
-                    res = await publicClient.waitForTransactionReceipt({ hash });
+                    res = await this.waitForReceiptWithRetry(hash);
                 }
             }
         } catch (err) {
@@ -2116,7 +2101,7 @@ class Contracts_MetaMask {
                 return { payoutReceipts, payoutHashes };
             }
 
-            const account = await this.get_address();
+            const account = await this.getConnectedWriteAccount();
             const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
             if (!account) {
                 throw new Error("wallet_not_connected");
@@ -2128,7 +2113,7 @@ class Contracts_MetaMask {
                 const payoutHash = await this._payment_of_reward(account, id, String(answer || ""), studentChunk, targetQuizAddress);
                 if (!payoutHash) continue;
                 payoutHashes.push(payoutHash);
-                payoutReceipts.push(await publicClient.waitForTransactionReceipt({ hash: payoutHash }));
+                payoutReceipts.push(await this.waitForReceiptWithRetry(payoutHash));
             }
         } catch (error) {
             console.log(error);

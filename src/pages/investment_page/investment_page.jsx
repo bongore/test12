@@ -131,7 +131,14 @@ function Investment_to_quiz() {
     };
 
     const handleExecute = async () => {
-        const pendingSubmittedRows = studentRows.filter((row) => isRewardSettlementPending(row));
+        const latestRows = await loadStudentSubmissions();
+        const targetRows = Array.isArray(latestRows) && latestRows.length > 0 ? latestRows : studentRows;
+        const latestGradingMap = {};
+        targetRows.forEach((row) => {
+            latestGradingMap[row.address] = gradingMap[row.address] || (row.state === 2 ? "correct" : row.state === 1 ? "incorrect" : "pending");
+        });
+
+        const pendingSubmittedRows = targetRows.filter((row) => isRewardSettlementPending(row));
         const submittedStudentAddresses = pendingSubmittedRows
             .map((row) => row.address);
 
@@ -140,11 +147,11 @@ function Investment_to_quiz() {
             return;
         }
 
-        const correctStudents = studentRows
-            .filter((row) => isRewardSettlementPending(row) && gradingMap[row.address] === "correct")
+        const correctStudents = targetRows
+            .filter((row) => isRewardSettlementPending(row) && latestGradingMap[row.address] === "correct")
             .map((row) => row.address);
-        const incorrectStudents = studentRows
-            .filter((row) => isRewardSettlementPending(row) && gradingMap[row.address] === "incorrect")
+        const incorrectStudents = targetRows
+            .filter((row) => isRewardSettlementPending(row) && latestGradingMap[row.address] === "incorrect")
             .map((row) => row.address);
 
         if (isNotPayingOut === "false" && pendingSubmittedRows.length === 0) {
@@ -158,8 +165,8 @@ function Investment_to_quiz() {
         }
 
         const targetStudentCount = gradingMode === "auto"
-            ? (submittedStudentAddresses.length || studentRows.length)
-            : studentRows.length;
+            ? (submittedStudentAddresses.length || targetRows.length)
+            : targetRows.length;
         const payoutActionLabel = isNotPayingOut === "false" ? "報酬配布あり" : "報酬配布なし";
         const gradingModeLabel = gradingMode === "auto" ? "自動判定" : "手動判定";
         const confirmationMessage = [
@@ -245,9 +252,10 @@ function Investment_to_quiz() {
                             const normalizedStudent = normalizeAddress(row.address);
                             const rewardWei = Number(row.reward || 0);
                             const rewardTft = rewardWei > 0 ? rewardWei / 10 ** 18 : 0;
-                            const resultState = row.state === 2 || gradingMap[row.address] === "correct"
+                            const manualDecision = latestGradingMap[row.address];
+                            const resultState = row.state === 2 || manualDecision === "correct"
                                 ? "correct"
-                                : row.state === 1 || gradingMap[row.address] === "incorrect"
+                                : row.state === 1 || manualDecision === "incorrect"
                                     ? "incorrect"
                                     : "pending";
                             const txHash = payoutTxMap.get(normalizedStudent)
@@ -380,14 +388,14 @@ function Investment_to_quiz() {
                 </div>
 
                 <div className="invest-section">
-                    <div className="invest-section-title">報酬額の設定</div>
-                    <div className="invest-section-desc">正解と判定した学生1人あたりの報酬額です</div>
+                    <div className="invest-section-title">追加預託する報酬額（必要な場合のみ）</div>
+                    <div className="invest-section-desc">通常は問題作成時に登録された報酬額で配布します。ここは報酬原資が不足する場合だけ追加してください。</div>
                     <input
                         type="text"
                         className="form-control"
                         value={amount}
                         onChange={(event) => setAmount(event.target.value)}
-                        placeholder="1人あたりの報酬額を入力"
+                        placeholder="追加で預けるTFTを入力（未入力なら 0）"
                     />
                     <div className="token-info">
                         <div className="token-info-item">
