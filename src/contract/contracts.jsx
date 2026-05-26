@@ -2022,9 +2022,7 @@ class Contracts_MetaMask {
         const normalizedStudents = Array.from(new Set((students || []).filter(Boolean)));
 
         const splitChunk = async (studentChunk) => {
-            if (studentChunk.length <= 1) {
-                return [studentChunk];
-            }
+            if (studentChunk.length === 0) return [];
 
             try {
                 const estimate = await this.estimateWriteCost({
@@ -2040,6 +2038,14 @@ class Contracts_MetaMask {
                 }
             } catch (error) {
                 console.log("auto reward chunk estimate fallback", error);
+                if (studentChunk.length === 1) {
+                    // Reverted for a single student (likely already paid). Skip this student.
+                    return [];
+                }
+            }
+
+            if (studentChunk.length === 1) {
+                return [studentChunk];
             }
 
             const middle = Math.ceil(studentChunk.length / 2);
@@ -2059,9 +2065,7 @@ class Contracts_MetaMask {
         ];
 
         const splitEntries = async (entryChunk) => {
-            if (entryChunk.length <= 1) {
-                return [entryChunk];
-            }
+            if (entryChunk.length === 0) return [];
 
             const correctChunk = entryChunk.filter((entry) => entry.correct).map((entry) => entry.address);
             const incorrectChunk = entryChunk.filter((entry) => !entry.correct).map((entry) => entry.address);
@@ -2080,6 +2084,14 @@ class Contracts_MetaMask {
                 }
             } catch (error) {
                 console.log("manual reward chunk estimate fallback", error);
+                if (entryChunk.length === 1) {
+                    // Reverted for a single student. Skip this student.
+                    return [];
+                }
+            }
+
+            if (entryChunk.length === 1) {
+                return [entryChunk];
             }
 
             const middle = Math.ceil(entryChunk.length / 2);
