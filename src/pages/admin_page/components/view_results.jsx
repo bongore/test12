@@ -39,6 +39,7 @@ function Create_csvlink(props) {
 function View_result(props) {
     let contract = new Contracts_MetaMask();
     const [results, setResults] = useState([]);
+    const [studentBalanceMap, setStudentBalanceMap] = useState({});
     const [data_for_survey_users, setData_for_survey_users] = useState(null);
     const [data_for_survey_quizs, setData_for_survey_quizs] = useState(null);
     const [usersData, setUsersData] = useState(null);
@@ -52,14 +53,21 @@ function View_result(props) {
             return;
         }
         const users_data = [
-            Object.keys(data_for_survey_users[0])
+            ["user", "create_quiz_count", "result", "answer_count", "actual_tft_balance", "actual_ttt_balance", "actual_pol_balance", "point"]
         ];
         for (let i = 0; i < data_for_survey_users.length; i++) {
+            const address = data_for_survey_users[i].user;
+            const balances = studentBalanceMap[String(address || "").toLowerCase()] || {};
+            const scoreTft = normalizeTftAmount(data_for_survey_users[i].result);
             users_data.push([
-                data_for_survey_users[i].user, 
-                Number(data_for_survey_users[i].create_quiz_count).toString(), 
-                normalizeTftAmount(data_for_survey_users[i].result).toString(), 
-                Number(data_for_survey_users[i].answer_count).toString()
+                address,
+                Number(data_for_survey_users[i].create_quiz_count).toString(),
+                scoreTft.toString(),
+                Number(data_for_survey_users[i].answer_count).toString(),
+                Number(balances.tft || 0).toFixed(4),
+                Number(balances.ttt || 0).toFixed(4),
+                Number(balances.pol || 0).toFixed(6),
+                convertTftToPoint(Number(scoreTft || 0)).toFixed(1),
             ]);
         }
 
@@ -98,11 +106,33 @@ function View_result(props) {
         setData_for_survey_quizs(await contract.get_data_for_survey_quizs());
     }
 
+    async function loadStudentBalances(nextResults = []) {
+        const rows = Array.isArray(nextResults) ? nextResults : [];
+        const nextMap = {};
+        await Promise.all(rows.map(async (item) => {
+            const address = String(item?.student || "").trim();
+            if (!address) return;
+            const [tft, ttt, pol] = await Promise.all([
+                contract.get_token_balance(address).catch(() => 0),
+                contract.get_ttt_balance(address).catch(() => 0),
+                contract.get_pol_balance(address).catch(() => 0),
+            ]);
+            nextMap[address.toLowerCase()] = {
+                tft: Number(tft || 0),
+                ttt: Number(ttt || 0),
+                pol: Number(pol || 0),
+            };
+        }));
+        setStudentBalanceMap(nextMap);
+    }
+
     useEffect(() => {
         get_data_for_survey();
-        props.cont.get_results().then((result) => {
+        props.cont.get_results().then(async (result) => {
             console.log(result);
-            setResults(result);
+            const nextResults = Array.isArray(result) ? result : [];
+            setResults(nextResults);
+            await loadStudentBalances(nextResults);
         });
     }, []);
 
@@ -125,16 +155,25 @@ function View_result(props) {
                             <th>#</th>
                             <th>ウォレットアドレス</th>
                             <th>得点</th>
+                            <th>実TFT残高</th>
+                            <th>実TTT残高</th>
+                            <th>実POL残高</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {results.map((item, index) => (
-                            <tr key={index}>
-                                <td>{index + 1}</td>
-                                <td className="address-cell">{item.student}</td>
-                                <td className="score-cell">{convertTftToPoint(Number(item.result || 0)).toFixed(1)}点</td>
-                            </tr>
-                        ))}
+                        {results.map((item, index) => {
+                            const balances = studentBalanceMap[String(item.student || "").toLowerCase()] || {};
+                            return (
+                                <tr key={index}>
+                                    <td>{index + 1}</td>
+                                    <td className="address-cell">{item.student}</td>
+                                    <td className="score-cell">{convertTftToPoint(Number(item.result || 0)).toFixed(1)}点</td>
+                                    <td className="score-cell">{Number(balances.tft || 0).toFixed(4)} TFT</td>
+                                    <td className="score-cell">{Number(balances.ttt || 0).toFixed(4)} TTT</td>
+                                    <td className="score-cell">{Number(balances.pol || 0).toFixed(6)} POL</td>
+                                </tr>
+                            );
+                        })}
                     </tbody>
                 </table>
             </div>

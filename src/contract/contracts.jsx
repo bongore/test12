@@ -1515,6 +1515,22 @@ class Contracts_MetaMask {
         return 0;
     }
 
+    async get_pol_balance(address) {
+        try {
+            const normalizedAddress = checksumAddress(String(address || "").trim());
+            const balance = await retryReadContractBalance(
+                () => publicClient.getBalance({
+                    address: normalizedAddress,
+                }),
+                4
+            );
+            return Number(balance) / 10 ** 18;
+        } catch (err) {
+            console.log(err);
+        }
+        return 0;
+    }
+
     async readTokenAllowance(ownerAddress, spenderAddress, contractAddress = token_address) {
         try {
             return await publicClient.readContract({
