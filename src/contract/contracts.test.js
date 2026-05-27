@@ -489,4 +489,23 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
 
         expect(score).toBe(30);
     });
+
+    test("get_quiz_reward_tft keeps token history total when it exceeds partial on-chain and ledger data", async () => {
+        const contract = new Contracts_MetaMask();
+        contract.get_user_history_len = jest.fn().mockResolvedValue(3);
+        contract.getQuizInventory = jest.fn().mockResolvedValue([
+            { id: 2, address: "0x55B3977C7B7b913eaf175A7364c8375732d22241" },
+        ]);
+        contract.get_student_answer_detail = jest.fn().mockResolvedValueOnce({ reward: 15000000000000000000n });
+        contract.get_token_history = jest.fn().mockResolvedValue([
+            ["", "", "", "", 15000000000000000000n, "correct answer"],
+            ["", "", "", "", 30000000000000000000n, "correct answer"],
+            ["", "", "", "", 1000000000000000000n, "other"],
+        ]);
+        mockGetRewardPayoutEntries.mockReturnValue([]);
+
+        const score = await contract.get_quiz_reward_tft("0xabc");
+
+        expect(score).toBe(45);
+    });
 });

@@ -1600,6 +1600,7 @@ class Contracts_MetaMask {
             }
 
             let score = 0;
+            let tokenHistoryScore = 0;
             const countedQuizKeys = new Set();
             try {
                 const inventory = await this.getQuizInventory(true);
@@ -1638,18 +1639,18 @@ class Contracts_MetaMask {
             }, 0);
             score += payoutLedgerScore;
 
-            if (score <= 0) {
-                if (historyLength && historyLength > 0) {
-                    const history = await this.get_token_history(address, historyLength, 0);
-                    score = (Array.isArray(history) ? history : []).reduce((sum, entry) => {
-                        const explanation = getTokenHistoryExplanation(entry).toLowerCase();
-                        if (!explanation.includes("correct answer")) {
-                            return sum;
-                        }
-                        return sum + getTokenHistoryValueTft(entry);
-                    }, 0);
-                }
+            if (historyLength && historyLength > 0) {
+                const history = await this.get_token_history(address, historyLength, 0);
+                tokenHistoryScore = (Array.isArray(history) ? history : []).reduce((sum, entry) => {
+                    const explanation = getTokenHistoryExplanation(entry).toLowerCase();
+                    if (!explanation.includes("correct answer")) {
+                        return sum;
+                    }
+                    return sum + getTokenHistoryValueTft(entry);
+                }, 0);
             }
+
+            score = Math.max(Number(score || 0), Number(tokenHistoryScore || 0));
 
             scoreCache[cacheKey] = {
                 historyLength: Number(historyLength || 0),
