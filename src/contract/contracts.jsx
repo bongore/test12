@@ -28,6 +28,12 @@ import {
 } from "./contractClients";
 import { getRegisteredCorrectAnswer } from "../utils/quizCorrectAnswerStore";
 import { getRewardPayoutEntries } from "../utils/rewardPayoutLedger";
+import {
+    getGrantLedgerEntries,
+    isGrantActive,
+    normalizeGrantRecord,
+    TOKEN_GRANT_KEYS,
+} from "../utils/tokenGrantLedger";
 
 function sleep(ms) {
     return new Promise((resolve) => {
@@ -164,6 +170,31 @@ function buildRewardLedgerSignature(entries = []) {
         .map((entry) => `${buildRewardLedgerQuizKey(entry?.sourceAddress, entry?.quizId)}:${String(entry?.studentAddress || "").toLowerCase()}:${Number(entry?.rewardTft || 0)}:${String(entry?.txHash || "")}`)
         .sort()
         .join("|");
+}
+
+function buildTokenGrantLedgerSignature(entries = []) {
+    return (Array.isArray(entries) ? entries : [])
+        .map((entry) => {
+            const address = String(entry?.address || "").toLowerCase();
+            const record = normalizeGrantRecord(entry?.status?.[TOKEN_GRANT_KEYS.TFT]);
+            if (!address || !record || !isGrantActive(record)) return "";
+            return `${address}:${Number(record.amount || 0)}:${String(record.txHash || "")}:${String(record.grantedAt || "")}:${String(record.source || "")}`;
+        })
+        .filter(Boolean)
+        .sort()
+        .join("|");
+}
+
+function getActiveTftGrantAmount(entries = [], address = "") {
+    const normalizedAddress = String(address || "").toLowerCase();
+    const targetEntry = (Array.isArray(entries) ? entries : []).find(
+        (entry) => String(entry?.address || "").toLowerCase() === normalizedAddress
+    );
+    const record = normalizeGrantRecord(targetEntry?.status?.[TOKEN_GRANT_KEYS.TFT]);
+    if (!record || !isGrantActive(record)) {
+        return 0;
+    }
+    return Number(record.amount || 0);
 }
 
 function buildQuizSimpleCacheKey(sourceAddress = "", quizId = 0, account = "") {
@@ -1601,6 +1632,9 @@ class Contracts_MetaMask {
             const scoreCache = readScoreCache();
             const historyLength = await this.get_user_history_len(address);
             const cached = scoreCache[cacheKey];
+            const tokenGrantEntries = getGrantLedgerEntries();
+            const tokenGrantSignature = buildTokenGrantLedgerSignature(tokenGrantEntries);
+            const manualRewardGrantTft = getActiveTftGrantAmount(tokenGrantEntries, address);
             const payoutEntries = getRewardPayoutEntries({ studentAddress: address })
                 .filter((entry) => entry.confirmed !== false && String(entry.resultState || "") === "correct");
             const payoutLedgerSignature = payoutEntries
@@ -1610,6 +1644,7 @@ class Contracts_MetaMask {
             if (
                 cached
                 && String(cached.payoutLedgerSignature || "") === payoutLedgerSignature
+                && String(cached.tokenGrantSignature || "") === tokenGrantSignature
                 && Number(cached.historyLength || 0) === Number(historyLength || 0)
             ) {
                 return Number(cached.score || 0);
@@ -1667,11 +1702,13 @@ class Contracts_MetaMask {
             }
 
             score = Math.max(Number(score || 0), Number(tokenHistoryScore || 0));
+            score += Number(manualRewardGrantTft || 0);
 
             scoreCache[cacheKey] = {
                 historyLength: Number(historyLength || 0),
                 score: Number(score || 0),
                 payoutLedgerSignature,
+                tokenGrantSignature,
                 updatedAt: new Date().toISOString(),
             };
             writeScoreCache(scoreCache);
@@ -3103,10 +3140,12 @@ class Contracts_MetaMask {
     async get_results() {
         const now = Date.now();
         const rewardLedgerSignature = buildRewardLedgerSignature(getRewardPayoutEntries());
+        const tokenGrantLedgerSignature = buildTokenGrantLedgerSignature(getGrantLedgerEntries());
+        const combinedLedgerSignature = `${rewardLedgerSignature}::${tokenGrantLedgerSignature}`;
         if (
             Array.isArray(resultsCacheMemory)
             && now - resultsCacheFetchedAt < RESULTS_CACHE_TTL_MS
-            && String(resultsCacheMemory?.__rewardLedgerSignature || "") === rewardLedgerSignature
+            && String(resultsCacheMemory?.__rewardLedgerSignature || "") === combinedLedgerSignature
         ) {
             return resultsCacheMemory;
         }
@@ -3115,11 +3154,11 @@ class Contracts_MetaMask {
         if (
             Array.isArray(persistedCache?.value)
             && now - Number(persistedCache?.fetchedAt || 0) < RESULTS_CACHE_TTL_MS
-            && String(persistedCache?.rewardLedgerSignature || "") === rewardLedgerSignature
+            && String(persistedCache?.rewardLedgerSignature || "") === combinedLedgerSignature
         ) {
             resultsCacheMemory = persistedCache.value;
             resultsCacheFetchedAt = Number(persistedCache.fetchedAt || now);
-            resultsCacheMemory.__rewardLedgerSignature = rewardLedgerSignature;
+            resultsCacheMemory.__rewardLedgerSignature = combinedLedgerSignature;
             return resultsCacheMemory;
         }
 
@@ -3139,13 +3178,13 @@ class Contracts_MetaMask {
                         };
                     })
                 );
-                rows.__rewardLedgerSignature = rewardLedgerSignature;
+                rows.__rewardLedgerSignature = combinedLedgerSignature;
                 resultsCacheMemory = rows;
                 resultsCacheFetchedAt = Date.now();
                 writeTimedCache(RESULTS_CACHE_KEY, {
                     value: rows,
                     fetchedAt: resultsCacheFetchedAt,
-                    rewardLedgerSignature,
+                    rewardLedgerSignature: combinedLedgerSignature,
                 });
                 return rows;
             } catch (fallbackError) {

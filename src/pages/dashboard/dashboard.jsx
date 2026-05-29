@@ -6,6 +6,7 @@ import { useAccessControl } from "../../utils/accessControl";
 import { convertTftToPoint } from "../../utils/quizRewardRate";
 import { getDeletedQuizzes, normalizeDeletedQuizKey } from "../../utils/liveSignalApi";
 import { syncRewardPayoutLedgerFromServer } from "../../utils/rewardPayoutLedger";
+import { syncGrantLedgerFromServer } from "../../utils/tokenGrantLedger";
 import "./dashboard.css";
 
 function Dashboard() {
@@ -29,6 +30,7 @@ function Dashboard() {
             try {
                 setLoadError("");
                 await syncRewardPayoutLedgerFromServer().catch(() => []);
+                await syncGrantLedgerFromServer().catch(() => ({}));
                 const addr = access.address || cont.get_last_known_address?.() || await cont.get_address();
                 if (cancelled) return;
                 setAddress(addr || "");

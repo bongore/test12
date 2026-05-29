@@ -52,9 +52,32 @@ jest.mock("../utils/quizCorrectAnswerStore", () => ({
 }));
 
 const mockGetRewardPayoutEntries = jest.fn(() => []);
+const mockGetGrantLedgerEntries = jest.fn(() => []);
 
 jest.mock("../utils/rewardPayoutLedger", () => ({
     getRewardPayoutEntries: (...args) => mockGetRewardPayoutEntries(...args),
+}));
+
+jest.mock("../utils/tokenGrantLedger", () => ({
+    TOKEN_GRANT_KEYS: {
+        POL: "answer_pol",
+        TFT: "answer_thanks_tft",
+        TTT: "board_ttt",
+    },
+    getGrantLedgerEntries: (...args) => mockGetGrantLedgerEntries(...args),
+    normalizeGrantRecord: jest.fn((record) => {
+        if (!record) return null;
+        return {
+            grantedAt: record.grantedAt || "",
+            amount: record.amount ?? null,
+            txHash: record.txHash || "",
+            source: record.source || "",
+            confirmed: record.confirmed !== false,
+            active: record.active !== false,
+            history: Array.isArray(record.history) ? record.history : [],
+        };
+    }),
+    isGrantActive: jest.fn((record) => Boolean(record?.active !== false && record?.confirmed !== false && record?.grantedAt)),
 }));
 
 describe("Contracts_MetaMask legacy quiz settlement", () => {
@@ -64,6 +87,7 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
         jest.clearAllMocks();
         window.localStorage.clear();
         mockGetRewardPayoutEntries.mockReturnValue([]);
+        mockGetGrantLedgerEntries.mockReturnValue([]);
         mockWaitForTransactionReceipt.mockResolvedValue({ status: "success" });
         mockAllowance.mockResolvedValue(0n);
         mockWriteContract.mockResolvedValue("0xwrite");
@@ -508,4 +532,5 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
 
         expect(score).toBe(45);
     });
+
 });

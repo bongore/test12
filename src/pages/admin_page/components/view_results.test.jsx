@@ -1,6 +1,8 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import View_result from "./view_results";
 import { Contracts_MetaMask } from "../../../contract/contracts";
+import { syncGrantLedgerFromServer } from "../../../utils/tokenGrantLedger";
+import { syncRewardPayoutLedgerFromServer } from "../../../utils/rewardPayoutLedger";
 
 jest.mock("react-csv", () => ({
     CSVLink: ({ children }) => <span>{children}</span>,
@@ -17,9 +19,19 @@ jest.mock("../../../utils/courseEnhancements", () => ({
     getCourseEnhancementSnapshot: jest.fn(() => ({ boardLogs: [], reactionHistory: [] })),
 }));
 
+jest.mock("../../../utils/tokenGrantLedger", () => ({
+    syncGrantLedgerFromServer: jest.fn(async () => ({})),
+}));
+
+jest.mock("../../../utils/rewardPayoutLedger", () => ({
+    syncRewardPayoutLedgerFromServer: jest.fn(async () => []),
+}));
+
 describe("View_result", () => {
     beforeEach(() => {
         jest.clearAllMocks();
+        syncGrantLedgerFromServer.mockResolvedValue({});
+        syncRewardPayoutLedgerFromServer.mockResolvedValue([]);
         jest.spyOn(Contracts_MetaMask.prototype, "get_token_balance").mockResolvedValue(125);
         jest.spyOn(Contracts_MetaMask.prototype, "get_ttt_balance").mockResolvedValue(3000);
         jest.spyOn(Contracts_MetaMask.prototype, "get_pol_balance").mockResolvedValue(1.25);

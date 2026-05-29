@@ -4,6 +4,8 @@ import { Contracts_MetaMask } from "../../../contract/contracts";
 import { ACTION_TYPES, appendActivityLog, getActivityLogs } from "../../../utils/activityLog";
 import { buildExtendedCsvData, getCourseEnhancementSnapshot } from "../../../utils/courseEnhancements";
 import { convertTftToPoint, normalizeTftAmount } from "../../../utils/quizRewardRate";
+import { syncGrantLedgerFromServer } from "../../../utils/tokenGrantLedger";
+import { syncRewardPayoutLedgerFromServer } from "../../../utils/rewardPayoutLedger";
 
 function getCurrentDateTime() {
     const now = new Date();
@@ -102,6 +104,8 @@ function View_result(props) {
     };
 
     async function get_data_for_survey() {
+        await syncRewardPayoutLedgerFromServer().catch(() => []);
+        await syncGrantLedgerFromServer().catch(() => ({}));
         setData_for_survey_users(await contract.get_data_for_survey_users());
         setData_for_survey_quizs(await contract.get_data_for_survey_quizs());
     }

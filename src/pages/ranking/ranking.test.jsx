@@ -3,6 +3,7 @@ import Ranking from "./ranking";
 import { Contracts_MetaMask } from "../../contract/contracts";
 import { getCourseEnhancementSnapshot } from "../../utils/courseEnhancements";
 import { syncRewardPayoutLedgerFromServer } from "../../utils/rewardPayoutLedger";
+import { syncGrantLedgerFromServer } from "../../utils/tokenGrantLedger";
 
 jest.mock("../../contract/contracts", () => ({
     Contracts_MetaMask: jest.fn(),
@@ -14,6 +15,10 @@ jest.mock("../../utils/courseEnhancements", () => ({
 
 jest.mock("../../utils/rewardPayoutLedger", () => ({
     syncRewardPayoutLedgerFromServer: jest.fn(async () => []),
+}));
+
+jest.mock("../../utils/tokenGrantLedger", () => ({
+    syncGrantLedgerFromServer: jest.fn(async () => ({})),
 }));
 
 describe("Ranking", () => {
@@ -35,6 +40,7 @@ describe("Ranking", () => {
             ],
         });
         syncRewardPayoutLedgerFromServer.mockResolvedValue([]);
+        syncGrantLedgerFromServer.mockResolvedValue({});
     });
 
     test("switches between score ranking and board participation ranking", async () => {

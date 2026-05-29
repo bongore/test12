@@ -11,6 +11,7 @@ import { bootstrap_teacher_addresses } from "../../contract/config";
 import { MAX_TFT_PER_LECTURE, MAX_TFT_TOTAL, QUIZ_RATE_OPTIONS, TOTAL_LECTURE_COUNT, TFT_PER_POINT } from "../../utils/quizRewardRate";
 import { buildAnswerQuizPath, buildAnswerQuizState, rememberQuizSource } from "../../utils/quizLinks";
 import { syncRewardPayoutLedgerFromServer } from "../../utils/rewardPayoutLedger";
+import { syncGrantLedgerFromServer } from "../../utils/tokenGrantLedger";
 
 const BALANCE_CACHE_KEY = "user_page_balance_cache_v1";
 
@@ -115,6 +116,7 @@ function User_page(props) {
             setLoadError("");
             setIsPageLoading(true);
             await syncRewardPayoutLedgerFromServer().catch(() => []);
+            await syncGrantLedgerFromServer().catch(() => ({}));
             Set_history_list([]);
             setReviewItems([]);
 
