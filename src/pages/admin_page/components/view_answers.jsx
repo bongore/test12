@@ -6,6 +6,7 @@ import { getMergedActivityLogs, syncSharedActivityLogs } from "../../../utils/ac
 import { getRewardPayoutEntries, syncRewardPayoutLedgerFromServer } from "../../../utils/rewardPayoutLedger";
 
 const AMOY_EXPLORER_TX_BASE = "https://amoy.polygonscan.com/tx/";
+const UI_YIELD_MS = 0;
 
 export function buildExplorerTxUrl(txHash) {
     return txHash ? `${AMOY_EXPLORER_TX_BASE}${txHash}` : "";
@@ -70,6 +71,12 @@ function normalizeAddress(value) {
     return String(value || "").trim().toLowerCase();
 }
 
+function yieldToUi() {
+    return new Promise((resolve) => {
+        setTimeout(resolve, UI_YIELD_MS);
+    });
+}
+
 function buildAnswerLogKey(address = "", quizId = "", sourceAddress = "") {
     return `${normalizeAddress(address)}:${String(sourceAddress || "").toLowerCase()}:${String(quizId)}`;
 }
@@ -113,6 +120,7 @@ function View_answers() {
     const [loading, setLoading] = useState(true);
     const [loadingAnswers, setLoadingAnswers] = useState(false);
     const [exportingAllAnswers, setExportingAllAnswers] = useState(false);
+    const [allAnswerExportStatus, setAllAnswerExportStatus] = useState("");
     const [sharedLogs, setSharedLogs] = useState(() => getMergedActivityLogs());
     const [rewardPayoutEntries, setRewardPayoutEntries] = useState(() => getRewardPayoutEntries());
 
@@ -269,10 +277,14 @@ function View_answers() {
             }, new Map());
 
         const rows = [];
-        await runChunked(quizList, 3, async (quizRef) => {
+        const quizzes = Array.isArray(quizList) ? quizList : [];
+        for (let quizIndex = 0; quizIndex < quizzes.length; quizIndex += 1) {
+            const quizRef = quizzes[quizIndex];
             const quizId = Number(quizRef?.id || 0);
             const sourceAddress = quizRef?.sourceAddress || "";
             const quizTitle = quizRef?.title || `問題 ${quizId}`;
+            setAllAnswerExportStatus(`回答一覧を集計中... ${quizIndex + 1}/${quizzes.length} 問`);
+            await yieldToUi();
             const quizData = await contract.get_quiz(quizId, sourceAddress).catch(() => null);
             const answerData = quizData?.[6] || "";
             const answerOptions = String(answerData).split(",");
@@ -318,13 +330,15 @@ function View_answers() {
             });
 
             rows.push(...buildAnswerExportRows(perStudent, `${sourceAddress}:${quizId}`, quizTitle));
-        });
+            await yieldToUi();
+        }
 
         return rows;
     };
 
     const handleExportAllAnswersJson = async () => {
         setExportingAllAnswers(true);
+        setAllAnswerExportStatus("全問題の回答一覧を準備中...");
         try {
             const allRows = await collectAllAnswerExportRows();
             downloadTextFile(
@@ -332,6 +346,7 @@ function View_answers() {
                 JSON.stringify(allRows, null, 2),
                 "application/json;charset=utf-8"
             );
+            setAllAnswerExportStatus(`JSON を出力しました（${allRows.length}件）`);
         } finally {
             setExportingAllAnswers(false);
         }
@@ -339,6 +354,7 @@ function View_answers() {
 
     const handleExportAllAnswersCsv = async () => {
         setExportingAllAnswers(true);
+        setAllAnswerExportStatus("全問題の回答一覧を準備中...");
         try {
             const allRows = await collectAllAnswerExportRows();
             const rows = [
@@ -367,6 +383,7 @@ function View_answers() {
                 csv,
                 "text/csv;charset=utf-8"
             );
+            setAllAnswerExportStatus(`CSV を出力しました（${allRows.length}件）`);
         } finally {
             setExportingAllAnswers(false);
         }
@@ -539,6 +556,11 @@ function View_answers() {
                         📤 全問題の回答一覧を JSON 出力
                     </button>
                 </div>
+                {allAnswerExportStatus ? (
+                    <div className="section-desc" style={{ marginTop: "-4px", marginBottom: "12px", color: "#d5e2ff" }}>
+                        {allAnswerExportStatus}
+                    </div>
+                ) : null}
                 <label style={{ color: "#ffffff", fontWeight: "600", display: "block", marginBottom: "var(--space-2)" }}>
                     問題を選択してください（全 {quizCount} 問）
                 </label>
