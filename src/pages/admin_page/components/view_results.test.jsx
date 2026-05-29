@@ -19,6 +19,7 @@ jest.mock("../../../utils/courseEnhancements", () => ({
 }));
 
 jest.mock("../../../utils/rewardPayoutLedger", () => ({
+    getRewardPayoutEntries: jest.fn(() => []),
     syncRewardPayoutLedgerFromServer: jest.fn(async () => []),
 }));
 
