@@ -3103,8 +3103,7 @@ class Contracts_MetaMask {
     async get_results() {
         const now = Date.now();
         const rewardLedgerSignature = buildRewardLedgerSignature(getRewardPayoutEntries());
-        const tokenGrantLedgerSignature = buildTokenGrantLedgerSignature(getGrantLedgerEntries());
-        const combinedLedgerSignature = `${rewardLedgerSignature}::${tokenGrantLedgerSignature}`;
+        const combinedLedgerSignature = rewardLedgerSignature;
         if (
             Array.isArray(resultsCacheMemory)
             && now - resultsCacheFetchedAt < RESULTS_CACHE_TTL_MS
@@ -4017,19 +4016,13 @@ class Contracts_MetaMask {
 
     async get_data_for_survey_users() {
         try {
-            const students = await this.get_student_list();
-            const rows = await Promise.all(
-                (Array.isArray(students) ? students : []).map(async (student) => {
-                    const score = await this.get_quiz_reward_tft(student);
-                    return {
-                        user: student,
-                        create_quiz_count: 0,
-                        result: Number(score || 0),
-                        answer_count: 0,
-                    };
-                })
-            );
-            return rows;
+            const rows = await this.get_results();
+            return (Array.isArray(rows) ? rows : []).map((item) => ({
+                user: item?.student || "",
+                create_quiz_count: 0,
+                result: Number(item?.result || 0),
+                answer_count: 0,
+            }));
         } catch (fallbackError) {
             console.log(fallbackError);
             return [];

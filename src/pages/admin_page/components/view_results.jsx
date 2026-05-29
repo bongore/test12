@@ -5,6 +5,7 @@ import { ACTION_TYPES, appendActivityLog, getActivityLogs } from "../../../utils
 import { buildExtendedCsvData, getCourseEnhancementSnapshot } from "../../../utils/courseEnhancements";
 import { convertTftToPoint, normalizeTftAmount } from "../../../utils/quizRewardRate";
 import { getRewardPayoutEntries, syncRewardPayoutLedgerFromServer } from "../../../utils/rewardPayoutLedger";
+import { parseQuizContentMeta } from "../../../utils/quizContentMeta";
 
 function getCurrentDateTime() {
     const now = new Date();
@@ -39,6 +40,10 @@ async function runChunked(items, chunkSize, mapper) {
         results.push(...chunkResults);
     }
     return results;
+}
+
+function buildBalanceMapKey(address = "") {
+    return String(address || "").trim().toLowerCase();
 }
 
 function Create_csvlink(props) {
@@ -137,21 +142,25 @@ function View_result(props) {
 
     async function loadStudentBalances(nextResults = []) {
         const rows = Array.isArray(nextResults) ? nextResults : [];
-        const nextMap = {};
-        await Promise.all(rows.map(async (item) => {
+        const nextMap = { ...studentBalanceMap };
+        const targets = rows.filter((item) => {
             const address = String(item?.student || "").trim();
-            if (!address) return;
+            if (!address) return false;
+            return !nextMap[buildBalanceMapKey(address)];
+        });
+        await runChunked(targets, 6, async (item) => {
+            const address = String(item?.student || "").trim();
             const [tft, ttt, pol] = await Promise.all([
                 contract.get_token_balance(address).catch(() => 0),
                 contract.get_ttt_balance(address).catch(() => 0),
                 contract.get_pol_balance(address).catch(() => 0),
             ]);
-            nextMap[address.toLowerCase()] = {
+            nextMap[buildBalanceMapKey(address)] = {
                 tft: Number(tft || 0),
                 ttt: Number(ttt || 0),
                 pol: Number(pol || 0),
             };
-        }));
+        });
         setStudentBalanceMap(nextMap);
     }
 
@@ -200,6 +209,8 @@ function View_result(props) {
                     const sourceAddress = quiz?.sourceAddress || quiz?.[12] || "";
                     const quizTitle = String(quiz?.[2] || `問題 ${quizId}`);
                     const rewardTft = Number(quiz?.[7] || 0) / 10 ** 18;
+                    const fullQuiz = await contract.get_quiz(quizId, sourceAddress).catch(() => null);
+                    const quizMeta = parseQuizContentMeta(fullQuiz?.[5] || "");
                     const revealedCorrect = await contract.get_revealed_correct_answer(quizId, sourceAddress).catch(() => "");
                     const confirmAnswerData = await contract.get_confirm_answer(quizId, sourceAddress).catch(() => ["", false]);
                     const correctAnswer = normalizeAnswerForAudit(revealedCorrect || confirmAnswerData?.[0] || "");
@@ -209,6 +220,7 @@ function View_result(props) {
                         quizTitle,
                         rewardTft,
                         correctAnswer,
+                        allowMultipleAnswers: Boolean(quizMeta.allowMultipleAnswers),
                     };
                 }
             );
@@ -235,7 +247,8 @@ function View_result(props) {
                     if (!isCorrect) return;
 
                     const attemptCount = Number(detail?.attemptCount || 0);
-                    const expectedRewardTft = attemptCount > 1 ? quiz.rewardTft / 2 : quiz.rewardTft;
+                    const shouldApplyHalfReward = Boolean(quiz.allowMultipleAnswers) && attemptCount > 1;
+                    const expectedRewardTft = shouldApplyHalfReward ? quiz.rewardTft / 2 : quiz.rewardTft;
                     const rewardFromDetail = Number(detail?.reward || 0) / 10 ** 18;
                     const payoutKey = `${normalizeAddress(quiz.sourceAddress)}:${quiz.quizId}:${normalizedStudent}`;
                     const rewardFromLedger = Number(payoutMap.get(payoutKey) || 0);
@@ -243,7 +256,7 @@ function View_result(props) {
 
                     row.correctCount += 1;
                     row.expectedScoreTft += Number(expectedRewardTft || 0);
-                    if (attemptCount > 1) {
+                    if (shouldApplyHalfReward) {
                         row.halfRewardCount += 1;
                     }
 
