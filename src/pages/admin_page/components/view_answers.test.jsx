@@ -180,6 +180,8 @@ describe("View_answers", () => {
         expect(screen.getByText("✅ 回答済:", { exact: false })).toBeInTheDocument();
         expect(screen.getByText("回答報酬の付与履歴")).toBeInTheDocument();
         expect(screen.getByText("📤 回答報酬履歴を CSV 出力")).toBeInTheDocument();
+        expect(screen.getByText("📤 全問題の回答一覧を CSV 出力")).toBeInTheDocument();
+        expect(screen.getByText("📤 全問題の回答一覧を JSON 出力")).toBeInTheDocument();
         expect(screen.getByText("学生A")).toBeInTheDocument();
     });
 
@@ -197,6 +199,9 @@ describe("View_answers", () => {
         ], "0xeb196c161EFA30939f78170694bb908E17fd1479:1", "確認用クイズ");
         expect(answerRows[0].txUrl).toBe("https://amoy.polygonscan.com/tx/0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890");
         expect(answerRows[0].verificationStatus).toBe("receipt_confirmed");
+        expect(answerRows[0].sourceAddress).toBe("0xeb196c161EFA30939f78170694bb908E17fd1479");
+        expect(answerRows[0].submitted).toBe("false");
+        expect(answerRows[0].rewardTft).toBe(0);
 
         const rewardRows = buildRewardPayoutExportRows([
             {

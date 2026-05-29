@@ -16,9 +16,15 @@ export function buildAnswerExportRows(answers = [], selectedQuiz = null, selecte
         no: index + 1,
         quizId: selectedQuiz ? selectedQuiz.split(":").slice(-1)[0] : "",
         quizTitle: selectedQuizTitle || "",
+        sourceAddress: item.sourceAddress || (selectedQuiz ? selectedQuiz.split(":").slice(0, -1).join(":") : ""),
         walletAddress: item.address || "",
         answer: item.answer || "未回答",
         answerHash: item.hash || "",
+        submitted: item.submitted ? "true" : "false",
+        state: Number(item.state || 0),
+        answerTime: Number(item.answerTime || 0),
+        attemptCount: Number(item.attemptCount || 0),
+        rewardTft: Number(item.reward || 0) / 10 ** 18,
         txHash: item.txHash || "",
         txUrl: buildExplorerTxUrl(item.txHash || ""),
         verificationStatus: item.verificationStatus || "",
@@ -106,6 +112,7 @@ function View_answers() {
     const [answers, setAnswers] = useState(null);
     const [loading, setLoading] = useState(true);
     const [loadingAnswers, setLoadingAnswers] = useState(false);
+    const [exportingAllAnswers, setExportingAllAnswers] = useState(false);
     const [sharedLogs, setSharedLogs] = useState(() => getMergedActivityLogs());
     const [rewardPayoutEntries, setRewardPayoutEntries] = useState(() => getRewardPayoutEntries());
 
@@ -223,14 +230,20 @@ function View_answers() {
 
     const handleExportAnswersCsv = () => {
         const rows = [
-            ["No", "Quiz ID", "Quiz Title", "Wallet Address", "Answer", "Answer Hash", "Tx Hash", "Tx URL", "Verification Status"],
+            ["No", "Quiz ID", "Quiz Title", "Source Address", "Wallet Address", "Answer", "Answer Hash", "Submitted", "State", "Answer Time", "Attempt Count", "Reward TFT", "Tx Hash", "Tx URL", "Verification Status"],
             ...exportAnswerRows.map((row) => [
                 row.no,
                 row.quizId,
                 row.quizTitle,
+                row.sourceAddress,
                 row.walletAddress,
                 row.answer,
                 row.answerHash,
+                row.submitted,
+                row.state,
+                row.answerTime,
+                row.attemptCount,
+                row.rewardTft,
                 row.txHash,
                 row.txUrl,
                 row.verificationStatus,
@@ -242,6 +255,121 @@ function View_answers() {
             csv,
             "text/csv;charset=utf-8"
         );
+    };
+
+    const collectAllAnswerExportRows = async () => {
+        const students = await contract.get_student_list();
+        const latestAnswerLogs = (getMergedActivityLogs() || [])
+            .filter((log) => log?.action === "answer_submitted")
+            .reduce((map, log) => {
+                const key = buildAnswerLogKey(log.address || log.actor || "", log.quizId || "", log.sourceAddress || "");
+                if (!key || map.has(key)) return map;
+                map.set(key, log);
+                return map;
+            }, new Map());
+
+        const rows = [];
+        await runChunked(quizList, 3, async (quizRef) => {
+            const quizId = Number(quizRef?.id || 0);
+            const sourceAddress = quizRef?.sourceAddress || "";
+            const quizTitle = quizRef?.title || `問題 ${quizId}`;
+            const quizData = await contract.get_quiz(quizId, sourceAddress).catch(() => null);
+            const answerData = quizData?.[6] || "";
+            const answerOptions = String(answerData).split(",");
+            const answerType = Number(quizData?.[13] || 0);
+            const answerMap = await contract.get_students_answer_hash_list(students, quizId, sourceAddress).catch(() => ({}));
+
+            const perStudent = await runChunked(Array.isArray(students) ? students : [], 8, async (student) => {
+                const hash = answerMap?.[student];
+                const detail = await contract.get_student_answer_detail(student, quizId, sourceAddress).catch(() => null);
+                const submitted = Boolean(detail?.submitted);
+                let decodedAnswer = String(detail?.answerText || "").trim();
+
+                if (!decodedAnswer && answerType === 0) {
+                    decodedAnswer = decodeAnswerHash(hash, answerOptions);
+                } else if (!decodedAnswer && hash && hash !== "0x0000000000000000000000000000000000000000000000000000000000000000") {
+                    decodedAnswer = `(ハッシュ: ${hash.slice(0, 10)}…)`;
+                }
+
+                if (!decodedAnswer && submitted) {
+                    decodedAnswer = "(回答済み)";
+                }
+
+                const answerLog = answerLogMap.get(buildAnswerLogKey(student, quizId, sourceAddress))
+                    || latestAnswerLogs.get(buildAnswerLogKey(student, quizId, sourceAddress))
+                    || [...latestAnswerLogs.values()].find((log) =>
+                        normalizeAddress(log.address || log.actor || "") === normalizeAddress(student)
+                        && String(log.quizId || "") === String(quizId)
+                    );
+
+                return {
+                    address: student,
+                    sourceAddress,
+                    answer: decodedAnswer,
+                    hash: hash || "",
+                    state: Number(detail?.state || 0),
+                    reward: Number(detail?.reward || 0),
+                    submitted,
+                    answerTime: Number(detail?.answerTime || 0),
+                    attemptCount: Number(detail?.attemptCount || 0),
+                    txHash: String(answerLog?.txHash || ""),
+                    verificationStatus: String(answerLog?.verificationStatus || (submitted ? "onchain_submitted" : "")),
+                };
+            });
+
+            rows.push(...buildAnswerExportRows(perStudent, `${sourceAddress}:${quizId}`, quizTitle));
+        });
+
+        return rows;
+    };
+
+    const handleExportAllAnswersJson = async () => {
+        setExportingAllAnswers(true);
+        try {
+            const allRows = await collectAllAnswerExportRows();
+            downloadTextFile(
+                "all_quiz_answers.json",
+                JSON.stringify(allRows, null, 2),
+                "application/json;charset=utf-8"
+            );
+        } finally {
+            setExportingAllAnswers(false);
+        }
+    };
+
+    const handleExportAllAnswersCsv = async () => {
+        setExportingAllAnswers(true);
+        try {
+            const allRows = await collectAllAnswerExportRows();
+            const rows = [
+                ["No", "Quiz ID", "Quiz Title", "Source Address", "Wallet Address", "Answer", "Answer Hash", "Submitted", "State", "Answer Time", "Attempt Count", "Reward TFT", "Tx Hash", "Tx URL", "Verification Status"],
+                ...allRows.map((row) => [
+                    row.no,
+                    row.quizId,
+                    row.quizTitle,
+                    row.sourceAddress,
+                    row.walletAddress,
+                    row.answer,
+                    row.answerHash,
+                    row.submitted,
+                    row.state,
+                    row.answerTime,
+                    row.attemptCount,
+                    row.rewardTft,
+                    row.txHash,
+                    row.txUrl,
+                    row.verificationStatus,
+                ]),
+            ];
+            const csv = rows.map((row) => row.map(escapeCsv).join(",")).join("\n");
+            downloadTextFile(
+                "all_quiz_answers.csv",
+                csv,
+                "text/csv;charset=utf-8"
+            );
+        } finally {
+            setExportingAllAnswers(false);
+        }
     };
 
     const handleExportRewardPayoutJson = () => {
@@ -403,6 +531,14 @@ function View_answers() {
 
             {/* Quiz Selector */}
             <div style={{ marginBottom: "var(--space-6)" }}>
+                <div className="csv-download-area" style={{ marginTop: 0, marginBottom: "16px" }}>
+                    <button className="btn-action" onClick={handleExportAllAnswersCsv} disabled={exportingAllAnswers || loading}>
+                        {exportingAllAnswers ? "集計中..." : "📤 全問題の回答一覧を CSV 出力"}
+                    </button>
+                    <button className="btn-action" onClick={handleExportAllAnswersJson} disabled={exportingAllAnswers || loading}>
+                        📤 全問題の回答一覧を JSON 出力
+                    </button>
+                </div>
                 <label style={{ color: "#ffffff", fontWeight: "600", display: "block", marginBottom: "var(--space-2)" }}>
                     問題を選択してください（全 {quizCount} 問）
                 </label>
