@@ -533,4 +533,30 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
         expect(score).toBe(45);
     });
 
+    test("get_quiz_reward_tft excludes manual TFT grants from score calculation", async () => {
+        const contract = new Contracts_MetaMask();
+        contract.get_user_history_len = jest.fn().mockResolvedValue(0);
+        contract.getQuizInventory = jest.fn().mockResolvedValue([]);
+        mockGetRewardPayoutEntries.mockReturnValue([]);
+        mockGetGrantLedgerEntries.mockReturnValue([
+            {
+                address: "0xabc",
+                status: {
+                    answer_thanks_tft: {
+                        grantedAt: "2026-05-29T00:00:00.000Z",
+                        amount: 50,
+                        txHash: "0xmanual",
+                        source: "single",
+                        confirmed: true,
+                        active: true,
+                    },
+                },
+            },
+        ]);
+
+        const score = await contract.get_quiz_reward_tft("0xabc");
+
+        expect(score).toBe(0);
+    });
+
 });

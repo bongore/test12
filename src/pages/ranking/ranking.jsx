@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from "react";
 import { Contracts_MetaMask } from "../../contract/contracts";
 import { getCourseEnhancementSnapshot } from "../../utils/courseEnhancements";
 import { syncRewardPayoutLedgerFromServer } from "../../utils/rewardPayoutLedger";
-import { syncGrantLedgerFromServer } from "../../utils/tokenGrantLedger";
 import { convertTftToPoint, normalizeTftAmount } from "../../utils/quizRewardRate";
 import "./ranking.css";
 
@@ -21,7 +20,6 @@ function Ranking() {
         async function loadData() {
             try {
                 await syncRewardPayoutLedgerFromServer().catch(() => []);
-                await syncGrantLedgerFromServer().catch(() => ({}));
                 const addr = await cont.get_address();
                 setMyAddress(addr);
 
