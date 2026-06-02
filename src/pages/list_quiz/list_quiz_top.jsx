@@ -9,6 +9,7 @@ import { getCreatedQuizzes, getDeletedQuizCacheSnapshot, getDeletedQuizzesWithSt
 import { getPendingCreatedQuizzes, pruneResolvedPendingCreatedQuizzes, subscribePendingCreatedQuizzes, toPendingQuizSimple } from "../../utils/pendingCreatedQuizzes";
 import { getBatchAnswerQueue, subscribeBatchAnswerQueue } from "../../utils/batchAnswerQueue";
 import { Link } from "react-router-dom";
+import { legacy_quiz_addresses, quiz_address } from "../../contract/config";
 import "./list_quiz_top.css";
 
 const QUIZ_LIST_PAGE_CACHE_KEY = "web3_quiz_list_page_cache_v1";
@@ -32,6 +33,29 @@ function writeQuizListPageCache(payload) {
     } catch (error) {
         console.error("Failed to persist quiz list page cache", error);
     }
+}
+
+function normalizeQuizAddress(value) {
+    return String(value || "").trim().toLowerCase();
+}
+
+const QUIZ_ADDRESS_ORDER = [quiz_address, ...(legacy_quiz_addresses || [])]
+    .map((address) => normalizeQuizAddress(address))
+    .filter((address, index, list) => address && list.indexOf(address) === index);
+
+function compareQuizOrder(left, right) {
+    const leftAddress = normalizeQuizAddress(left?.sourceAddress || left?.[12] || "");
+    const rightAddress = normalizeQuizAddress(right?.sourceAddress || right?.[12] || "");
+    const leftAddressIndex = QUIZ_ADDRESS_ORDER.indexOf(leftAddress);
+    const rightAddressIndex = QUIZ_ADDRESS_ORDER.indexOf(rightAddress);
+    const safeLeftIndex = leftAddressIndex === -1 ? Number.MAX_SAFE_INTEGER : leftAddressIndex;
+    const safeRightIndex = rightAddressIndex === -1 ? Number.MAX_SAFE_INTEGER : rightAddressIndex;
+
+    if (safeLeftIndex !== safeRightIndex) {
+        return safeLeftIndex - safeRightIndex;
+    }
+
+    return Number(right?.[0] || 0) - Number(left?.[0] || 0);
 }
 
 function List_quiz_top(props) {
@@ -99,6 +123,8 @@ function List_quiz_top(props) {
         });
     };
 
+    const refreshQuizLengthTimerRef = useRef(null);
+
     const refreshQuizLength = async () => {
         try {
             const data = await cont.get_quiz_lenght();
@@ -121,8 +147,8 @@ function List_quiz_top(props) {
                 quizSumRef.current = nextLength;
                 now_numRef.current = nextLength;
                 Set_quiz_sum(nextLength);
-                Set_quiz_list([]);
-                setInitialListLoadResolved(false);
+                // リストを全消去せずにバックグラウンドで更新する
+                // 既存リストがあればそのまま保持し、新しいクイズだけ追加される
                 setListRefreshKey((current) => current + 1);
             } else if (quizSumRef.current === 0 && quiz_sum == null) {
                 Set_quiz_sum(nextLength);
@@ -132,8 +158,16 @@ function List_quiz_top(props) {
         } catch (error) {
             console.error("Failed to load quiz length", error);
             if (quizSumStateRef.current == null && (!Array.isArray(quizListRef.current) || quizListRef.current.length === 0)) {
-                Set_quiz_sum(0);
-                now_numRef.current = 0;
+                // quiz_sum を 0 にするのではなく null のままにして
+                // キャッシュからの復元チャンスを残す
+                const cachedCount = Array.isArray(initialListCache?.quizList) ? initialListCache.quizList.length : 0;
+                if (cachedCount > 0) {
+                    Set_quiz_sum(cachedCount);
+                    now_numRef.current = cachedCount;
+                } else {
+                    Set_quiz_sum(0);
+                    now_numRef.current = 0;
+                }
             }
             setLoadError("問題一覧の読み込みに失敗しました。");
         }
@@ -217,10 +251,17 @@ function List_quiz_top(props) {
     useEffect(() => {
         refreshQuizLength();
 
+        // デバウンス付きで visibilitychange/focus を処理（連続発火防止）
         const handleVisible = () => {
             if (document.visibilityState === "visible") {
-                refreshQuizLength();
-                syncPendingCreatedQuizzes();
+                if (refreshQuizLengthTimerRef.current) {
+                    window.clearTimeout(refreshQuizLengthTimerRef.current);
+                }
+                refreshQuizLengthTimerRef.current = window.setTimeout(() => {
+                    refreshQuizLengthTimerRef.current = null;
+                    refreshQuizLength();
+                    syncPendingCreatedQuizzes();
+                }, 800);
             }
         };
 
@@ -232,6 +273,9 @@ function List_quiz_top(props) {
             document.removeEventListener("visibilitychange", handleVisible);
             window.removeEventListener("focus", handleVisible);
             window.removeEventListener("pending-created-quizzes-updated", refreshQuizLength);
+            if (refreshQuizLengthTimerRef.current) {
+                window.clearTimeout(refreshQuizLengthTimerRef.current);
+            }
         };
         // cont is stable for this page lifecycle.
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -240,8 +284,12 @@ function List_quiz_top(props) {
     useEffect(() => {
         if (!access.address) return;
         if (quiz_sum == null) return;
-        now_numRef.current = quizSumRef.current || Number(quiz_sum) || 0;
-        setInitialListLoadResolved(false);
+        // 既にリストデータがある場合は全リセットしない
+        const hasExistingList = Array.isArray(quizListRef.current) && quizListRef.current.length > 0;
+        if (!hasExistingList) {
+            now_numRef.current = quizSumRef.current || Number(quiz_sum) || 0;
+            setInitialListLoadResolved(false);
+        }
         setListRefreshKey((current) => current + 1);
     }, [access.address, quiz_sum]);
 
@@ -322,7 +370,8 @@ function List_quiz_top(props) {
             const localId = Number(quiz?.[0]);
             const sourceAddress = quiz?.sourceAddress || quiz?.[12] || "";
             return toGlobalId(localId, sourceAddress) !== -1;
-        });
+        })
+        .sort(compareQuizOrder);
     const hasRenderableQuizList = filteredQuizList.length > 0;
     const shouldShowSyncBanner = !deletedQuizReady;
 
@@ -400,9 +449,15 @@ function List_quiz_top(props) {
                     {!loadError && !hasRenderableQuizList && deletedQuizReady && initialListLoadResolved ? (
                         <div className="glass-card" style={{ padding: "var(--space-5)", color: "#fff" }}>
                             <div style={{ fontWeight: 700, marginBottom: "10px" }}>表示できる問題がまだありません</div>
-                            <div style={{ color: "rgba(255,255,255,0.8)" }}>
-                                現在の問題一覧を確認中です。しばらく待っても表示されない場合は再読み込みしてください。
+                            <div style={{ color: "rgba(255,255,255,0.8)", marginBottom: "12px" }}>
+                                ブロックチェーンとの通信に問題が発生した可能性があります。再読み込みをお試しください。
                             </div>
+                            <button
+                                className="btn-primary-custom"
+                                onClick={() => window.location.reload()}
+                            >
+                                再読み込み
+                            </button>
                         </div>
                     ) : null}
                 </div>

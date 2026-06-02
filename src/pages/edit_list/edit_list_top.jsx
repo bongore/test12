@@ -5,7 +5,31 @@ import Quiz_list from "./components/quiz_list";
 import { useAccessControl } from "../../utils/accessControl";
 import { getCreatedQuizzes, getDeletedQuizCacheSnapshot, getDeletedQuizzesWithStatus, hasDeletedQuizCache, normalizeDeletedQuizKey, removeCreatedQuiz, removeDeletedQuiz, saveDeletedQuiz } from "../../utils/liveSignalApi";
 import { getPendingCreatedQuizzes, pruneResolvedPendingCreatedQuizzes, subscribePendingCreatedQuizzes, toPendingQuizSimple } from "../../utils/pendingCreatedQuizzes";
+import { legacy_quiz_addresses, quiz_address } from "../../contract/config";
 import "./edit_list_top.css";
+
+function normalizeQuizAddress(value) {
+    return String(value || "").trim().toLowerCase();
+}
+
+const QUIZ_ADDRESS_ORDER = [quiz_address, ...(legacy_quiz_addresses || [])]
+    .map((address) => normalizeQuizAddress(address))
+    .filter((address, index, list) => address && list.indexOf(address) === index);
+
+function compareQuizOrder(left, right) {
+    const leftAddress = normalizeQuizAddress(left?.sourceAddress || left?.[12] || "");
+    const rightAddress = normalizeQuizAddress(right?.sourceAddress || right?.[12] || "");
+    const leftAddressIndex = QUIZ_ADDRESS_ORDER.indexOf(leftAddress);
+    const rightAddressIndex = QUIZ_ADDRESS_ORDER.indexOf(rightAddress);
+    const safeLeftIndex = leftAddressIndex === -1 ? Number.MAX_SAFE_INTEGER : leftAddressIndex;
+    const safeRightIndex = rightAddressIndex === -1 ? Number.MAX_SAFE_INTEGER : rightAddressIndex;
+
+    if (safeLeftIndex !== safeRightIndex) {
+        return safeLeftIndex - safeRightIndex;
+    }
+
+    return Number(right?.[0] || 0) - Number(left?.[0] || 0);
+}
 
 function Edit_list_top(props) {
     const cont = useMemo(() => new Contracts_MetaMask(), []);
@@ -188,7 +212,7 @@ function Edit_list_top(props) {
     const mergedQuizList = [
         ...pendingCreatedQuizzes.filter((quiz) => !visibleQuizKeys.has(getQuizCacheKey(quiz))),
         ...quiz_list,
-    ];
+    ].sort(compareQuizOrder);
 
     if (access.isLoading) {
         return <div className="edit-list-page"><div className="loading-text-bright">権限を確認中です...</div></div>;
