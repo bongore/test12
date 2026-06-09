@@ -12,6 +12,7 @@ const STATE_FILE_PATH = path.join(__dirname, ".live-board-state.json");
 const MAX_ACTIVITY_LOGS = 30000;
 let tokenGrantLedger = {};
 let rewardPayoutEntries = [];
+let surveyRewardEntries = [];
 let deletedQuizzes = {};
 let pendingCreatedQuizzes = {};
 let activityLogs = [];
@@ -46,6 +47,34 @@ function normalizeRewardPayoutEntries(entries = []) {
         deduped.set(normalized.id, normalized);
     });
     return Array.from(deduped.values()).sort((a, b) => new Date(b.paidAt || 0) - new Date(a.paidAt || 0));
+}
+
+function normalizeSurveyRewardEntry(entry = {}) {
+    return {
+        id: String(entry?.id || ""),
+        address: String(entry?.address || "").toLowerCase(),
+        campaignKey: String(entry?.campaignKey || "").toLowerCase(),
+        campaignLabel: String(entry?.campaignLabel || ""),
+        amount: Number(entry?.amount || 0),
+        txHash: String(entry?.txHash || ""),
+        createdAt: entry?.createdAt || entry?.grantedAt || new Date().toISOString(),
+        type: String(entry?.type || (entry?.confirmed === false ? "pending" : "grant")),
+        confirmed: entry?.confirmed !== false,
+        actorAddress: String(entry?.actorAddress || "").toLowerCase(),
+        source: String(entry?.source || ""),
+        studentName: String(entry?.studentName || ""),
+        studentId: String(entry?.studentId || ""),
+    };
+}
+
+function normalizeSurveyRewardEntries(entries = []) {
+    const deduped = new Map();
+    (Array.isArray(entries) ? entries : []).forEach((entry) => {
+        const normalized = normalizeSurveyRewardEntry(entry);
+        if (!normalized.id || !normalized.address || !normalized.campaignKey) return;
+        deduped.set(normalized.id, normalized);
+    });
+    return Array.from(deduped.values()).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 }
 
 function normalizeActivityLogs(logs = []) {
@@ -195,6 +224,11 @@ const server = http.createServer((req, res) => {
 
     if (req.url === "/reward-payouts" && req.method === "GET") {
         writeJson(res, 200, { ok: true, entries: rewardPayoutEntries });
+        return;
+    }
+
+    if (req.url === "/survey-grants" && req.method === "GET") {
+        writeJson(res, 200, { ok: true, entries: surveyRewardEntries });
         return;
     }
 
@@ -388,6 +422,24 @@ const server = http.createServer((req, res) => {
         return;
     }
 
+    if (req.url === "/survey-grants" && req.method === "POST") {
+        readRequestBody(req)
+            .then((body) => {
+                const entries = normalizeSurveyRewardEntries(body?.entries);
+                if (!entries.length) {
+                    writeJson(res, 400, { ok: false, error: "invalid_payload" });
+                    return;
+                }
+                surveyRewardEntries = normalizeSurveyRewardEntries([...(surveyRewardEntries || []), ...entries]);
+                persistState();
+                writeJson(res, 200, { ok: true, entries: surveyRewardEntries });
+            })
+            .catch(() => {
+                writeJson(res, 400, { ok: false, error: "invalid_json" });
+            });
+        return;
+    }
+
     writeJson(res, 200, { ok: true, service: "live-signal-server" });
 });
 
@@ -508,6 +560,7 @@ function persistState() {
             currentBoardSession: serializeBoardSessionForStorage(currentBoardSession),
             tokenGrantLedger,
             rewardPayoutEntries,
+            surveyRewardEntries,
             deletedQuizzes,
             pendingCreatedQuizzes,
             activityLogs,
@@ -544,6 +597,7 @@ function loadPersistedState() {
         currentBoardSession = reviveBoardSession(payload?.currentBoardSession, "現在の授業");
         tokenGrantLedger = payload?.tokenGrantLedger && typeof payload.tokenGrantLedger === "object" ? payload.tokenGrantLedger : {};
         rewardPayoutEntries = normalizeRewardPayoutEntries(payload?.rewardPayoutEntries);
+        surveyRewardEntries = normalizeSurveyRewardEntries(payload?.surveyRewardEntries);
         deletedQuizzes = normalizeDeletedQuizzes(payload?.deletedQuizzes && typeof payload.deletedQuizzes === "object" ? payload.deletedQuizzes : {});
         pendingCreatedQuizzes = normalizePendingCreatedQuizzes(payload?.pendingCreatedQuizzes && typeof payload.pendingCreatedQuizzes === "object" ? payload.pendingCreatedQuizzes : {});
         activityLogs = normalizeActivityLogs(payload?.activityLogs);

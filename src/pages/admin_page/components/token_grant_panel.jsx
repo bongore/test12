@@ -15,6 +15,14 @@ import {
     syncGrantLedgerFromServer,
     TOKEN_GRANT_KEYS,
 } from "../../../utils/tokenGrantLedger";
+import {
+    buildSurveyRewardStatusMap,
+    getSurveyRewardEntries,
+    hasSurveyRewardReserved,
+    normalizeCampaignKey,
+    persistSurveyRewardEntriesToServer,
+    syncSurveyRewardLedgerFromServer,
+} from "../../../utils/surveyRewardLedger";
 
 const AMOY_EXPLORER_TX_BASE = "https://amoy.polygonscan.com/tx/";
 const AMOY_EXPLORER_ADDRESS_BASE = "https://amoy.polygonscan.com/address/";
@@ -88,6 +96,9 @@ function Token_grant_panel(props) {
     const [grantLedgerEntries, setGrantLedgerEntries] = useState([]);
     const [grantSyncError, setGrantSyncError] = useState("");
     const [studentNameMap, setStudentNameMap] = useState({});
+    const [surveyCampaignLabel, setSurveyCampaignLabel] = useState("");
+    const [surveyTftAmount, setSurveyTftAmount] = useState("50");
+    const [surveyRewardEntries, setSurveyRewardEntries] = useState([]);
 
     const typedAddresses = useMemo(() => normalizeAddressLines(bulkAddresses), [bulkAddresses]);
     const manualGrantEntries = useMemo(
@@ -130,6 +141,40 @@ function Token_grant_panel(props) {
             })
         ))
     ), [grantLedgerEntries, studentIndexMap, studentNameMap, props.cont]);
+    const surveyRewardStatusMap = useMemo(
+        () => buildSurveyRewardStatusMap(surveyRewardEntries),
+        [surveyRewardEntries]
+    );
+    const surveyRewardExportRows = useMemo(() => (
+        surveyRewardEntries.map((entry, index) => {
+            const status = surveyRewardStatusMap.get(`${entry.campaignKey}:${props.cont.normalizeAddress(entry.address)}`);
+            const latestEntry = status?.latestEntry || null;
+            const currentStatus = latestEntry?.type === "grant"
+                ? "付与済み"
+                : latestEntry?.type === "pending"
+                    ? "送金処理中"
+                    : latestEntry?.type === "rollback"
+                        ? "未付与"
+                        : "未付与";
+
+            return {
+                row_index: index + 1,
+                campaign_label: entry.campaignLabel,
+                campaign_key: entry.campaignKey,
+                address: entry.address,
+                student_id: studentIndexMap.get(props.cont.normalizeAddress(entry.address)) || entry.studentId || "",
+                student_name: studentNameMap[props.cont.normalizeAddress(entry.address)] || entry.studentName || "",
+                amount_tft: Number(entry.amount || 0),
+                event_type: entry.type === "grant" ? "送金確認" : entry.type === "pending" ? "送金処理中" : "送金失敗/解除",
+                timestamp: entry.createdAt || "",
+                tx_hash: entry.txHash || "",
+                tx_url: entry.txHash ? `${AMOY_EXPLORER_TX_BASE}${entry.txHash}` : "",
+                current_status: currentStatus,
+                source: entry.source || "",
+                confirmed: entry.confirmed !== false ? "true" : "false",
+            };
+        })
+    ), [props.cont, studentIndexMap, studentNameMap, surveyRewardEntries, surveyRewardStatusMap]);
 
     async function refreshGrantLedger() {
         try {
@@ -141,6 +186,18 @@ function Token_grant_panel(props) {
             console.error("Failed to sync token grant ledger", error);
             setGrantSyncError("付与履歴の共有同期に失敗しました。二重送金防止のため、同期が戻るまで付与を停止しています。");
             setGrantLedgerEntries(getGrantLedgerEntries());
+            return false;
+        }
+    }
+
+    async function refreshSurveyRewardLedger() {
+        try {
+            const entries = await syncSurveyRewardLedgerFromServer();
+            setSurveyRewardEntries(Array.isArray(entries) ? entries : getSurveyRewardEntries());
+            return true;
+        } catch (error) {
+            console.error("Failed to sync survey reward ledger", error);
+            setSurveyRewardEntries(getSurveyRewardEntries());
             return false;
         }
     }
@@ -171,15 +228,18 @@ function Token_grant_panel(props) {
     useEffect(() => {
         loadStudents();
         refreshGrantLedger();
+        refreshSurveyRewardLedger();
     }, [props.cont]);
 
     useEffect(() => {
         const timer = window.setInterval(() => {
             refreshGrantLedger();
+            refreshSurveyRewardLedger();
         }, 5000);
         const handleSync = () => {
             if (document.visibilityState === "visible") {
                 refreshGrantLedger();
+                refreshSurveyRewardLedger();
             }
         };
         document.addEventListener("visibilitychange", handleSync);
@@ -680,6 +740,165 @@ function Token_grant_panel(props) {
         );
     }
 
+    function handleExportSurveyRewardJson() {
+        downloadTextFile(
+            `survey_reward_history_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`,
+            JSON.stringify(surveyRewardExportRows, null, 2),
+            "application/json;charset=utf-8"
+        );
+    }
+
+    function handleExportSurveyRewardCsv() {
+        const header = [
+            "row_index",
+            "campaign_label",
+            "campaign_key",
+            "address",
+            "student_id",
+            "student_name",
+            "amount_tft",
+            "event_type",
+            "timestamp",
+            "tx_hash",
+            "tx_url",
+            "current_status",
+            "source",
+            "confirmed",
+        ];
+        const escapeCsv = (value) => `"${String(value ?? "").replace(/"/g, "\"\"")}"`;
+        const rows = [
+            header.join(","),
+            ...surveyRewardExportRows.map((row) => header.map((key) => escapeCsv(row[key])).join(",")),
+        ];
+        downloadTextFile(
+            `survey_reward_history_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.csv`,
+            rows.join("\n"),
+            "text/csv;charset=utf-8"
+        );
+    }
+
+    async function grantSurveyRewards(addresses, sourceLabel) {
+        const campaignLabel = String(surveyCampaignLabel || "").trim();
+        const campaignKey = normalizeCampaignKey(campaignLabel);
+        const amount = Number(surveyTftAmount || 0);
+        if (!campaignLabel || !campaignKey) {
+            alert("アンケート名を入力してください。");
+            return;
+        }
+        if (!Number.isFinite(amount) || amount <= 0) {
+            alert("アンケート報酬のTFT数を 0 より大きく入力してください。");
+            return;
+        }
+
+        const synced = await refreshSurveyRewardLedger();
+        if (!synced) {
+            alert("アンケート報酬履歴を同期できないため、二重送金防止のため送金を止めました。少し待ってから再試行してください。");
+            return;
+        }
+
+        const normalizedTargets = props.cont.normalizeAddressList(addresses);
+        if (normalizedTargets.length === 0) {
+            alert("対象の学生アドレスを入力または選択してください。");
+            return;
+        }
+
+        const grantableTargets = normalizedTargets.filter((address) => !hasSurveyRewardReserved(address, campaignKey, surveyRewardEntries));
+        if (grantableTargets.length === 0) {
+            alert("選択した学生には、このアンケート名ですでに配布済み、または送金処理中です。");
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            const actorAddress = props.cont.normalizeAddress(await props.cont.get_address());
+
+            for (const address of grantableTargets) {
+                const normalizedAddress = props.cont.normalizeAddress(address);
+                const studentName = studentNameMap[normalizedAddress] || "";
+                const studentId = studentIndexMap.get(normalizedAddress) || "";
+                const pendingEntry = {
+                    id: `${campaignKey}:${normalizedAddress}:${Date.now()}:pending`,
+                    address: normalizedAddress,
+                    campaignKey,
+                    campaignLabel,
+                    amount,
+                    txHash: "",
+                    createdAt: new Date().toISOString(),
+                    type: "pending",
+                    confirmed: false,
+                    actorAddress,
+                    source: `${sourceLabel}_pending`,
+                    studentName,
+                    studentId,
+                };
+                await persistSurveyRewardEntriesToServer([pendingEntry]);
+
+                try {
+                    const results = await props.cont.grantStudentStarterTokens([normalizedAddress], { pol: 0, tft: amount, ttt: 0 });
+                    const successfulTransfer = (Array.isArray(results) ? results : []).find((result) => result?.asset === "TFT" && result?.confirmed !== false);
+                    if (!successfulTransfer?.hash) {
+                        throw new Error((Array.isArray(results) ? results : []).find((result) => result?.asset === "TFT")?.error || "survey_reward_transfer_failed");
+                    }
+
+                    const confirmedEntry = {
+                        id: `${campaignKey}:${normalizedAddress}:${successfulTransfer.hash}:grant`,
+                        address: normalizedAddress,
+                        campaignKey,
+                        campaignLabel,
+                        amount,
+                        txHash: successfulTransfer.hash,
+                        createdAt: new Date().toISOString(),
+                        type: "grant",
+                        confirmed: true,
+                        actorAddress,
+                        source: sourceLabel,
+                        studentName,
+                        studentId,
+                    };
+                    await persistSurveyRewardEntriesToServer([confirmedEntry]);
+                } catch (error) {
+                    const rollbackEntry = {
+                        id: `${campaignKey}:${normalizedAddress}:${Date.now()}:rollback`,
+                        address: normalizedAddress,
+                        campaignKey,
+                        campaignLabel,
+                        amount,
+                        txHash: "",
+                        createdAt: new Date().toISOString(),
+                        type: "rollback",
+                        confirmed: true,
+                        actorAddress,
+                        source: `${sourceLabel}_rollback`,
+                        studentName,
+                        studentId,
+                    };
+                    await persistSurveyRewardEntriesToServer([rollbackEntry]);
+                    throw error;
+                }
+            }
+
+            await refreshSurveyRewardLedger();
+            appendActivityLog(ACTION_TYPES.ADMIN_GRANT_TOKENS, {
+                page: "admin",
+                source: `${sourceLabel}_survey_reward`,
+                campaignLabel,
+                recipientCount: grantableTargets.length,
+                skippedCount: normalizedTargets.length - grantableTargets.length,
+                tftAmount: amount,
+            });
+            alert(
+                `${campaignLabel} の報酬として ${grantableTargets.length}件に ${amount} TFT を配布しました。`
+                + (grantableTargets.length !== normalizedTargets.length ? `\n未送金（同じ回で配布済み/処理中）: ${normalizedTargets.length - grantableTargets.length}件` : "")
+            );
+        } catch (error) {
+            console.error("Failed to grant survey rewards", error);
+            alert(error?.shortMessage || error?.message || "アンケート報酬の配布に失敗しました。MetaMask の承認と残高を確認してください。");
+        } finally {
+            setIsSubmitting(false);
+            await refreshSurveyRewardLedger();
+        }
+    }
+
     return (
         <div>
             <h3 className="section-title">学生へのトークン付与</h3>
@@ -689,6 +908,8 @@ function Token_grant_panel(props) {
             <div className="csv-download-area" style={{ marginTop: 0, marginBottom: "16px" }}>
                 <button className="btn-action" onClick={handleExportTokenGrantCsv}>📤 トークン付与履歴を CSV 出力</button>
                 <button className="btn-action" onClick={handleExportTokenGrantJson}>📤 トークン付与履歴を JSON 出力</button>
+                <button className="btn-action" onClick={handleExportSurveyRewardCsv}>📤 アンケート報酬履歴を CSV 出力</button>
+                <button className="btn-action" onClick={handleExportSurveyRewardJson}>📤 アンケート報酬履歴を JSON 出力</button>
             </div>
             {grantSyncError && (
                 <div className="address-item" style={{ borderLeftColor: "#ff9800", color: "#ffe0a3", marginBottom: "var(--space-4)" }}>
@@ -784,6 +1005,45 @@ function Token_grant_panel(props) {
             </div>
 
             <div className="token-grant-card" style={{ marginTop: "var(--space-6)" }}>
+                <div className="token-grant-card-title">アンケート回答報酬の一括TFT配布</div>
+                <div className="token-grant-card-desc">
+                    回ごとに名前を付けて、回答した学生へまとめて TFT を配布できます。同じアンケート名では同じ学生へ二重送金しません。
+                </div>
+                <div className="token-grant-inputs">
+                    <Form.Group style={{ textAlign: "left" }}>
+                        <Form.Label>アンケート名</Form.Label>
+                        <Form.Control
+                            type="text"
+                            value={surveyCampaignLabel}
+                            onChange={(event) => setSurveyCampaignLabel(event.target.value)}
+                            placeholder="例: 第1回アンケート / 講義後アンケート"
+                        />
+                    </Form.Group>
+                    <Form.Group style={{ textAlign: "left" }}>
+                        <Form.Label>配布するTFT数</Form.Label>
+                        <Form.Control
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={surveyTftAmount}
+                            onChange={(event) => setSurveyTftAmount(event.target.value)}
+                        />
+                    </Form.Group>
+                </div>
+                <div className="token-grant-actions">
+                    <button className="btn-action" type="button" disabled={isSubmitting} onClick={() => grantSurveyRewards(selectedStudents, "survey_selected")}>
+                        選択した学生へアンケート報酬を配布
+                    </button>
+                    <button className="btn-action token-grant-secondary-btn" type="button" disabled={isSubmitting} onClick={() => grantSurveyRewards(typedAddresses, "survey_bulk_input")}>
+                        入力済みアドレスへアンケート報酬を配布
+                    </button>
+                    <button className="btn-action token-grant-secondary-btn" type="button" disabled={isSubmitting} onClick={() => grantSurveyRewards([singleAddress], "survey_single")}>
+                        個別アドレスへアンケート報酬を配布
+                    </button>
+                </div>
+            </div>
+
+            <div className="token-grant-card" style={{ marginTop: "var(--space-6)" }}>
                 <div className="token-grant-card-title">登録済み学生から選んで付与</div>
                 <div className="token-grant-card-desc">
                     提出済みアドレスの学生を選んでまとめて付与できます。上の個別入力にもクリックで反映できます。
@@ -826,6 +1086,63 @@ function Token_grant_panel(props) {
                                     </button>
                                     {renderGrantStatusSummary(student)}
                                 </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+
+            <div className="token-grant-card" style={{ marginTop: "var(--space-6)" }}>
+                <div className="token-grant-card-title">アンケート報酬の配布履歴</div>
+                <div className="token-grant-card-desc">
+                    アンケートごとに誰へ何TFT配布したか、Tx ハッシュつきで確認できます。
+                </div>
+                <div className="token-grant-ledger-list">
+                    {surveyRewardExportRows.length === 0 ? (
+                        <div className="address-item">まだアンケート報酬の履歴はありません。</div>
+                    ) : (
+                        surveyRewardExportRows.map((row) => (
+                            <div key={`${row.campaign_key}-${row.address}-${row.timestamp}-${row.event_type}`} className="token-grant-ledger-item">
+                                <details className="token-grant-ledger-collapsible">
+                                    <summary className="token-grant-ledger-summary">
+                                        <div className="token-grant-ledger-summary-main">
+                                            <div className="token-grant-ledger-address">{row.campaign_label}</div>
+                                            <div className="token-grant-card-desc token-grant-summary-label">
+                                                {row.student_name || row.student_id || row.address}
+                                            </div>
+                                        </div>
+                                        <div className="token-grant-ledger-summary-side">
+                                            <div className="token-grant-status-list">
+                                                <div className={`token-grant-status-badge ${row.current_status === "付与済み" ? "granted" : "pending"}`}>
+                                                    <span>TFT</span>
+                                                    <span>{row.current_status} {row.amount_tft}</span>
+                                                </div>
+                                            </div>
+                                            <span className="token-grant-ledger-toggle-text">開閉</span>
+                                        </div>
+                                    </summary>
+                                    <div className="token-grant-ledger-body">
+                                        <div className="token-grant-status-meta">
+                                            <div>学生: {row.student_name || "-"} {row.student_id ? `(${row.student_id})` : ""}</div>
+                                            <div>アドレス: {row.address}</div>
+                                            <div>配布量: {row.amount_tft} TFT</div>
+                                            <div>状態: {row.current_status}</div>
+                                            <div>履歴種別: {row.event_type}</div>
+                                            <div>時刻: {formatDateTime(row.timestamp)}</div>
+                                            <div>
+                                                Tx:
+                                                {" "}
+                                                {row.tx_hash ? (
+                                                    <a href={row.tx_url} target="_blank" rel="noreferrer" className="token-grant-link">
+                                                        {shortenHash(row.tx_hash)}
+                                                    </a>
+                                                ) : (
+                                                    "-"
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </details>
                             </div>
                         ))
                     )}
