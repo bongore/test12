@@ -185,6 +185,40 @@ function Token_grant_panel(props) {
             };
         })
     ), [props.cont, studentIndexMap, studentNameMap, surveyRewardEntries, surveyRewardStatusMap]);
+    const combinedGrantExportRows = useMemo(() => {
+        const starterRows = tokenGrantExportRows.map((row) => ({
+            category: "starter_or_manual",
+            campaign_label: "",
+            campaign_key: "",
+            ...row,
+        }));
+        const surveyRows = surveyRewardExportRows.map((row) => ({
+            category: "survey_reward",
+            address: row.address,
+            student_id: row.student_id,
+            student_name: row.student_name,
+            asset: "TFT",
+            current_status: row.current_status,
+            current_amount: row.amount_tft,
+            current_tx_hash: row.tx_hash,
+            current_tx_url: row.tx_url,
+            current_granted_at: row.timestamp,
+            history_index: row.row_index,
+            history_type: row.event_type,
+            amount: row.amount_tft,
+            timestamp: row.timestamp,
+            tx_hash: row.tx_hash,
+            tx_url: row.tx_url,
+            address_url: `${AMOY_EXPLORER_ADDRESS_BASE}${row.address}`,
+            source: row.source,
+            confirmed: row.confirmed,
+            active: row.current_status === "付与済み" ? "true" : "false",
+            campaign_label: row.campaign_label,
+            campaign_key: row.campaign_key,
+            category: "survey_reward",
+        }));
+        return [...starterRows, ...surveyRows];
+    }, [surveyRewardExportRows, tokenGrantExportRows]);
 
     async function refreshGrantLedger() {
         try {
@@ -838,13 +872,16 @@ function Token_grant_panel(props) {
     function handleExportTokenGrantJson() {
         downloadTextFile(
             `token_grant_history_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`,
-            JSON.stringify(tokenGrantExportRows, null, 2),
+            JSON.stringify(combinedGrantExportRows, null, 2),
             "application/json;charset=utf-8"
         );
     }
 
     function handleExportTokenGrantCsv() {
         const header = [
+            "category",
+            "campaign_label",
+            "campaign_key",
             "address",
             "student_id",
             "student_name",
@@ -868,7 +905,7 @@ function Token_grant_panel(props) {
         const escapeCsv = (value) => `"${String(value ?? "").replace(/"/g, "\"\"")}"`;
         const rows = [
             header.join(","),
-            ...tokenGrantExportRows.map((row) => header.map((key) => escapeCsv(row[key])).join(",")),
+            ...combinedGrantExportRows.map((row) => header.map((key) => escapeCsv(row[key])).join(",")),
         ];
         downloadTextFile(
             `token_grant_history_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.csv`,
