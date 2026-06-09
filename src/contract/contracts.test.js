@@ -272,6 +272,62 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
         expect(chunks).toEqual([{ correctStudents: [students[0]], incorrectStudents: [students[1]] }]);
     });
 
+    test("investment_to_quiz auto payout uses manual chunk settlement instead of per-student direct transfers", async () => {
+        const contract = new Contracts_MetaMask();
+        const legacyQuizAddress = "0x55B3977C7B7b913eaf175A7364c8375732d22241";
+        const students = Array.from({ length: 16 }, (_, index) => `0x${(index + 1).toString(16).padStart(40, "0")}`);
+
+        contract.getConnectedWriteAccount = jest.fn().mockResolvedValue("0xd5670D7B88411d03741680451C2ea630B68C6944");
+        contract.readTokenAllowance = jest.fn().mockResolvedValue(1000n * 10n ** 18n);
+        contract.get_is_payment = jest.fn().mockResolvedValue(false);
+        contract.buildAutoRewardChunks = jest.fn().mockResolvedValue([
+            { correctStudents: students.slice(0, 15), incorrectStudents: [] },
+            { correctStudents: students.slice(15), incorrectStudents: [] },
+        ]);
+        contract._payment_of_reward_manual = jest.fn()
+            .mockResolvedValueOnce("0xhash1")
+            .mockResolvedValueOnce("0xhash2");
+        contract.waitForReceiptWithRetry = jest.fn()
+            .mockResolvedValueOnce({ status: "success", transactionHash: "0xhash1" })
+            .mockResolvedValueOnce({ status: "success", transactionHash: "0xhash2" });
+        contract._investment_to_quiz = jest.fn();
+        contract._payment_of_reward = jest.fn();
+
+        const result = await contract.investment_to_quiz(
+            4,
+            "0",
+            "1/6",
+            "false",
+            16,
+            "true",
+            students,
+            legacyQuizAddress
+        );
+
+        expect(contract._payment_of_reward_manual).toHaveBeenNthCalledWith(
+            1,
+            "0xd5670D7B88411d03741680451C2ea630B68C6944",
+            4,
+            "1/6",
+            students.slice(0, 15),
+            [],
+            false,
+            legacyQuizAddress
+        );
+        expect(contract._payment_of_reward_manual).toHaveBeenNthCalledWith(
+            2,
+            "0xd5670D7B88411d03741680451C2ea630B68C6944",
+            4,
+            "1/6",
+            students.slice(15),
+            [],
+            true,
+            legacyQuizAddress
+        );
+        expect(contract._payment_of_reward).not.toHaveBeenCalled();
+        expect(result.payoutHashes).toEqual(["0xhash1", "0xhash2"]);
+    });
+
     test("buildAutoRewardChunks splits payout groups when estimated fee is too high", async () => {
         const contract = new Contracts_MetaMask();
         const students = [

@@ -1847,10 +1847,22 @@ class Contracts_MetaMask {
                 }
 
                 if (is_not_paying_out === false) {
-                    let addreses = sliceByNumber(students, 15);
-                    console.log(addreses)
-                    for (let i = 0; i < addreses.length; i++) {
-                        hash2 = await this._payment_of_reward(account, id, answer, addreses[i], targetQuizAddress);
+                    const isPayment = await this.get_is_payment(id, targetQuizAddress).catch(() => false);
+                    if (isPayment) {
+                        throw new Error("quiz_reward_already_finalized");
+                    }
+                    payoutChunks = await this.buildAutoRewardChunks(account, id, answer, students, targetQuizAddress);
+                    for (let i = 0; i < payoutChunks.length; i += 1) {
+                        const chunk = payoutChunks[i];
+                        hash2 = await this._payment_of_reward_manual(
+                            account,
+                            id,
+                            String(answer || ""),
+                            chunk?.correctStudents || [],
+                            chunk?.incorrectStudents || [],
+                            i === payoutChunks.length - 1,
+                            targetQuizAddress
+                        );
                         if (hash2) {
                             res2 = await this.waitForReceiptWithRetry(hash2);
                             payoutHashes.push(hash2);
@@ -1879,9 +1891,10 @@ class Contracts_MetaMask {
             }
         } catch (err) {
             console.log(err);
+            throw err;
         }
         this.invalidateQuizSimpleCache(this.resolveQuizAddress(sourceAddress), id);
-        return { res, res2, hash, hash2, payoutReceipts, payoutHashes };
+        return { res, res2, hash, hash2, payoutReceipts, payoutHashes, payoutChunks };
     }
 
     async _investment_to_quiz(account, id, amount, numOfStudent, sourceAddress = "") {
