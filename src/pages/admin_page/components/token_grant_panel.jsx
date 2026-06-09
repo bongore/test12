@@ -84,6 +84,14 @@ function hasManualMarkHistory(record) {
     return (record?.history || []).some((entry) => entry?.type === "manual_mark");
 }
 
+function formatSurveyStatusLabel(entry) {
+    if (!entry) return "未付与";
+    if (entry.type === "grant" && entry.confirmed !== false) return "付与済み";
+    if (entry.type === "pending") return "送金処理中";
+    if (entry.type === "rollback") return "未付与";
+    return "未付与";
+}
+
 function Token_grant_panel(props) {
     const [singleAddress, setSingleAddress] = useState("");
     const [bulkAddresses, setBulkAddresses] = useState("");
@@ -99,8 +107,10 @@ function Token_grant_panel(props) {
     const [surveyCampaignLabel, setSurveyCampaignLabel] = useState("");
     const [surveyTftAmount, setSurveyTftAmount] = useState("50");
     const [surveyRewardEntries, setSurveyRewardEntries] = useState([]);
+    const [surveyBulkAddresses, setSurveyBulkAddresses] = useState("");
 
     const typedAddresses = useMemo(() => normalizeAddressLines(bulkAddresses), [bulkAddresses]);
+    const surveyTypedAddresses = useMemo(() => normalizeAddressLines(surveyBulkAddresses), [surveyBulkAddresses]);
     const manualGrantEntries = useMemo(
         () => grantLedgerEntries.filter((entry) => ASSET_LABELS.some((item) => {
             const record = normalizeGrantRecord(entry?.status?.[item.key]);
@@ -650,6 +660,133 @@ function Token_grant_panel(props) {
         );
     }
 
+    function getSurveyStatusesForAddress(address) {
+        const normalizedAddress = props.cont.normalizeAddress(address);
+        return Array.from(surveyRewardStatusMap.values())
+            .filter((status) => props.cont.normalizeAddress(status?.address) === normalizedAddress)
+            .sort((left, right) => String(right?.latestEntry?.createdAt || "").localeCompare(String(left?.latestEntry?.createdAt || "")));
+    }
+
+    function renderSurveyRewardSummary(address) {
+        const statuses = getSurveyStatusesForAddress(address);
+        const currentCampaignKey = normalizeCampaignKey(surveyCampaignLabel);
+        const preferredStatuses = currentCampaignKey
+            ? [
+                ...statuses.filter((status) => status.campaignKey === currentCampaignKey),
+                ...statuses.filter((status) => status.campaignKey !== currentCampaignKey),
+            ]
+            : statuses;
+        const visibleStatuses = preferredStatuses.slice(0, 2);
+
+        if (visibleStatuses.length === 0) {
+            return (
+                <div className="token-grant-status-list">
+                    <div className="token-grant-status-badge pending">
+                        <span>アンケート</span>
+                        <span>未付与</span>
+                    </div>
+                </div>
+            );
+        }
+
+        return (
+            <div className="token-grant-status-list">
+                {visibleStatuses.map((status) => {
+                    const latestEntry = status?.latestEntry;
+                    const label = formatSurveyStatusLabel(latestEntry);
+                    return (
+                        <div key={`${status.campaignKey}:${status.address}`} className={`token-grant-status-badge ${label === "付与済み" ? "granted" : "pending"}`}>
+                            <span>{status.campaignLabel || status.campaignKey}</span>
+                            <span>{label}{latestEntry?.amount ? ` ${latestEntry.amount}` : ""}</span>
+                        </div>
+                    );
+                })}
+            </div>
+        );
+    }
+
+    function renderSurveyRewardDetails(address) {
+        const statuses = getSurveyStatusesForAddress(address);
+        if (statuses.length === 0) {
+            return (
+                <div className="token-grant-status-list detailed">
+                    <div className="token-grant-status-badge pending detailed">
+                        <div className="token-grant-status-heading">
+                            <span>アンケート報酬</span>
+                            <span>未付与</span>
+                        </div>
+                        <div className="token-grant-status-meta">
+                            <div>まだアンケート報酬の履歴はありません</div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        return (
+            <div className="token-grant-status-list detailed">
+                {statuses.map((status) => {
+                    const latestEntry = status?.latestEntry;
+                    const history = Array.isArray(status?.history) ? [...status.history].sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || ""))) : [];
+                    const statusLabel = formatSurveyStatusLabel(latestEntry);
+                    return (
+                        <div key={`${status.campaignKey}:${status.address}`} className={`token-grant-status-badge ${statusLabel === "付与済み" ? "granted" : "pending"} detailed`}>
+                            <div className="token-grant-status-heading">
+                                <span>{status.campaignLabel || status.campaignKey}</span>
+                                <span>{statusLabel}{latestEntry?.amount ? ` ${latestEntry.amount} TFT` : ""}</span>
+                            </div>
+                            <div className="token-grant-status-meta">
+                                <div>現在状態: {statusLabel}</div>
+                                <div>現在状態の時刻: {formatDateTime(latestEntry?.createdAt)}</div>
+                                <div>
+                                    現在状態の Tx:
+                                    {" "}
+                                    {latestEntry?.txHash ? (
+                                        <a
+                                            href={`${AMOY_EXPLORER_TX_BASE}${latestEntry.txHash}`}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="token-grant-link"
+                                        >
+                                            {shortenHash(latestEntry.txHash)}
+                                        </a>
+                                    ) : (
+                                        "-"
+                                    )}
+                                </div>
+                                {history.length > 0 && (
+                                    <div style={{ marginTop: "var(--space-2)" }}>
+                                        <div style={{ fontWeight: 600, color: "#fff3cd" }}>履歴</div>
+                                        {history.map((entry, index) => (
+                                            <div key={`${status.campaignKey}-${index}-${entry.createdAt}`}>
+                                                {formatDateTime(entry.createdAt)}
+                                                {" / "}
+                                                {entry.type === "grant" ? "送金確認" : entry.type === "pending" ? "送金処理中" : "送金失敗/解除"}
+                                                {" / "}
+                                                {entry.txHash ? (
+                                                    <a
+                                                        href={`${AMOY_EXPLORER_TX_BASE}${entry.txHash}`}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="token-grant-link"
+                                                    >
+                                                        {shortenHash(entry.txHash)}
+                                                    </a>
+                                                ) : (
+                                                    "送金なし"
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        );
+    }
+
     function renderManualGrantAssets(address) {
         const status = getAddressGrantStatus(address);
         const manualAssets = ASSET_LABELS
@@ -962,6 +1099,7 @@ function Token_grant_panel(props) {
                         <>
                             {renderAddressMeta(singleAddress)}
                             {renderGrantStatusDetails(singleAddress)}
+                            {renderSurveyRewardDetails(singleAddress)}
                         </>
                     )}
                     <div className="token-grant-actions">
@@ -1030,11 +1168,24 @@ function Token_grant_panel(props) {
                         />
                     </Form.Group>
                 </div>
+                <Form.Group style={{ textAlign: "left", marginTop: "var(--space-3)" }}>
+                    <Form.Label>付与先アドレス一覧</Form.Label>
+                    <Form.Control
+                        as="textarea"
+                        rows={Math.max(surveyTypedAddresses.length + 3, 6)}
+                        value={surveyBulkAddresses}
+                        onChange={(event) => setSurveyBulkAddresses(event.target.value)}
+                        placeholder={"0x1234...\n0x5678..."}
+                    />
+                    <Form.Text style={{ color: "#d7e7ff" }}>
+                        改行区切りで複数アドレスを貼り付けると、アンケート報酬をまとめて配布できます。
+                    </Form.Text>
+                </Form.Group>
                 <div className="token-grant-actions">
                     <button className="btn-action" type="button" disabled={isSubmitting} onClick={() => grantSurveyRewards(selectedStudents, "survey_selected")}>
                         選択した学生へアンケート報酬を配布
                     </button>
-                    <button className="btn-action token-grant-secondary-btn" type="button" disabled={isSubmitting} onClick={() => grantSurveyRewards(typedAddresses, "survey_bulk_input")}>
+                    <button className="btn-action token-grant-secondary-btn" type="button" disabled={isSubmitting} onClick={() => grantSurveyRewards(surveyTypedAddresses, "survey_bulk_input")}>
                         入力済みアドレスへアンケート報酬を配布
                     </button>
                     <button className="btn-action token-grant-secondary-btn" type="button" disabled={isSubmitting} onClick={() => grantSurveyRewards([singleAddress], "survey_single")}>
@@ -1085,6 +1236,7 @@ function Token_grant_panel(props) {
                                         {student}
                                     </button>
                                     {renderGrantStatusSummary(student)}
+                                    {renderSurveyRewardSummary(student)}
                                 </div>
                             </div>
                         ))
