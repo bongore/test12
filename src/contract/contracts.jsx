@@ -47,6 +47,45 @@ function getTokenHistoryValueTft(entry) {
     return Number(entry?._value || entry?.[4] || 0) / 10 ** 18;
 }
 
+function getTokenHistoryEpochTime(entry) {
+    return Number(entry?.epoch_time || entry?.[3] || 0);
+}
+
+const SCORE_BASELINE_CUTOFF_EPOCH = Math.floor(new Date("2026-06-10T00:00:00+09:00").getTime() / 1000);
+const SCORE_BASELINE_TFT_MAP = {
+    "0x8f31faf8054308d3cd458e297e80bfb9afac1f66": 300,
+    "0x646d8f6629eb6d278916e3fc70fff9b37c1c11b3": 405,
+    "0xde6ba04cdb73ae7ac8cec20ad5e505dabb82874d": 420,
+    "0x79e62eb09b2685df35b5e686ce1b392aa05cc81e": 450,
+    "0xc5ff43e2dc58ffec62a2b84cdea88f32ea695759": 450,
+    "0x5a9e3c52085f8d4427186e95ab2f05480569455a": 750,
+    "0x6e104be864b7bedf33ec5ea800a92fabf0e20f5a": 390,
+    "0x33b5c15db5f9ceeccda8b86d81ca2f8aea38519a": 150,
+    "0x54e95e44f13a0ebe0f0937b2f7b6b3b9c23a898b": 180,
+    "0xad2b20f0948d26e2a267e238efcd92366cad60fe": 300,
+    "0x1e1c6dc65a92bda0221fde42d02293b65b13626c": 600,
+    "0x7aa5e01e4f3201a3e8116984ee8fea01b1351a8b": 630,
+    "0x9cff512b24311d1e789d4a2d3590d8ab52c1ad84": 90,
+    "0xd410062a453c259fad3b86e5394774286cf5cfbc": 285,
+    "0x6dd6ea3eff299c915a85178df409b0f6bf45ed9f": 60,
+    "0xfd24524abc538d7378a4a33a9481b963fc0b4f80": 405,
+    "0x4c1b3eda1e57561d07bc73c147dbe799cff55e3d": 750,
+    "0x79c965aa45ebc8cb15a5bbd2cd95207779e87879": 705,
+    "0x8eb65d50ba7044cea8f85dd31ba6ee86448f7bf5": 525,
+    "0x3c62d33460a96911cb79c5c57f755016425c4a9a": 150,
+    "0x9ae0de943d3380246ebe8d4e8746aefe95f44882": 90,
+    "0x6f352ae8085ab299d6ae437bfce5f50b7fac7f62": 555,
+    "0x4b844b1aa1fdbe12487a23c7e8e2471277f40b30": 120,
+    "0x84b251821f9fc80e8f20e35370509a6f6b7fde2e": 750,
+    "0xb72a6e981aebb78a0b1b01ca601e8643aa9f5929": 195,
+    "0x766056db0cf773fba1b850f80a1010eaa1f497aa": 270,
+    "0x7ec903d568db73de25f56a12f794e489a2760e55": 555,
+    "0x293eea4b71be40b6e89cd544c970b7a183149f37": 285,
+    "0xbdee367ea57f1aee9749b3432130f7c5ecf452b6": 450,
+    "0xb081058c787ef2a17cd11ec2e0ff2e5141b2399c": 150,
+    "0x98bc827f1dc59897da26c1d76b0093e1e4739fda": 150,
+};
+
 const SCORE_CACHE_KEY = "web3_quiz_reward_cache_v1";
 const STUDENT_LIST_CACHE_KEY = "web3_quiz_student_list_cache_v1";
 const RESULTS_CACHE_KEY = "web3_quiz_results_cache_v1";
@@ -1629,6 +1668,7 @@ class Contracts_MetaMask {
     async get_quiz_reward_tft(address) {
         try {
             const cacheKey = this.normalizeAddress(address);
+            const baselineScore = Number(SCORE_BASELINE_TFT_MAP[cacheKey] || 0);
             const scoreCache = readScoreCache();
             const historyLength = await this.get_user_history_len(address);
             const cached = scoreCache[cacheKey];
@@ -1648,43 +1688,63 @@ class Contracts_MetaMask {
 
             let score = 0;
             let tokenHistoryScore = 0;
+            let futureLedgerScore = 0;
             const countedQuizKeys = new Set();
-            try {
-                const inventory = await this.getQuizInventory(true);
-                const settled = await runSettledInChunks(
-                    Array.isArray(inventory) ? inventory : [],
-                    5,
-                    async (quiz) => {
-                        const quizId = Number(quiz?.id || 0);
-                        const sourceAddress = quiz?.address || "";
-                        const detail = await this.get_student_answer_detail(address, quizId, sourceAddress);
-                        return {
-                            quizKey: buildRewardLedgerQuizKey(sourceAddress, quizId),
-                            rewardTft: Number(detail?.reward || 0) / 10 ** 18,
-                        };
+            const usesManualBaseline = baselineScore > 0;
+
+            if (usesManualBaseline) {
+                futureLedgerScore = payoutEntries.reduce((sum, entry) => {
+                    const paidAtEpoch = Math.floor(new Date(entry?.paidAt || entry?.createdAt || 0).getTime() / 1000);
+                    if (!Number.isFinite(paidAtEpoch) || paidAtEpoch < SCORE_BASELINE_CUTOFF_EPOCH) {
+                        return sum;
                     }
-                );
-                score += settled.reduce((sum, item) => {
-                    const rewardTft = Number(item?.rewardTft || 0);
-                    if (rewardTft > 0) {
-                        countedQuizKeys.add(String(item.quizKey || ""));
-                        return sum + rewardTft;
+                    const quizKey = buildRewardLedgerQuizKey(entry.sourceAddress, entry.quizId);
+                    if (countedQuizKeys.has(quizKey)) {
+                        return sum;
                     }
-                    return sum;
+                    countedQuizKeys.add(quizKey);
+                    return sum + Number(entry.rewardTft || 0);
                 }, 0);
-            } catch (quizRewardError) {
-                console.log(quizRewardError);
             }
 
-            const payoutLedgerScore = payoutEntries.reduce((sum, entry) => {
-                const quizKey = buildRewardLedgerQuizKey(entry.sourceAddress, entry.quizId);
-                if (countedQuizKeys.has(quizKey)) {
-                    return sum;
+            if (!usesManualBaseline) {
+                try {
+                    const inventory = await this.getQuizInventory(true);
+                    const settled = await runSettledInChunks(
+                        Array.isArray(inventory) ? inventory : [],
+                        5,
+                        async (quiz) => {
+                            const quizId = Number(quiz?.id || 0);
+                            const sourceAddress = quiz?.address || "";
+                            const detail = await this.get_student_answer_detail(address, quizId, sourceAddress);
+                            return {
+                                quizKey: buildRewardLedgerQuizKey(sourceAddress, quizId),
+                                rewardTft: Number(detail?.reward || 0) / 10 ** 18,
+                            };
+                        }
+                    );
+                    score += settled.reduce((sum, item) => {
+                        const rewardTft = Number(item?.rewardTft || 0);
+                        if (rewardTft > 0) {
+                            countedQuizKeys.add(String(item.quizKey || ""));
+                            return sum + rewardTft;
+                        }
+                        return sum;
+                    }, 0);
+                } catch (quizRewardError) {
+                    console.log(quizRewardError);
                 }
-                countedQuizKeys.add(quizKey);
-                return sum + Number(entry.rewardTft || 0);
-            }, 0);
-            score += payoutLedgerScore;
+
+                const payoutLedgerScore = payoutEntries.reduce((sum, entry) => {
+                    const quizKey = buildRewardLedgerQuizKey(entry.sourceAddress, entry.quizId);
+                    if (countedQuizKeys.has(quizKey)) {
+                        return sum;
+                    }
+                    countedQuizKeys.add(quizKey);
+                    return sum + Number(entry.rewardTft || 0);
+                }, 0);
+                score += payoutLedgerScore;
+            }
 
             if (historyLength && historyLength > 0) {
                 const history = await this.get_token_history(address, historyLength, 0);
@@ -1693,11 +1753,21 @@ class Contracts_MetaMask {
                     if (!explanation.includes("correct answer")) {
                         return sum;
                     }
+                    if (usesManualBaseline) {
+                        const epochTime = getTokenHistoryEpochTime(entry);
+                        if (!epochTime || epochTime < SCORE_BASELINE_CUTOFF_EPOCH) {
+                            return sum;
+                        }
+                    }
                     return sum + getTokenHistoryValueTft(entry);
                 }, 0);
             }
 
-            score = Math.max(Number(score || 0), Number(tokenHistoryScore || 0));
+            if (usesManualBaseline) {
+                score = baselineScore + Math.max(Number(futureLedgerScore || 0), Number(tokenHistoryScore || 0));
+            } else {
+                score = Math.max(Number(score || 0), Number(tokenHistoryScore || 0));
+            }
 
             scoreCache[cacheKey] = {
                 historyLength: Number(historyLength || 0),
