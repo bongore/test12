@@ -756,4 +756,19 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
         expect(score).toBe(765);
     });
 
+    test("get_quiz_reward_tft freezes zero-point baseline addresses and only adds newer rewards", async () => {
+        const contract = new Contracts_MetaMask();
+        const address = "0xf5bA28e82F86100f3fe1f6C7a1C7A4639b7Ac544";
+        contract.get_user_history_len = jest.fn().mockResolvedValue(2);
+        contract.get_token_history = jest.fn().mockResolvedValue([
+            { epoch_time: 1717900000, _value: 300000000000000000000n, _explanation: "correct answer" },
+            { epoch_time: 1781020800, _value: 15000000000000000000n, _explanation: "correct answer" },
+        ]);
+        mockGetRewardPayoutEntries.mockReturnValue([]);
+
+        const score = await contract.get_quiz_reward_tft(address);
+
+        expect(score).toBe(15);
+    });
+
 });

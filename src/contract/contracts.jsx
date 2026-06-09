@@ -52,39 +52,82 @@ function getTokenHistoryEpochTime(entry) {
 }
 
 const SCORE_BASELINE_CUTOFF_EPOCH = Math.floor(new Date("2026-06-10T00:00:00+09:00").getTime() / 1000);
-const SCORE_BASELINE_TFT_MAP = {
-    "0x8f31faf8054308d3cd458e297e80bfb9afac1f66": 300,
-    "0x646d8f6629eb6d278916e3fc70fff9b37c1c11b3": 405,
-    "0xde6ba04cdb73ae7ac8cec20ad5e505dabb82874d": 420,
-    "0x79e62eb09b2685df35b5e686ce1b392aa05cc81e": 450,
-    "0xc5ff43e2dc58ffec62a2b84cdea88f32ea695759": 450,
-    "0x5a9e3c52085f8d4427186e95ab2f05480569455a": 750,
-    "0x6e104be864b7bedf33ec5ea800a92fabf0e20f5a": 390,
-    "0x33b5c15db5f9ceeccda8b86d81ca2f8aea38519a": 150,
-    "0x54e95e44f13a0ebe0f0937b2f7b6b3b9c23a898b": 180,
-    "0xad2b20f0948d26e2a267e238efcd92366cad60fe": 300,
-    "0x1e1c6dc65a92bda0221fde42d02293b65b13626c": 600,
-    "0x7aa5e01e4f3201a3e8116984ee8fea01b1351a8b": 630,
-    "0x9cff512b24311d1e789d4a2d3590d8ab52c1ad84": 90,
-    "0xd410062a453c259fad3b86e5394774286cf5cfbc": 285,
-    "0x6dd6ea3eff299c915a85178df409b0f6bf45ed9f": 60,
-    "0xfd24524abc538d7378a4a33a9481b963fc0b4f80": 405,
-    "0x4c1b3eda1e57561d07bc73c147dbe799cff55e3d": 750,
-    "0x79c965aa45ebc8cb15a5bbd2cd95207779e87879": 705,
-    "0x8eb65d50ba7044cea8f85dd31ba6ee86448f7bf5": 525,
-    "0x3c62d33460a96911cb79c5c57f755016425c4a9a": 150,
-    "0x9ae0de943d3380246ebe8d4e8746aefe95f44882": 90,
-    "0x6f352ae8085ab299d6ae437bfce5f50b7fac7f62": 555,
-    "0x4b844b1aa1fdbe12487a23c7e8e2471277f40b30": 120,
-    "0x84b251821f9fc80e8f20e35370509a6f6b7fde2e": 750,
-    "0xb72a6e981aebb78a0b1b01ca601e8643aa9f5929": 195,
-    "0x766056db0cf773fba1b850f80a1010eaa1f497aa": 270,
-    "0x7ec903d568db73de25f56a12f794e489a2760e55": 555,
-    "0x293eea4b71be40b6e89cd544c970b7a183149f37": 285,
-    "0xbdee367ea57f1aee9749b3432130f7c5ecf452b6": 450,
-    "0xb081058c787ef2a17cd11ec2e0ff2e5141b2399c": 150,
-    "0x98bc827f1dc59897da26c1d76b0093e1e4739fda": 150,
+const SCORE_BASELINE_POINT_MAP = {
+    "0x8f31faf8054308d3cd458e297e80bfb9afac1f66": 6,
+    "0xf5ba28e82f86100f3fe1f6c7a1c7a4639b7ac544": 0,
+    "0x7d5498fcc02833aea290e2b7be75c495ab0ccf33": 0,
+    "0xe91a78314dd00479df71ef9699ea77cbda25bc77": 0,
+    "0x646d8f6629eb6d278916e3fc70fff9b37c1c11b3": 8.1,
+    "0x7c3a7423ba99f8137d29bd637c3eaf058592af7e": 0,
+    "0xe94e5cd643bff55ed8cd75728d59af2d764cd003": 0,
+    "0xde6ba04cdb73ae7ac8cec20ad5e505dabb82874d": 8.4,
+    "0x9c061a40de42d669e5da1f97bbac6f59ac584752": 0,
+    "0x79e62eb09b2685df35b5e686ce1b392aa05cc81e": 9,
+    "0xc5ff43e2dc58ffec62a2b84cdea88f32ea695759": 9,
+    "0x324bbe330ecf6907f7b8e0e2697a631e2b992168": 0,
+    "0x7c72b112cbaa17c57459000629ec27c8840e7d15": 0,
+    "0x5a9e3c52085f8d4427186e95ab2f05480569455a": 15,
+    "0x819313e4f8af9c7f4bf33782e4306f0f8a5fa4ac": 0,
+    "0x6e104be864b7bedf33ec5ea800a92fabf0e20f5a": 7.8,
+    "0xe97f0eb6cf7d4ef903f319eabb2aedf0b3826763": 0,
+    "0x33b5c15db5f9ceeccda8b86d81ca2f8aea38519a": 3,
+    "0x54e95e44f13a0ebe0f0937b2f7b6b3b9c23a898b": 3.6,
+    "0xad2b20f0948d26e2a267e238efcd92366cad60fe": 6,
+    "0x1e1c6dc65a92bda0221fde42d02293b65b13626c": 12,
+    "0x7aa5e01e4f3201a3e8116984ee8fea01b1351a8b": 12.6,
+    "0x8ffbd5b07ce0713224bcea37e9e4e4032fc68434": 0,
+    "0xc9f059d8533abe13a193823f7c1b3675caf7dab8": 0,
+    "0xdb7f1b91fd875af16f87faa24767aa607589f54": 0,
+    "0xae486db262da9115e19f0f500dcacb82c9c9033e": 0,
+    "0x9cff512b24311d1e789d4a2d3590d8ab52c1ad84": 1.8,
+    "0xd410062a453c259fad3b86e5394774286cf5cfbc": 5.7,
+    "0x278caf0f55b161573f64713e89ffa75973f902b6": 0,
+    "0xd18d00061cf9b8f05641b1733bf6624c89ed9c67": 0,
+    "0x5068b9949ee089db6b0e756f2f7f4bdd82d5caba": 0,
+    "0x6dd6ea3eff299c915a85178df409b0f6bf45ed9f": 1.2,
+    "0xfd24524abc538d7378a4a33a9481b963fc0b4f80": 8.1,
+    "0xdc2ab793df8b8292c235157edf2afac41313fb5d": 0,
+    "0xecb60d87286cb5234c48807ccc24fd982bbb0ccf": 0,
+    "0x4c1b3eda1e57561d07bc73c147dbe799cff55e3d": 15,
+    "0xc7f0ae72c301c743aa141f1ee755dd4d544e6df8": 0,
+    "0x79c965aa45ebc8cb15a5bbd2cd95207779e87879": 14.1,
+    "0x8eb65d50ba7044cea8f85dd31ba6ee86448f7bf5": 10.5,
+    "0x3c62d33460a96911cb79c5c57f755016425c4a9a": 3,
+    "0x4e46b6218827450cb38a5c8db5ef1a649ed0e7dd": 0,
+    "0xbf1ce52773942fbfcc9a6492f0c0974ce94927e7": 0,
+    "0x1222e31b35c2265d8b9930257a1d13dfe98bddff": 0,
+    "0x32abdc62c0d67d350bc6d6f873b4d52b07170b8b": 0,
+    "0xe7e32cb6950e911b9af69b17bae1b4f6d1aef390": 0,
+    "0xb14515c078927c175945d8fe79dbb3176d76bc8d": 0,
+    "0x4d930dc3d8c904563de4b6a77283b80f82ab7e0a": 0,
+    "0xbf80aea77d2a846844346992abb517b6470e840a": 0,
+    "0x6b09b1afb8d61fda08563adb443aa7d033724900": 0,
+    "0x9ae0de943d3380246ebe8d4e8746aefe95f44882": 1.8,
+    "0xdc29c59c95a72c046268d33aa9d102775c8ceea3": 0,
+    "0x54cb5dbd6ac52ff2b5fb4c9101f5eee8e615623c": 0,
+    "0xc9f816447aed8e5c5488a64e73b07e21086081aa": 0,
+    "0x6f352ae8085ab299d6ae437bfce5f50b7fac7f62": 11.1,
+    "0x4b844b1aa1fdbe12487a23c7e8e2471277f40b30": 2.4,
+    "0x60a0cf73e9a342fa7812c87ce8a0ca43fafaf8f3": 0,
+    "0x84b251821f9fc80e8f20e35370509a6f6b7fde2e": 15,
+    "0xbb26b5251b2676dc3cd5bea6f662df3f9135359b": 0,
+    "0xb72a6e981aebb78a0b1b01ca601e8643aa9f5929": 3.9,
+    "0x766056db0cf773fba1b850f80a1010eaa1f497aa": 5.4,
+    "0x7ec903d568db73de25f56a12f794e489a2760e55": 11.1,
+    "0x7ed69035c02fa51683fee57953fb4779854fac46": 0,
+    "0x293eea4b71be40b6e89cd544c970b7a183149f37": 5.7,
+    "0xbdee367ea57f1aee9749b3432130f7c5ecf452b6": 9,
+    "0xb081058c787ef2a17cd11ec2e0ff2e5141b2399c": 3,
+    "0x98bc827f1dc59897da26c1d76b0093e1e4739fda": 3,
+    "0x0c45589b4105d69abfcb06254dc85fc80802517f": 0,
+    "0xbb38bbfc3a0fa0228b876ec8dca1cc5e2b6f51aa": 0,
 };
+const SCORE_BASELINE_TFT_MAP = Object.fromEntries(
+    Object.entries(SCORE_BASELINE_POINT_MAP).map(([address, point]) => [
+        address,
+        Math.round(Number(point || 0) * 50 * 1000) / 1000,
+    ])
+);
 
 const SCORE_CACHE_KEY = "web3_quiz_reward_cache_v1";
 const STUDENT_LIST_CACHE_KEY = "web3_quiz_student_list_cache_v1";
@@ -1668,6 +1711,7 @@ class Contracts_MetaMask {
     async get_quiz_reward_tft(address) {
         try {
             const cacheKey = this.normalizeAddress(address);
+            const hasManualBaseline = Object.prototype.hasOwnProperty.call(SCORE_BASELINE_TFT_MAP, cacheKey);
             const baselineScore = Number(SCORE_BASELINE_TFT_MAP[cacheKey] || 0);
             const scoreCache = readScoreCache();
             const historyLength = await this.get_user_history_len(address);
@@ -1690,7 +1734,7 @@ class Contracts_MetaMask {
             let tokenHistoryScore = 0;
             let futureLedgerScore = 0;
             const countedQuizKeys = new Set();
-            const usesManualBaseline = baselineScore > 0;
+            const usesManualBaseline = hasManualBaseline;
 
             if (usesManualBaseline) {
                 futureLedgerScore = payoutEntries.reduce((sum, entry) => {
