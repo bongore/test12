@@ -30,6 +30,7 @@ describe("View_result", () => {
         jest.spyOn(Contracts_MetaMask.prototype, "get_token_balance").mockResolvedValue(125);
         jest.spyOn(Contracts_MetaMask.prototype, "get_ttt_balance").mockResolvedValue(3000);
         jest.spyOn(Contracts_MetaMask.prototype, "get_pol_balance").mockResolvedValue(1.25);
+        jest.spyOn(Contracts_MetaMask.prototype, "get_student_list").mockResolvedValue(["0xabc"]);
         jest.spyOn(Contracts_MetaMask.prototype, "get_data_for_survey_users").mockResolvedValue([
             { user: "0xabc", create_quiz_count: 0, result: 15000000000000000000n, answer_count: 1 },
         ]);
@@ -54,9 +55,26 @@ describe("View_result", () => {
         expect(await screen.findByText("📊 生徒の成績")).toBeInTheDocument();
 
         await waitFor(() => {
-            expect(screen.getByText("125.0000 TFT")).toBeInTheDocument();
-            expect(screen.getByText("3000.0000 TTT")).toBeInTheDocument();
-            expect(screen.getByText("1.250000 POL")).toBeInTheDocument();
+            expect(screen.getAllByText("125.0000 TFT").length).toBeGreaterThan(0);
+            expect(screen.getAllByText("3000.0000 TTT").length).toBeGreaterThan(0);
+            expect(screen.getAllByText("1.250000 POL").length).toBeGreaterThan(0);
+        });
+    });
+
+    test("shows registered student token holdings in the live balance table", async () => {
+        const cont = {
+            get_results: jest.fn().mockResolvedValue([
+                { student: "0xabc", result: 15 },
+            ]),
+        };
+
+        render(<View_result cont={cont} />);
+
+        expect(await screen.findByText("🪙 登録学生の現在トークン残高")).toBeInTheDocument();
+
+        await waitFor(() => {
+            expect(screen.getAllByText("0xabc").length).toBeGreaterThan(0);
+            expect(screen.getAllByText("125.0000 TFT").length).toBeGreaterThan(0);
         });
     });
 });

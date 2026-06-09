@@ -68,6 +68,7 @@ function Create_csvlink(props) {
 function View_result(props) {
     let contract = new Contracts_MetaMask();
     const [results, setResults] = useState([]);
+    const [registeredStudents, setRegisteredStudents] = useState([]);
     const [studentBalanceMap, setStudentBalanceMap] = useState({});
     const [data_for_survey_users, setData_for_survey_users] = useState(null);
     const [data_for_survey_quizs, setData_for_survey_quizs] = useState(null);
@@ -80,6 +81,9 @@ function View_result(props) {
     const [scoreAuditCsvData, setScoreAuditCsvData] = useState(null);
     const [isAuditingScores, setIsAuditingScores] = useState(false);
     const [scoreAuditStatus, setScoreAuditStatus] = useState("");
+    const [isRefreshingBalances, setIsRefreshingBalances] = useState(false);
+    const [lastBalanceSyncAt, setLastBalanceSyncAt] = useState("");
+    const [balanceRefreshError, setBalanceRefreshError] = useState("");
 
     const handle_export_csv = () => {
         if (!Array.isArray(data_for_survey_users) || !data_for_survey_users.length || !Array.isArray(data_for_survey_quizs) || !data_for_survey_quizs.length) {
@@ -140,28 +144,54 @@ function View_result(props) {
         setData_for_survey_quizs(await contract.get_data_for_survey_quizs());
     }
 
-    async function loadStudentBalances(nextResults = []) {
-        const rows = Array.isArray(nextResults) ? nextResults : [];
-        const nextMap = { ...studentBalanceMap };
-        const targets = rows.filter((item) => {
-            const address = String(item?.student || "").trim();
-            if (!address) return false;
-            return !nextMap[buildBalanceMapKey(address)];
-        });
+    async function loadStudentBalances(addresses = [], options = {}) {
+        const targets = Array.isArray(addresses)
+            ? addresses.map((address) => String(address || "").trim()).filter(Boolean)
+            : [];
+        if (!targets.length) {
+            setLastBalanceSyncAt(new Date().toISOString());
+            return;
+        }
+        const forceRefresh = Boolean(options?.force);
+        setIsRefreshingBalances(true);
+        setBalanceRefreshError("");
+        const nextMap = forceRefresh ? { ...studentBalanceMap } : { ...studentBalanceMap };
         await runChunked(targets, 6, async (item) => {
-            const address = String(item?.student || "").trim();
+            const address = String(item || "").trim();
+            const cacheKey = buildBalanceMapKey(address);
+            if (!forceRefresh && nextMap[cacheKey]) return;
             const [tft, ttt, pol] = await Promise.all([
                 contract.get_token_balance(address).catch(() => 0),
                 contract.get_ttt_balance(address).catch(() => 0),
                 contract.get_pol_balance(address).catch(() => 0),
             ]);
-            nextMap[buildBalanceMapKey(address)] = {
+            nextMap[cacheKey] = {
                 tft: Number(tft || 0),
                 ttt: Number(ttt || 0),
                 pol: Number(pol || 0),
             };
+        }).catch((error) => {
+            console.error("Failed to refresh student balances", error);
+            setBalanceRefreshError("トークン残高の更新に失敗しました。少し待って再試行してください。");
         });
         setStudentBalanceMap(nextMap);
+        setLastBalanceSyncAt(new Date().toISOString());
+        setIsRefreshingBalances(false);
+    }
+
+    async function loadRegisteredStudents() {
+        try {
+            const students = await contract.get_student_list();
+            const normalized = Array.isArray(students)
+                ? students.map((address) => String(address || "").trim()).filter(Boolean)
+                : [];
+            setRegisteredStudents(normalized);
+            return normalized;
+        } catch (error) {
+            console.error("Failed to load registered students", error);
+            setRegisteredStudents([]);
+            return [];
+        }
     }
 
     async function runScoreAudit() {
@@ -344,13 +374,44 @@ function View_result(props) {
 
     useEffect(() => {
         get_data_for_survey();
-        props.cont.get_results().then(async (result) => {
+        Promise.all([
+            props.cont.get_results().catch(() => []),
+            loadRegisteredStudents(),
+        ]).then(async ([result, students]) => {
             console.log(result);
             const nextResults = Array.isArray(result) ? result : [];
             setResults(nextResults);
-            await loadStudentBalances(nextResults);
+            const scoreAddresses = nextResults.map((item) => String(item?.student || "").trim()).filter(Boolean);
+            const allTargets = Array.from(new Set([...(Array.isArray(students) ? students : []), ...scoreAddresses]));
+            await loadStudentBalances(allTargets, { force: true });
         });
     }, []);
+
+    useEffect(() => {
+        const intervalId = window.setInterval(() => {
+            const scoreAddresses = (Array.isArray(results) ? results : []).map((item) => String(item?.student || "").trim()).filter(Boolean);
+            const allTargets = Array.from(new Set([...(Array.isArray(registeredStudents) ? registeredStudents : []), ...scoreAddresses]));
+            if (allTargets.length > 0) {
+                loadStudentBalances(allTargets, { force: true });
+            }
+        }, 20000);
+
+        return () => window.clearInterval(intervalId);
+    }, [results, registeredStudents]);
+
+    const scoreMap = new Map((Array.isArray(results) ? results : []).map((item) => [normalizeAddress(item?.student), Number(item?.result || 0)]));
+    const balanceRows = Array.from(new Set([...(Array.isArray(registeredStudents) ? registeredStudents : []), ...(Array.isArray(results) ? results.map((item) => String(item?.student || "").trim()) : [])]))
+        .filter(Boolean)
+        .map((address) => ({
+            address,
+            scoreTft: Number(scoreMap.get(normalizeAddress(address)) || 0),
+            balances: studentBalanceMap[normalizeAddress(address)] || {},
+        }))
+        .sort((left, right) => {
+            const leftTft = Number(left.balances?.tft || 0);
+            const rightTft = Number(right.balances?.tft || 0);
+            return rightTft - leftTft || right.scoreTft - left.scoreTft || String(left.address).localeCompare(String(right.address));
+        });
 
     return (
         <div>
@@ -376,6 +437,57 @@ function View_result(props) {
                     {scoreAuditStatus}
                 </div>
             ) : null}
+
+            <h3 className="section-title" style={{ marginTop: "28px" }}>🪙 登録学生の現在トークン残高</h3>
+            <p className="section-desc">
+                登録学生全員の現在残高を約20秒ごとに更新します。講義中の配布確認や残高確認に使えます。
+            </p>
+            <div className="row">
+                <button
+                    className="btn-action"
+                    onClick={() => loadStudentBalances(balanceRows.map((row) => row.address), { force: true })}
+                    disabled={isRefreshingBalances || balanceRows.length === 0}
+                >
+                    {isRefreshingBalances ? "残高を更新中..." : "🔄 今すぐ残高を更新"}
+                </button>
+            </div>
+            {lastBalanceSyncAt ? (
+                <div className="section-desc" style={{ marginTop: "10px", color: "#d5e2ff" }}>
+                    最終更新: {new Date(lastBalanceSyncAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}
+                </div>
+            ) : null}
+            {balanceRefreshError ? (
+                <div className="section-desc" style={{ marginTop: "10px", color: "#ffd5d5" }}>
+                    {balanceRefreshError}
+                </div>
+            ) : null}
+
+            <div className="results-table-wrap">
+                <table className="results-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>ウォレットアドレス</th>
+                            <th>Web3小テスト得点</th>
+                            <th>実TFT残高</th>
+                            <th>実TTT残高</th>
+                            <th>実POL残高</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {balanceRows.map((row, index) => (
+                            <tr key={`balance-${row.address}`}>
+                                <td>{index + 1}</td>
+                                <td className="address-cell">{row.address}</td>
+                                <td className="score-cell">{convertTftToPoint(Number(row.scoreTft || 0)).toFixed(1)}点</td>
+                                <td className="score-cell">{Number(row.balances.tft || 0).toFixed(4)} TFT</td>
+                                <td className="score-cell">{Number(row.balances.ttt || 0).toFixed(4)} TTT</td>
+                                <td className="score-cell">{Number(row.balances.pol || 0).toFixed(6)} POL</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
 
             <div className="results-table-wrap">
                 <table className="results-table">
