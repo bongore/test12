@@ -1731,7 +1731,6 @@ class Contracts_MetaMask {
             }
 
             let score = 0;
-            let tokenHistoryScore = 0;
             let futureLedgerScore = 0;
             const countedQuizKeys = new Set();
             const usesManualBaseline = hasManualBaseline;
@@ -1790,27 +1789,20 @@ class Contracts_MetaMask {
                 score += payoutLedgerScore;
             }
 
-            if (historyLength && historyLength > 0) {
+            if (!usesManualBaseline && historyLength && historyLength > 0) {
                 const history = await this.get_token_history(address, historyLength, 0);
-                tokenHistoryScore = (Array.isArray(history) ? history : []).reduce((sum, entry) => {
+                const tokenHistoryScore = (Array.isArray(history) ? history : []).reduce((sum, entry) => {
                     const explanation = getTokenHistoryExplanation(entry).toLowerCase();
                     if (!explanation.includes("correct answer")) {
                         return sum;
                     }
-                    if (usesManualBaseline) {
-                        const epochTime = getTokenHistoryEpochTime(entry);
-                        if (!epochTime || epochTime < SCORE_BASELINE_CUTOFF_EPOCH) {
-                            return sum;
-                        }
-                    }
                     return sum + getTokenHistoryValueTft(entry);
                 }, 0);
+                score = Math.max(Number(score || 0), Number(tokenHistoryScore || 0));
             }
 
             if (usesManualBaseline) {
-                score = baselineScore + Math.max(Number(futureLedgerScore || 0), Number(tokenHistoryScore || 0));
-            } else {
-                score = Math.max(Number(score || 0), Number(tokenHistoryScore || 0));
+                score = baselineScore + Number(futureLedgerScore || 0);
             }
 
             scoreCache[cacheKey] = {

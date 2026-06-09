@@ -741,7 +741,7 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
         expect(score).toBe(0);
     });
 
-    test("get_quiz_reward_tft uses the provided current score baseline and only adds newer rewards", async () => {
+    test("get_quiz_reward_tft uses the provided current score baseline and only adds confirmed newer payout entries", async () => {
         const contract = new Contracts_MetaMask();
         const address = "0x5a9e3C52085F8D4427186E95aB2F05480569455A";
         contract.get_user_history_len = jest.fn().mockResolvedValue(2);
@@ -749,14 +749,25 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
             { epoch_time: 1717900000, _value: 600000000000000000000n, _explanation: "correct answer" },
             { epoch_time: 1781020800, _value: 15000000000000000000n, _explanation: "correct answer" },
         ]);
-        mockGetRewardPayoutEntries.mockReturnValue([]);
+        mockGetRewardPayoutEntries.mockReturnValue([
+            {
+                quizId: 99,
+                sourceAddress: "0xeb196c161efa30939f78170694bb908e17fd1479",
+                studentAddress: address,
+                rewardTft: 15,
+                resultState: "correct",
+                confirmed: true,
+                txHash: "0xfuture",
+                paidAt: "2026-06-10T12:00:00.000Z",
+            },
+        ]);
 
         const score = await contract.get_quiz_reward_tft(address);
 
         expect(score).toBe(765);
     });
 
-    test("get_quiz_reward_tft freezes zero-point baseline addresses and only adds newer rewards", async () => {
+    test("get_quiz_reward_tft ignores token history additions for baseline addresses when no confirmed payout exists", async () => {
         const contract = new Contracts_MetaMask();
         const address = "0xf5bA28e82F86100f3fe1f6C7a1C7A4639b7Ac544";
         contract.get_user_history_len = jest.fn().mockResolvedValue(2);
@@ -768,7 +779,7 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
 
         const score = await contract.get_quiz_reward_tft(address);
 
-        expect(score).toBe(15);
+        expect(score).toBe(0);
     });
 
 });
