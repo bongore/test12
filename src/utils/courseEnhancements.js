@@ -274,7 +274,7 @@ function buildExtendedCsvData({ results = [], logs = [], boardLogs = [], reactio
     });
 
     const gradeRows = [
-        ["address", "score", "attendance_days", "answer_count", "board_posts", "actual_tft_balance", "actual_ttt_balance", "actual_pol_balance"],
+        ["address", "web3_quiz_score_point", "attendance_days", "answer_count", "board_posts", "actual_tft_balance_live", "actual_ttt_balance_live", "actual_pol_balance_live"],
         ...results.map((item) => {
             const actor = String(item.student || "");
             const attendanceDays = [...attendanceMap.keys()].filter((key) => key.startsWith(`${actor}_`)).length;

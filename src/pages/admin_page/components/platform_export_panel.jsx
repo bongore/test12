@@ -152,8 +152,8 @@ function Platform_export_panel({ cont }) {
                     address_url: `${AMOY_EXPLORER_ADDRESS_BASE}${address}`,
                     name: String(userData?.[0] || ""),
                     image_url: String(userData?.[1] || ""),
-                    earned_tft: tft,
-                    point_score: Number(convertTftToPoint(Number(tft || 0)).toFixed(1)),
+                    web3_quiz_score_tft: tft,
+                    web3_quiz_score_point: Number(convertTftToPoint(Number(tft || 0)).toFixed(1)),
                 };
             })
         );
@@ -322,11 +322,11 @@ function Platform_export_panel({ cont }) {
             student_id: student.student_id,
             student_name: student.name,
             student_address: student.address,
-            earned_tft: student.earned_tft,
-            point_score: student.point_score,
-            actual_tft_balance: Number(student.actual_tft_balance || 0),
-            actual_ttt_balance: Number(student.actual_ttt_balance || 0),
-            actual_pol_balance: Number(student.actual_pol_balance || 0),
+            web3_quiz_score_tft: student.web3_quiz_score_tft,
+            web3_quiz_score_point: student.web3_quiz_score_point,
+            actual_tft_balance_live: Number(student.actual_tft_balance || 0),
+            actual_ttt_balance_live: Number(student.actual_ttt_balance || 0),
+            actual_pol_balance_live: Number(student.actual_pol_balance || 0),
         }));
 
         return {

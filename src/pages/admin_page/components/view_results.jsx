@@ -90,7 +90,7 @@ function View_result(props) {
             return;
         }
         const users_data = [
-            ["user", "create_quiz_count", "result", "answer_count", "actual_tft_balance", "actual_ttt_balance", "actual_pol_balance", "point"]
+            ["user", "create_quiz_count", "web3_quiz_score_tft", "answer_count", "actual_tft_balance_live", "actual_ttt_balance_live", "actual_pol_balance_live", "point"]
         ];
         for (let i = 0; i < data_for_survey_users.length; i++) {
             const address = data_for_survey_users[i].user;
