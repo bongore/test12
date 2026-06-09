@@ -252,7 +252,7 @@ function buildWeaknessSummary({ quizzes = [], logs = [], reactionHistory = [] })
     };
 }
 
-function buildExtendedCsvData({ results = [], logs = [], boardLogs = [], reactionHistory = [] }) {
+function buildExtendedCsvData({ results = [], logs = [], boardLogs = [], reactionHistory = [], studentBalanceMap = {} }) {
     const attendanceMap = new Map();
     logs.filter((log) => log.action === "login_success").forEach((log) => {
         const actor = String(log.actor || log.address || "");
@@ -274,16 +274,20 @@ function buildExtendedCsvData({ results = [], logs = [], boardLogs = [], reactio
     });
 
     const gradeRows = [
-        ["address", "score", "attendance_days", "answer_count", "board_posts"],
+        ["address", "score", "attendance_days", "answer_count", "board_posts", "actual_tft_balance", "actual_ttt_balance", "actual_pol_balance"],
         ...results.map((item) => {
             const actor = String(item.student || "");
             const attendanceDays = [...attendanceMap.keys()].filter((key) => key.startsWith(`${actor}_`)).length;
+            const balances = studentBalanceMap[String(actor || "").trim().toLowerCase()] || {};
             return [
                 actor,
                 convertTftToPoint(Number(item.result || 0)).toString(),
                 String(attendanceDays),
                 String(answerCountByActor.get(actor) || 0),
                 String(boardCountByActor.get(actor) || 0),
+                Number(balances.tft || 0).toFixed(4),
+                Number(balances.ttt || 0).toFixed(4),
+                Number(balances.pol || 0).toFixed(6),
             ];
         }),
     ];

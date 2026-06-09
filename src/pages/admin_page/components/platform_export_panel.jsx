@@ -157,6 +157,28 @@ function Platform_export_panel({ cont }) {
                 };
             })
         );
+        const studentBalanceMap = new Map();
+        await Promise.all(
+            studentRows.map(async (student) => {
+                const address = student.address;
+                const [actualTftBalance, actualTttBalance, actualPolBalance] = await Promise.all([
+                    cont.get_token_balance(address).catch(() => 0),
+                    cont.get_ttt_balance(address).catch(() => 0),
+                    cont.get_pol_balance(address).catch(() => 0),
+                ]);
+                studentBalanceMap.set(normalizeAddress(address), {
+                    tft: Number(actualTftBalance || 0),
+                    ttt: Number(actualTttBalance || 0),
+                    pol: Number(actualPolBalance || 0),
+                });
+            })
+        );
+        studentRows.forEach((student) => {
+            const balances = studentBalanceMap.get(normalizeAddress(student.address)) || {};
+            student.actual_tft_balance = Number(balances.tft || 0);
+            student.actual_ttt_balance = Number(balances.ttt || 0);
+            student.actual_pol_balance = Number(balances.pol || 0);
+        });
         const studentMetaMap = new Map(studentRows.map((row) => [normalizeAddress(row.address), row]));
 
         const teacherRows = await Promise.all(
@@ -302,6 +324,9 @@ function Platform_export_panel({ cont }) {
             student_address: student.address,
             earned_tft: student.earned_tft,
             point_score: student.point_score,
+            actual_tft_balance: Number(student.actual_tft_balance || 0),
+            actual_ttt_balance: Number(student.actual_ttt_balance || 0),
+            actual_pol_balance: Number(student.actual_pol_balance || 0),
         }));
 
         return {

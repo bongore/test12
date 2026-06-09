@@ -124,6 +124,7 @@ function View_result(props) {
             logs: getActivityLogs(),
             boardLogs: snapshot.boardLogs,
             reactionHistory: snapshot.reactionHistory,
+            studentBalanceMap,
         });
 
         setUsersData(users_data);

@@ -99,6 +99,13 @@ describe("courseEnhancements utilities", () => {
                 endedAt: "2026-04-07T10:30:00.000Z",
                 reactions: { understood: 10, repeat: 2, slow: 1, fast: 0 },
             }],
+            studentBalanceMap: {
+                "0xuser": {
+                    tft: 125,
+                    ttt: 3000,
+                    pol: 1.25,
+                },
+            },
         });
 
         expect(badges.map((item) => item.id)).toEqual(
@@ -110,7 +117,7 @@ describe("courseEnhancements utilities", () => {
                 title: "短時間の連続回答",
             }),
         ]);
-        expect(csvData.gradeRows).toContainEqual(["0xuser", "1.6", "3", "3", "2"]);
+        expect(csvData.gradeRows).toContainEqual(["0xuser", "1.6", "3", "3", "2", "125.0000", "3000.0000", "1.250000"]);
         expect(csvData.reactionRows).toContainEqual(["第3回", "2026-04-07T09:00:00.000Z", "2026-04-07T10:30:00.000Z", "10", "2", "1", "0"]);
     });
 
