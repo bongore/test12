@@ -20,6 +20,7 @@ describe("Bulk_reward_panel", () => {
         get_all_quiz_simple_list: jest.fn(),
         get_revealed_correct_answer: jest.fn(),
         get_student_answer_detail: jest.fn(),
+        get_transaction_receipt_status: jest.fn(),
     };
 
     beforeEach(() => {
@@ -58,6 +59,7 @@ describe("Bulk_reward_panel", () => {
             answerText: "1/6",
             reward: 0,
         });
+        mockContract.get_transaction_receipt_status.mockResolvedValue("success");
     });
 
     test("loads eligible quizzes and exposes bulk payout controls", async () => {
@@ -141,5 +143,32 @@ describe("Bulk_reward_panel", () => {
         expect(await screen.findByText("未完了 0 問 / 配布完了 1 問 / 全 1 問")).toBeInTheDocument();
         const payoutLink = await screen.findByRole("link", { name: /0x12345678/i });
         expect(payoutLink).toHaveAttribute("href", "https://amoy.polygonscan.com/tx/0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
+    });
+
+    test("keeps failed payout transactions out of completed rows", async () => {
+        const payoutEntries = [
+            {
+                quizId: 5,
+                sourceAddress: "0x55B3977C7B7b913eaf175A7364c8375732d22241",
+                studentAddress: "0x1111111111111111111111111111111111111111",
+                txHash: "0xdeadbeef1234567890abcdef1234567890abcdef1234567890abcdef12345678",
+                resultState: "correct",
+                confirmed: true,
+            },
+        ];
+        getRewardPayoutEntries.mockReturnValue(payoutEntries);
+        syncRewardPayoutLedgerFromServer.mockResolvedValue(payoutEntries);
+        mockContract.get_transaction_receipt_status.mockResolvedValue("reverted");
+        mockContract.get_student_answer_detail.mockResolvedValue({
+            submitted: true,
+            state: 3,
+            answerText: "1/6",
+            reward: 0,
+        });
+
+        render(<Bulk_reward_panel cont={mockContract} />);
+
+        expect(await screen.findByText("未完了 1 問 / 配布完了 0 問 / 全 1 問")).toBeInTheDocument();
+        expect(screen.queryByRole("link", { name: /0xdeadbeef/i })).not.toBeInTheDocument();
     });
 });

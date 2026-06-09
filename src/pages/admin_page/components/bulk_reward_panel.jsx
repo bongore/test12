@@ -54,7 +54,29 @@ function Bulk_reward_panel({ cont }) {
     const [executionRows, setExecutionRows] = useState([]);
     const [rewardPayoutEntries, setRewardPayoutEntries] = useState(() => getRewardPayoutEntries());
 
-    async function buildQuizRow(quiz, studentAddresses, nextStudentNameMap) {
+    async function validateRewardPayoutEntries(entries = []) {
+        const normalizedEntries = Array.isArray(entries) ? entries : [];
+        const uniqueHashes = Array.from(new Set(
+            normalizedEntries
+                .filter((entry) => entry?.confirmed !== false && entry?.txHash)
+                .map((entry) => String(entry.txHash))
+        ));
+
+        const txStatusMap = new Map();
+        await Promise.all(uniqueHashes.map(async (txHash) => {
+            const status = await cont.get_transaction_receipt_status?.(txHash).catch(() => "");
+            txStatusMap.set(txHash, String(status || ""));
+        }));
+
+        return normalizedEntries.filter((entry) => {
+            if (entry?.confirmed === false) return false;
+            const txHash = String(entry?.txHash || "");
+            if (!txHash) return true;
+            return txStatusMap.get(txHash) === "success";
+        });
+    }
+
+    async function buildQuizRow(quiz, studentAddresses, nextStudentNameMap, confirmedRewardEntries = rewardPayoutEntries) {
         const quizId = Number(quiz?.[0] || 0);
         const sourceAddress = quiz?.sourceAddress || quiz?.[12] || "";
         const title = String(quiz?.[2] || `問題 ${quizId}`);
@@ -80,7 +102,7 @@ function Bulk_reward_panel({ cont }) {
         );
 
         const ledgerKeys = new Set(
-            (Array.isArray(rewardPayoutEntries) ? rewardPayoutEntries : [])
+            (Array.isArray(confirmedRewardEntries) ? confirmedRewardEntries : [])
                 .filter((entry) => entry?.confirmed !== false && String(entry?.resultState || "") === "correct")
                 .map((e) => `${normalizeAddress(e.sourceAddress)}:${e.quizId}:${normalizeAddress(e.studentAddress)}`)
         );
@@ -209,12 +231,13 @@ function Bulk_reward_panel({ cont }) {
             } catch (ledgerError) {
                 console.error(ledgerError);
             }
+            const confirmedPayoutLedger = await validateRewardPayoutEntries(payoutLedger);
             const rows = await Promise.all(
-                (Array.isArray(quizList) ? quizList : []).map((quiz) => buildQuizRow(quiz, studentAddresses, nextStudentNameMap))
+                (Array.isArray(quizList) ? quizList : []).map((quiz) => buildQuizRow(quiz, studentAddresses, nextStudentNameMap, confirmedPayoutLedger))
             );
 
             setQuizRows(rows);
-            setRewardPayoutEntries(Array.isArray(payoutLedger) ? payoutLedger : getRewardPayoutEntries());
+            setRewardPayoutEntries(confirmedPayoutLedger);
             setSelectedKeys((current) => current.filter((key) => rows.some((row) => row.key === key)));
             setStatusText("");
         } catch (error) {
@@ -279,7 +302,8 @@ function Bulk_reward_panel({ cont }) {
                     const refreshedRow = await buildQuizRow(
                         [row.quizId, "", row.title, "", "", 0, 0, BigInt(Math.round(row.rewardTft * 10 ** 18)), 0, 0, 0, false, row.sourceAddress],
                         students,
-                        studentNameMap
+                        studentNameMap,
+                        rewardPayoutEntries
                     );
                     if (refreshedRow.pendingCount === 0) {
                         nextExecutionRows.push({
@@ -369,7 +393,8 @@ function Bulk_reward_panel({ cont }) {
 
                     if (rewardEntries.length > 0) {
                         const mergedEntries = await persistRewardPayoutEntriesToServer(rewardEntries);
-                        setRewardPayoutEntries(Array.isArray(mergedEntries) ? mergedEntries : getRewardPayoutEntries());
+                        const confirmedEntries = await validateRewardPayoutEntries(Array.isArray(mergedEntries) ? mergedEntries : getRewardPayoutEntries());
+                        setRewardPayoutEntries(confirmedEntries);
                     }
 
                     nextExecutionRows.push({

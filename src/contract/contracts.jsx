@@ -1228,6 +1228,27 @@ class Contracts_MetaMask {
         throw lastError;
     }
 
+    async get_transaction_receipt_status(hash) {
+        const normalizedHash = String(hash || "").trim();
+        if (!normalizedHash) return "";
+        try {
+            if (typeof publicClient.getTransactionReceipt === "function") {
+                const receipt = await publicClient.getTransactionReceipt({ hash: normalizedHash });
+                return String(receipt?.status || "");
+            }
+            const receipt = await publicClient.waitForTransactionReceipt({
+                hash: normalizedHash,
+                pollingInterval: 800,
+                timeout: 4000,
+                retryCount: 0,
+            });
+            return String(receipt?.status || "");
+        } catch (error) {
+            console.log(error);
+            return "";
+        }
+    }
+
     async verify_answer_submission(account, id, answer, sourceAddress = "") {
         try {
             const detail = await this.get_student_answer_detail(account, id, sourceAddress);
