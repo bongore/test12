@@ -130,14 +130,17 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
         );
     });
 
-    test("settle_quiz_rewards_auto_existing sends pending students to the original quiz contract in chunks", async () => {
+    test("settle_quiz_rewards_auto_existing sends pending students to the original quiz contract in manual chunks", async () => {
         const contract = new Contracts_MetaMask();
         const legacyQuizAddress = "0x55B3977C7B7b913eaf175A7364c8375732d22241";
         const students = Array.from({ length: 16 }, (_, index) => `0x${(index + 1).toString(16).padStart(40, "0")}`);
 
         contract.getConnectedWriteAccount = jest.fn().mockResolvedValue("0xd5670D7B88411d03741680451C2ea630B68C6944");
-        contract.buildAutoRewardChunks = jest.fn().mockResolvedValue([students.slice(0, 15), students.slice(15)]);
-        contract._payment_of_reward = jest.fn()
+        contract.buildAutoRewardChunks = jest.fn().mockResolvedValue([
+            { correctStudents: students.slice(0, 10), incorrectStudents: students.slice(10, 15) },
+            { correctStudents: students.slice(15), incorrectStudents: [] },
+        ]);
+        contract._payment_of_reward_manual = jest.fn()
             .mockResolvedValueOnce("0xhash1")
             .mockResolvedValueOnce("0xhash2");
         contract.waitForReceiptWithRetry = jest.fn()
@@ -152,23 +155,121 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
             legacyQuizAddress
         );
 
-        expect(contract._payment_of_reward).toHaveBeenNthCalledWith(
+        expect(contract._payment_of_reward_manual).toHaveBeenNthCalledWith(
             1,
             "0xd5670D7B88411d03741680451C2ea630B68C6944",
             7,
             "1/6",
-            students.slice(0, 15),
+            students.slice(0, 10),
+            students.slice(10, 15),
+            false,
             legacyQuizAddress
         );
-        expect(contract._payment_of_reward).toHaveBeenNthCalledWith(
+        expect(contract._payment_of_reward_manual).toHaveBeenNthCalledWith(
             2,
             "0xd5670D7B88411d03741680451C2ea630B68C6944",
             7,
             "1/6",
             students.slice(15),
+            [],
+            true,
             legacyQuizAddress
         );
         expect(result.payoutHashes).toEqual(["0xhash1", "0xhash2"]);
+    });
+
+    test("buildManualRewardChunks keeps payout chunks at 15 recipients or fewer before fee-based splitting", async () => {
+        const contract = new Contracts_MetaMask();
+        const students = Array.from({ length: 16 }, (_, index) => `0x${(index + 1).toString(16).padStart(40, "0")}`);
+
+        mockEstimateContractGas.mockResolvedValue(200000n);
+        mockEstimateFeesPerGas.mockResolvedValue({
+            maxFeePerGas: 10_000_000_000n,
+            maxPriorityFeePerGas: 1_000_000_000n,
+        });
+
+        const chunks = await contract.buildManualRewardChunks(
+            "0xd5670D7B88411d03741680451C2ea630B68C6944",
+            7,
+            "1/6",
+            students,
+            [],
+            "0xeb196c161EFA30939f78170694bb908E17fd1479"
+        );
+
+        expect(chunks).toEqual([
+            { correctStudents: students.slice(0, 15), incorrectStudents: [] },
+            { correctStudents: students.slice(15), incorrectStudents: [] },
+        ]);
+    });
+
+    test("settle_quiz_rewards_auto_existing stops when quiz payout is already finalized", async () => {
+        const contract = new Contracts_MetaMask();
+        const students = ["0x0000000000000000000000000000000000000001"];
+
+        contract.getConnectedWriteAccount = jest.fn().mockResolvedValue("0xd5670D7B88411d03741680451C2ea630B68C6944");
+        contract._payment_of_reward_manual = jest.fn();
+        contract.get_is_payment = jest.fn().mockResolvedValue(true);
+
+        await expect(
+            contract.settle_quiz_rewards_auto_existing(7, "1/6", students, "0xeb196c161EFA30939f78170694bb908E17fd1479")
+        ).rejects.toThrow("quiz_reward_already_finalized");
+
+        expect(contract._payment_of_reward_manual).not.toHaveBeenCalled();
+    });
+
+    test("settle_quiz_rewards_manually stops when quiz payout is already finalized", async () => {
+        const contract = new Contracts_MetaMask();
+
+        contract.getConnectedWriteAccount = jest.fn().mockResolvedValue("0xd5670D7B88411d03741680451C2ea630B68C6944");
+        contract.get_is_payment = jest.fn().mockResolvedValue(true);
+        contract._payment_of_reward_manual = jest.fn();
+
+        await expect(
+            contract.settle_quiz_rewards_manually(
+                4,
+                0,
+                "1/6",
+                ["0x1111111111111111111111111111111111111111"],
+                [],
+                "true",
+                "0x55B3977C7B7b913eaf175A7364c8375732d22241"
+            )
+        ).rejects.toThrow("quiz_reward_already_finalized");
+
+        expect(contract._payment_of_reward_manual).not.toHaveBeenCalled();
+    });
+
+    test("buildAutoRewardChunks classifies students then reuses manual chunk builder", async () => {
+        const contract = new Contracts_MetaMask();
+        const students = [
+            "0x0000000000000000000000000000000000000001",
+            "0x0000000000000000000000000000000000000002",
+        ];
+        contract.get_student_answer_detail = jest.fn()
+            .mockResolvedValueOnce({ answerText: "1/6" })
+            .mockResolvedValueOnce({ answerText: "1/3" });
+        contract.buildManualRewardChunks = jest.fn().mockResolvedValue([
+            { correctStudents: [students[0]], incorrectStudents: [students[1]] },
+        ]);
+
+        const chunks = await contract.buildAutoRewardChunks(
+            "0xd5670D7B88411d03741680451C2ea630B68C6944",
+            7,
+            "1/6",
+            students,
+            "0xeb196c161EFA30939f78170694bb908E17fd1479"
+        );
+
+        expect(contract.buildManualRewardChunks).toHaveBeenCalledWith(
+            "0xd5670D7B88411d03741680451C2ea630B68C6944",
+            7,
+            "1/6",
+            [students[0]],
+            [students[1]],
+            "0xeb196c161EFA30939f78170694bb908E17fd1479"
+        );
+        expect(chunks).toEqual([{ correctStudents: [students[0]], incorrectStudents: [students[1]] }]);
     });
 
     test("buildAutoRewardChunks splits payout groups when estimated fee is too high", async () => {
@@ -178,6 +279,9 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
             "0x0000000000000000000000000000000000000002",
         ];
 
+        contract.get_student_answer_detail = jest.fn()
+            .mockResolvedValueOnce({ answerText: "1/6" })
+            .mockResolvedValueOnce({ answerText: "1/6" });
         mockEstimateContractGas
             .mockResolvedValueOnce(2000000n)
             .mockResolvedValueOnce(200000n)
@@ -195,7 +299,10 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
             "0xeb196c161EFA30939f78170694bb908E17fd1479"
         );
 
-        expect(chunks).toEqual([[students[0]], [students[1]]]);
+        expect(chunks).toEqual([
+            { correctStudents: [students[0]], incorrectStudents: [] },
+            { correctStudents: [students[1]], incorrectStudents: [] },
+        ]);
     });
 
     test("buildManualRewardChunks splits payout groups when estimated fee is too high", async () => {

@@ -65,6 +65,7 @@ const CHAIN_ID_CACHE_TTL_MS = 8 * 1000;
 const AMOY_READY_CACHE_TTL_MS = 10 * 1000;
 const MAX_PAYOUT_GAS_PER_TX = 900000n;
 const MAX_PAYOUT_FEE_PER_TX_WEI = parseEther("0.05");
+const MAX_PAYOUT_RECIPIENTS_PER_TX = 15;
 
 let studentListCacheMemory = null;
 let studentListCacheFetchedAt = 0;
@@ -168,6 +169,10 @@ function buildRewardLedgerSignature(entries = []) {
 
 function buildQuizSimpleCacheKey(sourceAddress = "", quizId = 0, account = "") {
     return `${String(sourceAddress || "").toLowerCase()}:${Number(quizId)}:${String(account || "public").toLowerCase()}`;
+}
+
+function uniqueAddresses(addresses = []) {
+    return Array.from(new Set((addresses || []).filter(Boolean)));
 }
 
 function readQuizSimpleCacheStore() {
@@ -2027,56 +2032,48 @@ class Contracts_MetaMask {
         console.log([account, id, answer, students]);
         try {
             if (ethereum) {
-                try {
-                    const recipientCount = Math.max(1, Array.isArray(students) ? students.length : 1);
-                    // 1人あたり約60kガス + ベース100kガスに調整してtx fee capエラーを防ぐ
-                    const gasOverride = 100000n + (BigInt(recipientCount) * 60000n);
-                    return await this.writeContractDirect({
-                        account,
-                        address: this.resolveQuizAddress(sourceAddress),
-                        abi: quiz_abi,
-                        functionName: "payment_of_reward",
-                        args: [id, answer, students],
-                        gasOverride,
-                    });
-                } catch (e) {
-                    console.log(e);
-                }
+                const recipientCount = Math.max(1, Array.isArray(students) ? students.length : 1);
+                const gasOverride = 100000n + (BigInt(recipientCount) * 60000n);
+                return await this.writeContractDirect({
+                    account,
+                    address: this.resolveQuizAddress(sourceAddress),
+                    abi: quiz_abi,
+                    functionName: "payment_of_reward",
+                    args: [id, answer, students],
+                    gasOverride,
+                });
             } else {
-                console.log("Ethereum object does not exist");
+                throw new Error("ethereum_not_found");
             }
         } catch (err) {
             console.log(err);
+            throw err;
         }
-        return ["", "", 0, false];
     }
 
     async _payment_of_reward_manual(account, id, confirmAnswer, correctStudents, incorrectStudents, finalizePayment, sourceAddress = "") {
         try {
             if (ethereum) {
-                try {
-                    const recipientCount = Math.max(
-                        1,
-                        (Array.isArray(correctStudents) ? correctStudents.length : 0)
-                        + (Array.isArray(incorrectStudents) ? incorrectStudents.length : 0)
-                    );
-                    const gasOverride = 150000n + (BigInt(recipientCount) * 60000n);
-                    return await this.writeContractDirect({
-                        account,
-                        address: this.resolveQuizAddress(sourceAddress),
-                        abi: [PAYMENT_OF_REWARD_MANUAL_ABI],
-                        functionName: "payment_of_reward_manual",
-                        args: [id, String(confirmAnswer || ""), correctStudents, incorrectStudents, Boolean(finalizePayment)],
-                        gasOverride,
-                    });
-                } catch (e) {
-                    console.log(e);
-                }
+                const recipientCount = Math.max(
+                    1,
+                    (Array.isArray(correctStudents) ? correctStudents.length : 0)
+                    + (Array.isArray(incorrectStudents) ? incorrectStudents.length : 0)
+                );
+                const gasOverride = 150000n + (BigInt(recipientCount) * 60000n);
+                return await this.writeContractDirect({
+                    account,
+                    address: this.resolveQuizAddress(sourceAddress),
+                    abi: [PAYMENT_OF_REWARD_MANUAL_ABI],
+                    functionName: "payment_of_reward_manual",
+                    args: [id, String(confirmAnswer || ""), correctStudents, incorrectStudents, Boolean(finalizePayment)],
+                    gasOverride,
+                });
             } else {
-                console.log("Ethereum object does not exist");
+                throw new Error("ethereum_not_found");
             }
         } catch (err) {
             console.log(err);
+            throw err;
         }
     }
 
@@ -2092,46 +2089,39 @@ class Contracts_MetaMask {
     }
 
     async buildAutoRewardChunks(account, quizId, answer, students, sourceAddress = "") {
-        const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
-        const normalizedStudents = Array.from(new Set((students || []).filter(Boolean)));
+        const normalizedStudents = uniqueAddresses(students);
+        const quizEntries = await Promise.all(
+            normalizedStudents.map(async (studentAddress) => {
+                const detail = await this.get_student_answer_detail(studentAddress, quizId, sourceAddress).catch(() => null);
+                const answerText = String(detail?.answerText || "");
+                return {
+                    address: studentAddress,
+                    correct: answerText === String(answer || ""),
+                };
+            })
+        );
 
-        const splitChunk = async (studentChunk) => {
-            if (studentChunk.length === 0) return [];
+        const correctStudents = quizEntries.filter((entry) => entry.correct).map((entry) => entry.address);
+        const incorrectStudents = quizEntries.filter((entry) => !entry.correct).map((entry) => entry.address);
 
-            try {
-                const estimate = await this.estimateWriteCost({
-                    account,
-                    address: targetQuizAddress,
-                    abi: quiz_abi,
-                    functionName: "payment_of_reward",
-                    args: [quizId, String(answer || ""), studentChunk],
-                    chain: amoy,
-                });
-                if (estimate.gas <= MAX_PAYOUT_GAS_PER_TX && estimate.totalFeeWei <= MAX_PAYOUT_FEE_PER_TX_WEI) {
-                    return [studentChunk];
-                }
-            } catch (error) {
-                console.log("auto reward chunk estimate fallback", error);
-            }
-
-            if (studentChunk.length === 1) {
-                return [studentChunk];
-            }
-
-            const middle = Math.ceil(studentChunk.length / 2);
-            const left = await splitChunk(studentChunk.slice(0, middle));
-            const right = await splitChunk(studentChunk.slice(middle));
-            return [...left, ...right];
-        };
-
-        return await splitChunk(normalizedStudents);
+        return await this.buildManualRewardChunks(
+            account,
+            quizId,
+            answer,
+            correctStudents,
+            incorrectStudents,
+            sourceAddress
+        );
     }
 
     async buildManualRewardChunks(account, quizId, confirmAnswer, correctStudents, incorrectStudents, sourceAddress = "") {
         const targetQuizAddress = this.resolveQuizAddress(sourceAddress);
+        const normalizedCorrectStudents = uniqueAddresses(correctStudents);
+        const normalizedIncorrectStudents = uniqueAddresses(incorrectStudents)
+            .filter((address) => !normalizedCorrectStudents.includes(address));
         const combinedEntries = [
-            ...(correctStudents || []).filter(Boolean).map((address) => ({ address, correct: true })),
-            ...(incorrectStudents || []).filter(Boolean).map((address) => ({ address, correct: false })),
+            ...normalizedCorrectStudents.map((address) => ({ address, correct: true })),
+            ...normalizedIncorrectStudents.map((address) => ({ address, correct: false })),
         ];
 
         const splitEntries = async (entryChunk) => {
@@ -2166,7 +2156,12 @@ class Contracts_MetaMask {
             return [...left, ...right];
         };
 
-        const rawChunks = await splitEntries(combinedEntries);
+        const seededChunks = sliceByNumber(combinedEntries, MAX_PAYOUT_RECIPIENTS_PER_TX);
+        const rawChunks = [];
+        for (const seededChunk of seededChunks) {
+            const splitChunk = await splitEntries(seededChunk);
+            rawChunks.push(...splitChunk);
+        }
         return rawChunks.map((entries) => ({
             correctStudents: entries.filter((entry) => entry.correct).map((entry) => entry.address),
             incorrectStudents: entries.filter((entry) => !entry.correct).map((entry) => entry.address),
@@ -2201,10 +2196,9 @@ class Contracts_MetaMask {
         let payoutReceipts = [];
         let payoutChunks = [];
         let hash = null;
-        const normalizedCorrectStudents = Array.from(new Set((correctStudents || []).filter(Boolean)));
-        const normalizedIncorrectStudents = Array.from(
-            new Set((incorrectStudents || []).filter((address) => Boolean(address) && !normalizedCorrectStudents.includes(address)))
-        );
+        const normalizedCorrectStudents = uniqueAddresses(correctStudents);
+        const normalizedIncorrectStudents = uniqueAddresses(incorrectStudents)
+            .filter((address) => !normalizedCorrectStudents.includes(address));
         const rewardText = String(amount ?? 0).trim() || "0";
         const rewardPerStudent = parseUnits(rewardText, 18);
 
@@ -2239,52 +2233,33 @@ class Contracts_MetaMask {
 
             if (normalizedCorrectStudents.length > 0 || normalizedIncorrectStudents.length > 0) {
                 const isPayment = await this.get_is_payment(id, targetQuizAddress).catch(() => false);
-                
+
                 if (isPayment) {
-                    console.log("Quiz is locked! Falling back to direct transfer for manual distribution.");
-                    if (rewardPerStudent > 0n && normalizedCorrectStudents.length > 0) {
-                        for (const student of normalizedCorrectStudents) {
-                            try {
-                                const result = await this.transferErc20Token(token_address, student, Number(rewardPerStudent) / 10**18, "TFT", 18);
-                                if (result && result.hash) {
-                                    payoutReceipts.push(result.receipt);
-                                    payoutChunks.push({ correctStudents: [student], incorrectStudents: [] });
-                                }
-                            } catch (err) {
-                                console.log("Fallback transfer failed for manual student", student, err);
-                                throw err;
-                            }
-                        }
-                    } else if (normalizedCorrectStudents.length > 0) {
-                        payoutChunks.push({ correctStudents: normalizedCorrectStudents, incorrectStudents: [] });
-                    }
-                    if (normalizedIncorrectStudents.length > 0) {
-                        payoutChunks.push({ correctStudents: [], incorrectStudents: normalizedIncorrectStudents });
-                    }
-                } else {
-                    payoutChunks = await this.buildManualRewardChunks(
+                    throw new Error("quiz_reward_already_finalized");
+                }
+
+                payoutChunks = await this.buildManualRewardChunks(
+                    account,
+                    id,
+                    confirmAnswer,
+                    normalizedCorrectStudents,
+                    normalizedIncorrectStudents,
+                    targetQuizAddress
+                );
+
+                for (let index = 0; index < payoutChunks.length; index += 1) {
+                    const { correctStudents: correctChunk, incorrectStudents: incorrectChunk } = payoutChunks[index];
+                    const payoutHash = await this._payment_of_reward_manual(
                         account,
                         id,
                         confirmAnswer,
-                        normalizedCorrectStudents,
-                        normalizedIncorrectStudents,
+                        correctChunk,
+                        incorrectChunk,
+                        index === payoutChunks.length - 1,
                         targetQuizAddress
                     );
-
-                    for (let index = 0; index < payoutChunks.length; index += 1) {
-                        const { correctStudents: correctChunk, incorrectStudents: incorrectChunk } = payoutChunks[index];
-                        const payoutHash = await this._payment_of_reward_manual(
-                            account,
-                            id,
-                            confirmAnswer,
-                            correctChunk,
-                            incorrectChunk,
-                            index === payoutChunks.length - 1,
-                            targetQuizAddress
-                        );
-                        if (payoutHash) {
-                            payoutReceipts.push(await this.waitForReceiptWithRetry(payoutHash));
-                        }
+                    if (payoutHash) {
+                        payoutReceipts.push(await this.waitForReceiptWithRetry(payoutHash));
                     }
                 }
             }
@@ -2305,15 +2280,15 @@ class Contracts_MetaMask {
             }
         } catch (err) {
             console.log(err);
+            throw err;
         }
 
         this.invalidateQuizSimpleCache(this.resolveQuizAddress(sourceAddress), id);
-
         return { res, payoutReceipts, hash, payoutChunks };
     }
 
     async settle_quiz_rewards_auto_existing(id, answer, students, sourceAddress = "") {
-        const normalizedStudents = Array.from(new Set((students || []).filter(Boolean)));
+        const normalizedStudents = uniqueAddresses(students);
         const payoutReceipts = [];
         const payoutHashes = [];
         let payoutChunks = [];
@@ -2337,58 +2312,24 @@ class Contracts_MetaMask {
             const isPayment = await this.get_is_payment(id, targetQuizAddress).catch(() => false);
 
             if (isPayment) {
-                console.log("Quiz is locked! Falling back to direct transfer.");
-                const quizData = await this.get_quiz_simple(id, targetQuizAddress);
-                const rewardTft = Number(quizData[7] || 0) / 10**18;
-                
-                const correctStudents = [];
-                const incorrectStudents = [];
-                
-                // 事前に各学生の回答を取得し、正解かどうかを判定する
-                for (const student of normalizedStudents) {
-                    try {
-                        const studentDetail = await this.get_student_answer_detail(student, id, targetQuizAddress);
-                        if (String(studentDetail?.answerText || "") === String(answer || "")) {
-                            correctStudents.push(student);
-                        } else {
-                            incorrectStudents.push(student);
-                        }
-                    } catch (err) {
-                        console.log("Failed to get student answer for grading", student, err);
-                        incorrectStudents.push(student); // エラー時は安全のため不正解扱い
-                    }
-                }
+                throw new Error("quiz_reward_already_finalized");
+            }
 
-                if (rewardTft > 0 && correctStudents.length > 0) {
-                    for (const student of correctStudents) {
-                        try {
-                            const result = await this.transferErc20Token(token_address, student, rewardTft, "TFT", 18);
-                            if (result && result.hash) {
-                                payoutHashes.push(result.hash);
-                                payoutReceipts.push(result.receipt);
-                                payoutChunks.push([student]);
-                            }
-                        } catch (err) {
-                            console.log("Fallback transfer failed for student", student, err);
-                            throw err;
-                        }
-                    }
-                } else if (correctStudents.length > 0) {
-                    payoutChunks.push(correctStudents);
-                }
-                
-                if (incorrectStudents.length > 0) {
-                    payoutChunks.push(incorrectStudents);
-                }
-            } else {
-                payoutChunks = await this.buildAutoRewardChunks(account, id, answer, normalizedStudents, targetQuizAddress);
-                for (let index = 0; index < payoutChunks.length; index += 1) {
-                    const studentChunk = payoutChunks[index];
-                    const payoutHash = await this._payment_of_reward(account, id, String(answer || ""), studentChunk, targetQuizAddress);
-                    if (!payoutHash) continue;
-                    payoutHashes.push(payoutHash);
-                    payoutReceipts.push(await this.waitForReceiptWithRetry(payoutHash));
-                }
+            payoutChunks = await this.buildAutoRewardChunks(account, id, answer, normalizedStudents, targetQuizAddress);
+            for (let index = 0; index < payoutChunks.length; index += 1) {
+                const { correctStudents, incorrectStudents } = payoutChunks[index];
+                const payoutHash = await this._payment_of_reward_manual(
+                    account,
+                    id,
+                    String(answer || ""),
+                    correctStudents,
+                    incorrectStudents,
+                    index === payoutChunks.length - 1,
+                    targetQuizAddress
+                );
+                if (!payoutHash) continue;
+                payoutHashes.push(payoutHash);
+                payoutReceipts.push(await this.waitForReceiptWithRetry(payoutHash));
             }
         } catch (error) {
             console.log(error);

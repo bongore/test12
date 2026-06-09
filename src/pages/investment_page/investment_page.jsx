@@ -34,7 +34,10 @@ function buildChunkTxMap(addressGroups = [], receipts = []) {
     addressGroups.forEach((addresses, chunkIndex) => {
         const receipt = receipts[chunkIndex];
         const txHash = String(receipt?.transactionHash || receipt?.hash || "");
-        (Array.isArray(addresses) ? addresses : []).forEach((address) => {
+        const normalizedAddresses = Array.isArray(addresses)
+            ? addresses
+            : [...(addresses?.correctStudents || []), ...(addresses?.incorrectStudents || [])];
+        normalizedAddresses.forEach((address) => {
             txMap.set(normalizeAddress(address), txHash);
         });
     });
@@ -66,6 +69,7 @@ function Investment_to_quiz() {
     const [loadError, setLoadError] = useState("");
     const [executionSummary, setExecutionSummary] = useState(null);
     const [quizTitle, setQuizTitle] = useState("");
+    const [rewardPayoutEntries, setRewardPayoutEntries] = useState([]);
 
     const Contract = useMemo(() => new Contracts_MetaMask(), []);
     const access = useAccessControl(Contract);
@@ -235,7 +239,10 @@ function Investment_to_quiz() {
             const refreshedRows = await loadStudentSubmissions();
             if (isNotPayingOut === "false") {
                 try {
-                    await syncRewardPayoutLedgerFromServer();
+                    const syncedBefore = await syncRewardPayoutLedgerFromServer().catch(() => []);
+                    if (Array.isArray(syncedBefore)) {
+                        setRewardPayoutEntries(syncedBefore);
+                    }
                     const payoutReceipts = Array.isArray(executionResult?.payoutReceipts) ? executionResult.payoutReceipts : [];
                     const payoutTargets = gradingMode === "auto"
                         ? submittedStudentAddresses
@@ -310,6 +317,10 @@ function Investment_to_quiz() {
                         });
                     if (rewardEntries.length > 0) {
                         await persistRewardPayoutEntriesToServer(rewardEntries);
+                        const syncedAfter = await syncRewardPayoutLedgerFromServer().catch(() => []);
+                        if (Array.isArray(syncedAfter)) {
+                            setRewardPayoutEntries(syncedAfter);
+                        }
                     }
                 } catch (ledgerError) {
                     console.error("Failed to persist reward payout ledger", ledgerError);
@@ -348,6 +359,14 @@ function Investment_to_quiz() {
     useEffect(() => {
         let mounted = true;
         (async () => {
+            try {
+                const syncedEntries = await syncRewardPayoutLedgerFromServer();
+                if (mounted && Array.isArray(syncedEntries)) {
+                    setRewardPayoutEntries(syncedEntries);
+                }
+            } catch (error) {
+                console.error(error);
+            }
             try {
                 const quiz = await Contract.get_quiz_simple(id, sourceAddress);
                 if (!mounted) return;

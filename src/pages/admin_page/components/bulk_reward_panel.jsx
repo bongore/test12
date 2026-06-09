@@ -12,7 +12,10 @@ function buildChunkTxMap(addressGroups = [], receipts = []) {
     addressGroups.forEach((addresses, chunkIndex) => {
         const receipt = receipts[chunkIndex];
         const txHash = String(receipt?.transactionHash || receipt?.hash || "");
-        (Array.isArray(addresses) ? addresses : []).forEach((address) => {
+        const normalizedAddresses = Array.isArray(addresses)
+            ? addresses
+            : [...(addresses?.correctStudents || []), ...(addresses?.incorrectStudents || [])];
+        normalizedAddresses.forEach((address) => {
             txMap.set(normalizeAddress(address), txHash);
         });
     });
@@ -333,13 +336,11 @@ function Bulk_reward_panel({ cont }) {
                             const normalizedStudent = normalizeAddress(address);
                             const wasPaidNow = payoutTxMap.has(normalizedStudent);
                             const isCorrectAuto = detail?.answerText === refreshedRow.correctAnswer;
-                            
-                            // フォールバック直接送金の場合、ブロックチェーン上はstate=3のままだが、UI上で自動判定結果を適用する
+
                             const state = wasPaidNow 
                                 ? (isCorrectAuto ? 2 : 1) 
                                 : Number(detail?.state || 0);
-                            
-                            // ブロックチェーン上の報酬額が未反映の場合は、クイズの報酬設定値を適用する（正解の場合のみ）
+
                             let rewardWei = Number(detail?.reward || 0);
                             if (wasPaidNow && rewardWei === 0 && state === 2) {
                                 rewardWei = Math.round((refreshedRow.rewardTft || 0) * 10 ** 18);
