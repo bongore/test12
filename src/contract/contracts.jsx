@@ -1063,18 +1063,23 @@ class Contracts_MetaMask {
                     chain: amoy,
                 };
 
-                if (gasOverride && BigInt(gasOverride) > 0n) {
-                    writeConfig.gas = BigInt(gasOverride);
-                } else {
-                    try {
-                        const estimatedGas = await publicClient.estimateContractGas(writeConfig);
-                        if (estimatedGas && estimatedGas > 0n) {
-                            writeConfig.gas = this.isAppleMobileDevice()
-                                ? (estimatedGas * 14n) / 10n
-                                : (estimatedGas * 12n) / 10n;
-                        }
-                    } catch (gasError) {
-                        console.log(gasError);
+                const gasFloor = gasOverride && BigInt(gasOverride) > 0n ? BigInt(gasOverride) : 0n;
+                try {
+                    const estimatedGas = await publicClient.estimateContractGas(writeConfig);
+                    if (estimatedGas && estimatedGas > 0n) {
+                        const isRewardPayoutCall = ["payment_of_reward", "payment_of_reward_manual"].includes(String(functionName || ""));
+                        const multiplierNumerator = isRewardPayoutCall
+                            ? (this.isAppleMobileDevice() ? 18n : 16n)
+                            : (this.isAppleMobileDevice() ? 14n : 12n);
+                        const bufferedGas = (estimatedGas * multiplierNumerator + 9n) / 10n;
+                        writeConfig.gas = gasFloor > bufferedGas ? gasFloor : bufferedGas;
+                    } else if (gasFloor > 0n) {
+                        writeConfig.gas = gasFloor;
+                    }
+                } catch (gasError) {
+                    console.log(gasError);
+                    if (gasFloor > 0n) {
+                        writeConfig.gas = gasFloor;
                     }
                 }
 
