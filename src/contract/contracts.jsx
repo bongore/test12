@@ -1714,6 +1714,9 @@ class Contracts_MetaMask {
             const cacheKey = this.normalizeAddress(address);
             const hasManualBaseline = Object.prototype.hasOwnProperty.call(SCORE_BASELINE_TFT_MAP, cacheKey);
             const baselineScore = Number(SCORE_BASELINE_TFT_MAP[cacheKey] || 0);
+            if (hasManualBaseline) {
+                return Math.min(Number(baselineScore || 0), Number(MAX_TFT_TOTAL || 750));
+            }
             const scoreCache = readScoreCache();
             const historyLength = await this.get_user_history_len(address);
             const cached = scoreCache[cacheKey];
@@ -1732,65 +1735,45 @@ class Contracts_MetaMask {
             }
 
             let score = 0;
-            let futureLedgerScore = 0;
             const countedQuizKeys = new Set();
-            const usesManualBaseline = hasManualBaseline;
-
-            if (usesManualBaseline) {
-                futureLedgerScore = payoutEntries.reduce((sum, entry) => {
-                    const paidAtEpoch = Math.floor(new Date(entry?.paidAt || entry?.createdAt || 0).getTime() / 1000);
-                    if (!Number.isFinite(paidAtEpoch) || paidAtEpoch < SCORE_BASELINE_CUTOFF_EPOCH) {
-                        return sum;
+            try {
+                const inventory = await this.getQuizInventory(true);
+                const settled = await runSettledInChunks(
+                    Array.isArray(inventory) ? inventory : [],
+                    5,
+                    async (quiz) => {
+                        const quizId = Number(quiz?.id || 0);
+                        const sourceAddress = quiz?.address || "";
+                        const detail = await this.get_student_answer_detail(address, quizId, sourceAddress);
+                        return {
+                            quizKey: buildRewardLedgerQuizKey(sourceAddress, quizId),
+                            rewardTft: Number(detail?.reward || 0) / 10 ** 18,
+                        };
                     }
-                    const quizKey = buildRewardLedgerQuizKey(entry.sourceAddress, entry.quizId);
-                    if (countedQuizKeys.has(quizKey)) {
-                        return sum;
+                );
+                score += settled.reduce((sum, item) => {
+                    const rewardTft = Number(item?.rewardTft || 0);
+                    if (rewardTft > 0) {
+                        countedQuizKeys.add(String(item.quizKey || ""));
+                        return sum + rewardTft;
                     }
-                    countedQuizKeys.add(quizKey);
-                    return sum + Number(entry.rewardTft || 0);
+                    return sum;
                 }, 0);
+            } catch (quizRewardError) {
+                console.log(quizRewardError);
             }
 
-            if (!usesManualBaseline) {
-                try {
-                    const inventory = await this.getQuizInventory(true);
-                    const settled = await runSettledInChunks(
-                        Array.isArray(inventory) ? inventory : [],
-                        5,
-                        async (quiz) => {
-                            const quizId = Number(quiz?.id || 0);
-                            const sourceAddress = quiz?.address || "";
-                            const detail = await this.get_student_answer_detail(address, quizId, sourceAddress);
-                            return {
-                                quizKey: buildRewardLedgerQuizKey(sourceAddress, quizId),
-                                rewardTft: Number(detail?.reward || 0) / 10 ** 18,
-                            };
-                        }
-                    );
-                    score += settled.reduce((sum, item) => {
-                        const rewardTft = Number(item?.rewardTft || 0);
-                        if (rewardTft > 0) {
-                            countedQuizKeys.add(String(item.quizKey || ""));
-                            return sum + rewardTft;
-                        }
-                        return sum;
-                    }, 0);
-                } catch (quizRewardError) {
-                    console.log(quizRewardError);
+            const payoutLedgerScore = payoutEntries.reduce((sum, entry) => {
+                const quizKey = buildRewardLedgerQuizKey(entry.sourceAddress, entry.quizId);
+                if (countedQuizKeys.has(quizKey)) {
+                    return sum;
                 }
+                countedQuizKeys.add(quizKey);
+                return sum + Number(entry.rewardTft || 0);
+            }, 0);
+            score += payoutLedgerScore;
 
-                const payoutLedgerScore = payoutEntries.reduce((sum, entry) => {
-                    const quizKey = buildRewardLedgerQuizKey(entry.sourceAddress, entry.quizId);
-                    if (countedQuizKeys.has(quizKey)) {
-                        return sum;
-                    }
-                    countedQuizKeys.add(quizKey);
-                    return sum + Number(entry.rewardTft || 0);
-                }, 0);
-                score += payoutLedgerScore;
-            }
-
-            if (!usesManualBaseline && historyLength && historyLength > 0) {
+            if (historyLength && historyLength > 0) {
                 const history = await this.get_token_history(address, historyLength, 0);
                 const tokenHistoryScore = (Array.isArray(history) ? history : []).reduce((sum, entry) => {
                     const explanation = getTokenHistoryExplanation(entry).toLowerCase();
@@ -1800,10 +1783,6 @@ class Contracts_MetaMask {
                     return sum + getTokenHistoryValueTft(entry);
                 }, 0);
                 score = Math.max(Number(score || 0), Number(tokenHistoryScore || 0));
-            }
-
-            if (usesManualBaseline) {
-                score = baselineScore + Number(futureLedgerScore || 0);
             }
 
             score = Math.min(Number(score || 0), Number(MAX_TFT_TOTAL || 750));
