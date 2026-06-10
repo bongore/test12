@@ -741,7 +741,7 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
         expect(score).toBe(0);
     });
 
-    test("get_quiz_reward_tft uses the provided current score baseline and only adds confirmed newer payout entries", async () => {
+    test("get_quiz_reward_tft caps baseline plus newer payouts at the 15-point maximum", async () => {
         const contract = new Contracts_MetaMask();
         const address = "0x5a9e3C52085F8D4427186E95aB2F05480569455A";
         contract.get_user_history_len = jest.fn().mockResolvedValue(2);
@@ -764,7 +764,7 @@ describe("Contracts_MetaMask legacy quiz settlement", () => {
 
         const score = await contract.get_quiz_reward_tft(address);
 
-        expect(score).toBe(765);
+        expect(score).toBe(750);
     });
 
     test("get_quiz_reward_tft ignores token history additions for baseline addresses when no confirmed payout exists", async () => {

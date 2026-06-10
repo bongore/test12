@@ -28,6 +28,7 @@ import {
 } from "./contractClients";
 import { getRegisteredCorrectAnswer } from "../utils/quizCorrectAnswerStore";
 import { getRewardPayoutEntries } from "../utils/rewardPayoutLedger";
+import { MAX_TFT_TOTAL } from "../utils/quizRewardRate";
 
 function sleep(ms) {
     return new Promise((resolve) => {
@@ -1804,6 +1805,8 @@ class Contracts_MetaMask {
             if (usesManualBaseline) {
                 score = baselineScore + Number(futureLedgerScore || 0);
             }
+
+            score = Math.min(Number(score || 0), Number(MAX_TFT_TOTAL || 750));
 
             scoreCache[cacheKey] = {
                 historyLength: Number(historyLength || 0),
