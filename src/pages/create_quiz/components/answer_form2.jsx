@@ -36,14 +36,14 @@ function Answer_area2(props) {
                     <div className="btn-group" role="group" aria-label="input-mode">
                         <button
                             type="button"
-                            className={tn ${inputMode === QUIZ_INPUT_MODE_REGEX ? "btn-primary" : "btn-outline-primary"}}
+                            className={`btn ${inputMode === QUIZ_INPUT_MODE_REGEX ? "btn-primary" : "btn-outline-primary"}`}
                             onClick={() => updateConfig({ inputMode: QUIZ_INPUT_MODE_REGEX })}
                         >
                             正規表現
                         </button>
                         <button
                             type="button"
-                            className={tn ${inputMode === QUIZ_INPUT_MODE_PLAIN ? "btn-primary" : "btn-outline-primary"}}
+                            className={`btn ${inputMode === QUIZ_INPUT_MODE_PLAIN ? "btn-primary" : "btn-outline-primary"}`}
                             onClick={() => updateConfig({ inputMode: QUIZ_INPUT_MODE_PLAIN })}
                         >
                             通常テキスト
